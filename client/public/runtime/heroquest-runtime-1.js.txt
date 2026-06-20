@@ -1,0 +1,459 @@
+const SERVER_URL = env.VITE_SERVER_URL || "http://localhost:3000";
+const STORAGE_KEY = "heroquest-mmo-v1-save";
+const COLORS = [0x4da7ff, 0x55d07a, 0xf2c867, 0xe86e58, 0xb38cff, 0x70e4d2];
+
+const gameRoot = document.querySelector("#game-root");
+const uiRoot = document.querySelector("#ui-root");
+
+const ui = {};
+const game = {
+  started: false,
+  online: false,
+  save: loadSave(),
+  zone: ZONES.HUB,
+  renderer: null,
+  scene: null,
+  camera: null,
+  clock: new THREE.Clock(),
+  world: null,
+  playerGroup: null,
+  playerVelocity: new THREE.Vector3(),
+  remotePlayers: new Map(),
+  enemies: new Map(),
+  enemyMeshes: new Map(),
+  loot: new Map(),
+  lootMeshes: new Map(),
+  portals: [],
+  blockers: [],
+  boss: null,
+  bossGroup: null,
+  telegraphs: [],
+  input: {
+    keys: new Set(),
+    dragging: false,
+    yaw: 0,
+    pitch: 0.56,
+    distance: 12,
+    lastPointer: { x: 0, y: 0 }
+  },
+  cooldowns: {
+    attack: 0,
+    dash: 0,
+    ability: 0
+  },
+  promptAction: null,
+  lastMoveSent: 0,
+  fps: { frames: 0, last: performance.now(), value: 0 },
+  audio: null,
+  socket: null,
+  localEnemyId: 1,
+  localLootId: 1
+};
+
+bootstrap();
+
+function bootstrap() {
+  const smoke = new URLSearchParams(window.location.search).get("smoke");
+  if (smoke) {
+    const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : ZONES.HUB;
+    game.save = applyEquipment({
+      ...game.save,
+      name: "SmokeTester",
+      color: COLORS[1],
+      zone,
+      settings: { ...game.save.settings, showFps: true }
+    });
+    startGame();
+    return;
+  }
+  renderMainMenu();
+}
+
+function loadSave() {
+  const base = {
+    name: "",
+    color: COLORS[0],
+    zone: ZONES.HUB,
+    xp: STARTING_PLAYER.xp,
+    coins: STARTING_PLAYER.coins,
+    health: STARTING_PLAYER.health,
+    inventory: clone(STARTER_INVENTORY),
+    equippedWeapon: STARTING_PLAYER.equippedWeapon,
+    equippedArmor: STARTING_PLAYER.equippedArmor,
+    questProgress: createQuestProgress(),
+    settings: {
+      master: 0.8,
+      music: 0.45,
+      sfx: 0.75,
+      sensitivity: 0.85,
+      cameraDistance: 12,
+      quality: "high",
+      showFps: false,
+      reducedMotion: false,
+      screenShake: true,
+      nameTags: true
+    },
+    title: ""
+  };
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return applyEquipment(base);
+    const parsed = JSON.parse(raw);
+    return applyEquipment({
+      ...base,
+      ...parsed,
+      settings: { ...base.settings, ...(parsed.settings || {}) },
+      questProgress: { ...base.questProgress, ...(parsed.questProgress || {}) },
+      inventory: parsed.inventory || base.inventory
+    });
+  } catch {
+    return applyEquipment(base);
+  }
+}
+
+function saveGame() {
+  const serializable = {
+    name: game.save.name,
+    color: game.save.color,
+    zone: game.zone,
+    xp: game.save.xp,
+    coins: game.save.coins,
+    health: game.save.health,
+    inventory: game.save.inventory,
+    equippedWeapon: game.save.equippedWeapon,
+    equippedArmor: game.save.equippedArmor,
+    questProgress: game.save.questProgress,
+    settings: game.save.settings,
+    title: game.save.title
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
+}
+
+function renderMainMenu() {
+  const selectedColor = Number(game.save.color || COLORS[0]);
+  uiRoot.innerHTML = `
+    <section class="menu-screen">
+      <div class="menu-panel">
+        <div class="brand-row">
+          <div>
+            <div class="kicker">Version ${GAME_VERSION}</div>
+            <h1>HeroQuest MMO</h1>
+          </div>
+          <div class="status-pill">First Adventure</div>
+        </div>
+        <p class="intro">
+          The old kingdoms fell when shadow rifts opened across the world. From those rifts came slimes, goblins, wolves, wisps, golems, and greater beasts of darkness. Now new heroes gather in the town of Dawnrest, taking up simple weapons to push back the shadows one quest at a time.
+        </p>
+        <div class="setup-grid">
+          <label class="field">
+            Hero name
+            <input id="hero-name" maxlength="18" value="${escapeHtml(game.save.name || "")}" placeholder="New Hero" />
+          </label>
+          <button class="primary" id="start-game">Enter Dawnrest</button>
+        </div>
+        <div class="field" style="margin-top:16px">
+          Hero color
+          <div class="swatches">
+            ${COLORS.map((color) => `
+              <button class="swatch ${color === selectedColor ? "selected" : ""}" data-color="${color}" style="background:#${color.toString(16).padStart(6, "0")}" aria-label="Select hero color"></button>
+            `).join("")}
+          </div>
+        </div>
+        <div class="setup-grid">
+          <button id="patch-notes-menu">Patch Notes</button>
+          <button id="reset-save">Reset Save</button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  let pickedColor = selectedColor;
+  uiRoot.querySelectorAll(".swatch").forEach((button) => {
+    button.addEventListener("click", () => {
+      pickedColor = Number(button.dataset.color);
+      uiRoot.querySelectorAll(".swatch").forEach((item) => item.classList.remove("selected"));
+      button.classList.add("selected");
+      playUiSound("tick");
+    });
+  });
+
+  uiRoot.querySelector("#start-game").addEventListener("click", () => {
+    const name = uiRoot.querySelector("#hero-name").value.trim() || "New Hero";
+    game.save = applyEquipment({ ...game.save, name, color: pickedColor });
+    saveGame();
+    startGame();
+  });
+
+  uiRoot.querySelector("#patch-notes-menu").addEventListener("click", () => {
+    alert(`${PATCH_NOTES.title}\n\n${PATCH_NOTES.items.map((item) => `- ${item}`).join("\n")}`);
+  });
+
+  uiRoot.querySelector("#reset-save").addEventListener("click", () => {
+    localStorage.removeItem(STORAGE_KEY);
+    game.save = loadSave();
+    playUiSound("low");
+    renderMainMenu();
+  });
+}
+
+function startGame() {
+  uiRoot.innerHTML = "";
+  buildHud();
+  setupRenderer();
+  setupInput();
+  game.audio = createAudioManager();
+  game.input.distance = game.save.settings.cameraDistance;
+  game.zone = game.save.zone || ZONES.HUB;
+  loadZone(game.zone, true);
+  setupNetwork();
+  game.started = true;
+  game.clock.start();
+  requestAnimationFrame(loop);
+  toast("Welcome to Dawnrest.");
+}
+
+function buildHud() {
+  uiRoot.innerHTML = `
+    <div class="hud">
+      <div class="top-left">
+        <div class="hud-card">
+          <div class="stat-line"><strong id="hero-label">Hero</strong><span id="zone-label">Dawnrest</span></div>
+          <div class="bar health"><i id="health-bar"></i></div>
+          <div class="stat-line"><span id="health-text">100 / 100 HP</span><span id="coins-text">50 coins</span></div>
+          <div class="bar xp"><i id="xp-bar"></i></div>
+          <div class="stat-line"><span id="level-text">Level 1</span><span id="xp-text">0 XP</span></div>
+        </div>
+        <div class="hud-card">
+          <div class="quest-list" id="quest-tracker"></div>
+        </div>
+      </div>
+      <div class="top-right">
+        <div class="hud-card">
+          <div class="stat-line"><span>Network</span><strong id="network-status" class="offline">Solo local</strong></div>
+          <div class="party-list" id="party-list">No party</div>
+        </div>
+      </div>
+      <div class="boss-frame" id="boss-frame">
+        <div class="hud-card">
+          <div class="stat-line"><strong id="boss-name">Shadow Wyrm</strong><span id="boss-phase">Phase 1</span></div>
+          <div class="bar health"><i id="boss-bar"></i></div>
+          <div class="stat-line danger-text" id="boss-warning">The arena is quiet.</div>
+        </div>
+      </div>
+      <div class="bottom-left">
+        <button class="icon" data-panel="inventory" title="Inventory (I)">I</button>
+        <button class="icon" data-panel="character" title="Character (C)">C</button>
+        <button class="icon" data-panel="party" title="Party (P)">P</button>
+        <button class="icon" data-panel="quests" title="Quest Log (M)">M</button>
+        <button class="icon" data-panel="settings" title="Settings (Esc)">S</button>
+        <button class="icon" data-panel="patch" title="Patch Notes">?</button>
+      </div>
+      <div class="bottom-center">
+        <div class="ability-chip hud-card"><strong>Q</strong><span id="ability-text">Pulse</span></div>
+        <div class="ability-chip hud-card"><strong>1</strong><span id="potion-text">Potion x2</span></div>
+        <div class="prompt hidden" id="prompt"></div>
+      </div>
+    </div>
+    <div class="toast-stack" id="toast-stack"></div>
+    <section class="panel hidden" id="panel">
+      <header><h2 id="panel-title">Panel</h2><button class="icon" id="close-panel">X</button></header>
+      <div id="panel-content" class="panel-grid"></div>
+    </section>
+  `;
+
+  ui.heroLabel = uiRoot.querySelector("#hero-label");
+  ui.zoneLabel = uiRoot.querySelector("#zone-label");
+  ui.healthBar = uiRoot.querySelector("#health-bar");
+  ui.healthText = uiRoot.querySelector("#health-text");
+  ui.coinsText = uiRoot.querySelector("#coins-text");
+  ui.xpBar = uiRoot.querySelector("#xp-bar");
+  ui.levelText = uiRoot.querySelector("#level-text");
+  ui.xpText = uiRoot.querySelector("#xp-text");
+  ui.questTracker = uiRoot.querySelector("#quest-tracker");
+  ui.networkStatus = uiRoot.querySelector("#network-status");
+  ui.partyList = uiRoot.querySelector("#party-list");
+  ui.abilityText = uiRoot.querySelector("#ability-text");
+  ui.potionText = uiRoot.querySelector("#potion-text");
+  ui.prompt = uiRoot.querySelector("#prompt");
+  ui.panel = uiRoot.querySelector("#panel");
+  ui.panelTitle = uiRoot.querySelector("#panel-title");
+  ui.panelContent = uiRoot.querySelector("#panel-content");
+  ui.toastStack = uiRoot.querySelector("#toast-stack");
+  ui.bossFrame = uiRoot.querySelector("#boss-frame");
+  ui.bossBar = uiRoot.querySelector("#boss-bar");
+  ui.bossPhase = uiRoot.querySelector("#boss-phase");
+  ui.bossWarning = uiRoot.querySelector("#boss-warning");
+
+  uiRoot.querySelector("#close-panel").addEventListener("click", closePanel);
+  uiRoot.querySelectorAll("[data-panel]").forEach((button) => {
+    button.addEventListener("click", () => openPanel(button.dataset.panel));
+  });
+}
+
+function setupRenderer() {
+  gameRoot.innerHTML = "";
+  game.scene = new THREE.Scene();
+  game.scene.background = new THREE.Color(0x121925);
+  game.scene.fog = new THREE.Fog(0x141925, 38, 96);
+
+  game.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 240);
+  game.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  game.renderer.setSize(window.innerWidth, window.innerHeight);
+  game.renderer.setPixelRatio(Math.min(window.devicePixelRatio, game.save.settings.quality === "low" ? 1.2 : 2));
+  game.renderer.shadowMap.enabled = game.save.settings.quality !== "low";
+  game.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  gameRoot.appendChild(game.renderer.domElement);
+
+  const hemi = new THREE.HemisphereLight(0xfff4d6, 0x3b4760, 1.9);
+  game.scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xffdda0, 2.1);
+  sun.position.set(22, 36, 18);
+  sun.castShadow = true;
+  sun.shadow.camera.left = -60;
+  sun.shadow.camera.right = 60;
+  sun.shadow.camera.top = 60;
+  sun.shadow.camera.bottom = -60;
+  game.scene.add(sun);
+
+  game.playerGroup = createPlayerMesh(game.save.name, game.save.color, true);
+  game.scene.add(game.playerGroup);
+
+  window.addEventListener("resize", resize);
+}
+
+function setupInput() {
+  if (setupInput.done) return;
+  setupInput.done = true;
+  window.addEventListener("keydown", (event) => {
+    const key = event.key.toLowerCase();
+    if (["w", "a", "s", "d", "shift", " "].includes(key)) event.preventDefault();
+    game.input.keys.add(key);
+    if (key === "i") openPanel("inventory");
+    if (key === "c") openPanel("character");
+    if (key === "p") openPanel("party");
+    if (key === "m") openPanel("quests");
+    if (key === "escape") togglePanel("settings");
+    if (key === "q") useHeroPulse();
+    if (key === "1") usePotion();
+    if (key === "e") interact();
+    if (key === " ") dash();
+  });
+  window.addEventListener("keyup", (event) => game.input.keys.delete(event.key.toLowerCase()));
+  window.addEventListener("pointerdown", (event) => {
+    if (!game.started || event.target.closest("button,input,select,.panel")) return;
+    game.input.dragging = event.button === 2 || event.buttons === 2;
+    game.input.lastPointer = { x: event.clientX, y: event.clientY };
+    if (event.button === 0) basicAttack();
+  });
+  window.addEventListener("pointerup", () => {
+    game.input.dragging = false;
+  });
+  window.addEventListener("pointermove", (event) => {
+    if (!game.input.dragging) return;
+    const sensitivity = game.save.settings.sensitivity;
+    game.input.yaw -= (event.clientX - game.input.lastPointer.x) * 0.006 * sensitivity;
+    game.input.pitch = THREE.MathUtils.clamp(game.input.pitch + (event.clientY - game.input.lastPointer.y) * 0.003 * sensitivity, 0.22, 1.05);
+    game.input.lastPointer = { x: event.clientX, y: event.clientY };
+  });
+  window.addEventListener("contextmenu", (event) => event.preventDefault());
+}
+
+function setupNetwork() {
+  if (game.socket) game.socket.disconnect();
+  game.socket = io(SERVER_URL, { timeout: 2500, transports: ["websocket", "polling"] });
+
+  game.socket.on("connect", () => {
+    game.online = true;
+    updateNetworkStatus();
+    game.socket.emit(NET.PLAYER_JOIN, serializeForServer(), (ack) => {
+      if (ack?.snapshot) applySnapshot(ack.snapshot);
+      toast("Online server connected.");
+    });
+  });
+
+  game.socket.on("connect_error", () => {
+    if (game.online) toast("Server unavailable. Continuing in solo mode.");
+    game.online = false;
+    updateNetworkStatus();
+    if (game.enemies.size === 0 && game.zone === ZONES.FIELD) spawnLocalEnemies();
+  });
+
+  game.socket.on("disconnect", () => {
+    game.online = false;
+    updateNetworkStatus();
+    toast("Disconnected. Solo local mode is active.");
+  });
+
+  game.socket.on(NET.WORLD_SNAPSHOT, applySnapshot);
+}
+
+function serializeForServer() {
+  return {
+    name: game.save.name,
+    color: game.save.color,
+    zone: game.zone,
+    position: groupPosition(game.playerGroup),
+    xp: game.save.xp,
+    coins: game.save.coins,
+    health: game.save.health,
+    equippedWeapon: game.save.equippedWeapon,
+    equippedArmor: game.save.equippedArmor,
+    inventory: game.save.inventory,
+    questProgress: game.save.questProgress,
+    title: game.save.title
+  };
+}
+
+function loadZone(zoneId, moveToSpawn = false) {
+  game.zone = zoneId;
+  game.save.zone = zoneId;
+  game.portals = [];
+  game.blockers = [];
+  game.enemies.clear();
+  game.loot.clear();
+  clearMeshes(game.enemyMeshes);
+  clearMeshes(game.lootMeshes);
+  game.telegraphs.forEach((mesh) => game.scene.remove(mesh));
+  game.telegraphs = [];
+  if (game.world) game.scene.remove(game.world);
+  game.world = new THREE.Group();
+  game.scene.add(game.world);
+
+  if (zoneId === ZONES.HUB) buildHub();
+  if (zoneId === ZONES.FIELD) buildField();
+  if (zoneId === ZONES.BOSS) buildBossArena();
+
+  const zone = getZone(zoneId);
+  if (moveToSpawn) {
+    game.playerGroup.position.set(zone.spawn.x, 0, zone.spawn.z);
+  }
+  if (zoneId === ZONES.FIELD && !game.online) spawnLocalEnemies();
+  if (zoneId === ZONES.BOSS) startLocalBoss();
+  saveGame();
+  updateHud();
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_ZONE, { zone: zoneId, position: groupPosition(game.playerGroup) }, (ack) => {
+      if (ack?.snapshot) applySnapshot(ack.snapshot);
+    });
+  }
+}
+
+function buildHub() {
+  game.scene.background = new THREE.Color(0x142033);
+  game.scene.fog = new THREE.Fog(0x142033, 42, 100);
+  addGround(86, 0x335f45, 0x274535);
+  addPath([{ x: 0, z: 38 }, { x: 0, z: -34 }], 5, 0x8f7a52);
+  addPath([{ x: -32, z: 0 }, { x: 34, z: 0 }], 4, 0x7f6e4b);
+  addCrystal(-16, -16, 0x78f7ff);
+  addCrystal(15, 17, 0xb38cff);
+  addCrystal(30, 25, 0xff735b);
+  addHouse(-18, 4, 8, 8, 0x76563f);
+  addHouse(18, 4, 8, 8, 0x6f4c3a);
+  addHouse(-28, 18, 7, 6, 0x7d6047);
+  addHouse(5, -20, 9, 7, 0x77533e);
+  addStall(-10, 16, "Weapon Shop");
+  addBoard(8, 16, "Quest Board");
+  addBoard(-8, -8, "Party Board");
+  addDummy(16, -12);
+  addNpc(0, 13, "Guide");
+  addNpc(24, 1, "Smith");

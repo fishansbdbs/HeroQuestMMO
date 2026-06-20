@@ -1,0 +1,460 @@
+  addPortal(0, -31, "Greenvale Outskirts", ZONES.FIELD, 0x75ff99);
+  addPortal(28, 25, "Shadow Peak", ZONES.BOSS, 0xff6b57, 3);
+}
+
+function buildField() {
+  game.scene.background = new THREE.Color(0x20314a);
+  game.scene.fog = new THREE.Fog(0x20314a, 48, 118);
+  addGround(110, 0x376f3d, 0x2e5631);
+  addPath([{ x: 0, z: 40 }, { x: 5, z: 8 }, { x: 36, z: -34 }], 4, 0x877548);
+  addPath([{ x: -28, z: 30 }, { x: -14, z: 4 }, { x: 25, z: -7 }], 3, 0x746542);
+  for (let i = 0; i < 44; i += 1) {
+    const x = randomRange(-50, 50);
+    const z = randomRange(-50, 50);
+    if (Math.abs(x) < 8 && Math.abs(z) < 42) continue;
+    addTree(x, z, 0.8 + Math.random() * 0.8);
+  }
+  for (let i = 0; i < 22; i += 1) addRock(randomRange(-48, 48), randomRange(-48, 48), 0.7 + Math.random() * 1.2);
+  addCrystal(-30, 28, 0x95fff2);
+  addCrystal(30, 24, 0xf0c06d);
+  addChest(-8, 22);
+  addChest(20, -22);
+  addPortal(0, 37, "Dawnrest", ZONES.HUB, 0x84bdff);
+  addPortal(36, -34, "Shadow Peak", ZONES.BOSS, 0xff6b57, 3);
+}
+
+function buildBossArena() {
+  game.scene.background = new THREE.Color(0x0f1020);
+  game.scene.fog = new THREE.Fog(0x0f1020, 20, 72);
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(27, 27, 1.2, 64), mat(0x262331, 0.95));
+  floor.receiveShadow = true;
+  floor.position.y = -0.65;
+  game.world.add(floor);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(24.5, 0.35, 8, 96), mat(0x915146, 0.95));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.06;
+  game.world.add(ring);
+  for (let i = 0; i < 18; i += 1) {
+    const a = (i / 18) * Math.PI * 2;
+    addRock(Math.cos(a) * 30, Math.sin(a) * 30, 1.5 + Math.random(), 0x17151e);
+  }
+  for (let i = 0; i < 9; i += 1) addCrack();
+  addPortal(0, 26, "Dawnrest", ZONES.HUB, 0x84bdff);
+  game.bossGroup = createBossMesh();
+  game.world.add(game.bossGroup);
+}
+
+function addGround(size, color, altColor) {
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(size, size, 16, 16), mat(color, 1));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  game.world.add(ground);
+  for (let i = 0; i < 70; i += 1) {
+    const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.18, randomRange(0.35, 0.75), 5), mat(Math.random() > 0.5 ? color : altColor));
+    tuft.position.set(randomRange(-size / 2 + 3, size / 2 - 3), 0.15, randomRange(-size / 2 + 3, size / 2 - 3));
+    tuft.rotation.y = Math.random() * Math.PI;
+    game.world.add(tuft);
+  }
+}
+
+function addPath(points, width, color) {
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const length = Math.sqrt(dx * dx + dz * dz);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, 0.04, length), mat(color));
+    mesh.position.set((a.x + b.x) / 2, 0.03, (a.z + b.z) / 2);
+    mesh.rotation.y = Math.atan2(dx, dz);
+    game.world.add(mesh);
+  }
+}
+
+function addHouse(x, z, w, d, color) {
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w, 4.2, d), mat(color));
+  base.position.set(x, 2.1, z);
+  base.castShadow = true;
+  base.receiveShadow = true;
+  game.world.add(base);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * 0.72, 3.2, 4), mat(0x5d2f2a));
+  roof.position.set(x, 5.5, z);
+  roof.rotation.y = Math.PI / 4;
+  roof.castShadow = true;
+  game.world.add(roof);
+  game.blockers.push({ x, z, halfX: w / 2 + 0.4, halfZ: d / 2 + 0.4 });
+}
+
+function addStall(x, z, label) {
+  const table = new THREE.Mesh(new THREE.BoxGeometry(6, 1, 3), mat(0x6d4b2f));
+  table.position.set(x, 0.55, z);
+  table.castShadow = true;
+  game.world.add(table);
+  const cloth = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.22, 3.3), mat(0xc4473d));
+  cloth.position.set(x, 1.15, z);
+  game.world.add(cloth);
+  addWorldLabel(label, x, 2.2, z);
+  game.blockers.push({ x, z, halfX: 3.2, halfZ: 1.8 });
+}
+
+function addBoard(x, z, label) {
+  const post1 = new THREE.Mesh(new THREE.BoxGeometry(0.25, 2.4, 0.25), mat(0x4a3423));
+  const post2 = post1.clone();
+  post1.position.set(x - 1.4, 1.2, z);
+  post2.position.set(x + 1.4, 1.2, z);
+  const board = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.4, 0.25), mat(0x7a5835));
+  board.position.set(x, 1.7, z);
+  game.world.add(post1, post2, board);
+  addWorldLabel(label, x, 2.8, z);
+}
+
+function addDummy(x, z) {
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 2.6, 8), mat(0xc19458));
+  body.position.set(x, 1.3, z);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.48, 10, 8), mat(0xb6854d));
+  head.position.set(x, 2.85, z);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 0.25), mat(0x7a5030));
+  arm.position.set(x, 2.1, z);
+  game.world.add(body, head, arm);
+  addWorldLabel("Training Dummy", x, 3.55, z);
+}
+
+function addNpc(x, z, label) {
+  const npc = createPlayerMesh(label, 0xf0c06d, false);
+  npc.scale.setScalar(0.82);
+  npc.position.set(x, 0, z);
+  game.world.add(npc);
+}
+
+function addTree(x, z, scale = 1) {
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25 * scale, 0.35 * scale, 2.2 * scale, 7), mat(0x6c4a2e));
+  trunk.position.set(x, 1.1 * scale, z);
+  const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.25 * scale, 3.1 * scale, 7), mat(0x2e7a45));
+  leaves.position.set(x, 3.0 * scale, z);
+  trunk.castShadow = leaves.castShadow = true;
+  game.world.add(trunk, leaves);
+  game.blockers.push({ x, z, halfX: 0.55 * scale, halfZ: 0.55 * scale });
+}
+
+function addRock(x, z, scale = 1, color = 0x696d64) {
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(scale, 0), mat(color));
+  rock.position.set(x, scale * 0.45, z);
+  rock.scale.y = 0.65;
+  rock.rotation.set(Math.random(), Math.random(), Math.random());
+  rock.castShadow = true;
+  game.world.add(rock);
+  game.blockers.push({ x, z, halfX: scale * 0.7, halfZ: scale * 0.7 });
+}
+
+function addCrystal(x, z, color) {
+  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(1.2, 0), mat(color, 0.85, true));
+  crystal.position.set(x, 1.3, z);
+  crystal.castShadow = true;
+  game.world.add(crystal);
+  const light = new THREE.PointLight(color, 2.4, 12);
+  light.position.set(x, 3, z);
+  game.world.add(light);
+}
+
+function addChest(x, z) {
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1.2), mat(0x8d5d2e));
+  chest.position.set(x, 0.55, z);
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.25, 1.3), mat(0xd8b263));
+  lid.position.set(x, 1.15, z);
+  game.world.add(chest, lid);
+  addWorldLabel("Treasure", x, 2.2, z);
+}
+
+function addPortal(x, z, label, targetZone, color, minLevel = 1) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.15, 8, 32), mat(color, 0.75, true));
+  ring.position.set(x, 2.2, z);
+  ring.rotation.y = Math.PI / 2;
+  const light = new THREE.PointLight(color, 2.8, 10);
+  light.position.set(x, 2.4, z);
+  game.world.add(ring, light);
+  addWorldLabel(label, x, 4.2, z);
+  game.portals.push({ x, z, label, targetZone, minLevel, radius: 3 });
+}
+
+function addCrack() {
+  const x = randomRange(-15, 15);
+  const z = randomRange(-15, 15);
+  const crack = new THREE.Mesh(new THREE.BoxGeometry(randomRange(3, 8), 0.05, 0.18), mat(0xff6044, 0.85, true));
+  crack.position.set(x, 0.06, z);
+  crack.rotation.y = Math.random() * Math.PI;
+  game.world.add(crack);
+}
+
+function createPlayerMesh(name, color, local) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 1.1, 4, 8), mat(color));
+  body.position.y = 1.25;
+  body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), mat(0xf1c798));
+  head.position.y = 2.35;
+  head.castShadow = true;
+  const cape = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.4, 0.08), mat(0x2b3246));
+  cape.position.set(0, 1.35, 0.47);
+  const sword = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.65, 0.12), mat(0xd7d6ce));
+  sword.position.set(0.72, 1.34, -0.22);
+  sword.rotation.z = -0.35;
+  group.add(body, head, cape, sword);
+  const label = makeLabel(name || "Hero", local ? "#fff2bf" : "#d9edf8");
+  label.position.set(0, 3.15, 0);
+  group.add(label);
+  return group;
+}
+
+function createEnemyMesh(enemy) {
+  const def = getEnemy(enemy.enemyId);
+  const group = new THREE.Group();
+  if (def.family === "slime") {
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.9, 16, 10), mat(def.color, 0.95));
+    body.scale.y = 0.7;
+    body.position.y = 0.7;
+    const eyeA = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), mat(0x0a1015));
+    const eyeB = eyeA.clone();
+    eyeA.position.set(-0.25, 0.92, -0.72);
+    eyeB.position.set(0.25, 0.92, -0.72);
+    group.add(body, eyeA, eyeB);
+  } else if (def.family === "goblin") {
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.9, 4, 8), mat(def.color));
+    body.position.y = 1.0;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), mat(0x8cc36a));
+    head.position.y = 1.82;
+    const earA = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.45, 5), mat(0x8cc36a));
+    const earB = earA.clone();
+    earA.position.set(-0.44, 1.86, 0);
+    earA.rotation.z = Math.PI / 2;
+    earB.position.set(0.44, 1.86, 0);
+    earB.rotation.z = -Math.PI / 2;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 0.12), mat(0xc9c7bc));
+    blade.position.set(0.58, 1.1, -0.12);
+    blade.rotation.z = -0.7;
+    group.add(body, head, earA, earB, blade);
+  } else if (def.family === "wolf") {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 0.58), mat(def.color));
+    body.position.y = 0.72;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.5, 0.55), mat(0x706b63));
+    head.position.set(0, 0.88, -0.75);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.8, 6), mat(0x706b63));
+    tail.position.set(0, 0.92, 0.92);
+    tail.rotation.x = Math.PI / 2;
+    for (const lx of [-0.48, 0.48]) {
+      for (const lz of [-0.32, 0.36]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.65, 0.18), mat(0x55524e));
+        leg.position.set(lx, 0.32, lz);
+        group.add(leg);
+      }
+    }
+    group.add(body, head, tail);
+  } else if (def.family === "wisp") {
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12), mat(def.color, 0.72, true));
+    orb.position.y = 1.4;
+    const light = new THREE.PointLight(def.color, 2, 7);
+    light.position.y = 1.5;
+    group.add(orb, light);
+  } else {
+    const core = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 1), mat(0x77736b));
+    core.position.y = 1.45;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.75, 0.75), mat(0x8a857b));
+    head.position.y = 2.6;
+    const armA = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.7, 0.55), mat(0x68645e));
+    const armB = armA.clone();
+    armA.position.set(-1.05, 1.35, 0);
+    armB.position.set(1.05, 1.35, 0);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.25, 10, 8), mat(0xffc557, 0.9, true));
+    glow.position.set(0, 1.55, -0.55);
+    group.add(core, head, armA, armB, glow);
+  }
+  const label = makeLabel(`${def.name} Lv.${def.level}`, "#ffe6ab");
+  label.position.set(0, def.family === "golem" ? 3.4 : 2.25, 0);
+  group.add(label);
+  group.position.set(enemy.position.x, 0, enemy.position.z);
+  group.traverse((obj) => {
+    if (obj.isMesh) obj.castShadow = true;
+  });
+  return group;
+}
+
+function createBossMesh() {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(2.3, 5.2, 6, 12), mat(0x17111f));
+  body.position.y = 3.2;
+  body.rotation.z = Math.PI / 2;
+  const head = new THREE.Mesh(new THREE.ConeGeometry(1.4, 2.2, 6), mat(0x1d1428));
+  head.position.set(0, 3.55, -3.55);
+  head.rotation.x = -Math.PI / 2;
+  const eyeA = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), mat(0xff4a36, 1, true));
+  const eyeB = eyeA.clone();
+  eyeA.position.set(-0.45, 3.72, -4.28);
+  eyeB.position.set(0.45, 3.72, -4.28);
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(0, 0);
+  wingShape.lineTo(4.6, 1.2);
+  wingShape.lineTo(6.2, -2.6);
+  wingShape.lineTo(1.2, -1.4);
+  wingShape.lineTo(0, 0);
+  const wingGeo = new THREE.ShapeGeometry(wingShape);
+  const wingA = new THREE.Mesh(wingGeo, mat(0x21182f, 0.84));
+  const wingB = wingA.clone();
+  wingA.position.set(-1.6, 4.4, -0.4);
+  wingA.rotation.set(-0.28, -0.2, 2.92);
+  wingB.position.set(1.6, 4.4, -0.4);
+  wingB.rotation.set(-0.28, 0.2, 0.22);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.5, 5.5, 8), mat(0x15101c));
+  tail.position.set(0, 2.5, 4.6);
+  tail.rotation.x = Math.PI / 2;
+  const mouth = new THREE.PointLight(0xff4f32, 2.6, 10);
+  mouth.position.set(0, 3.3, -4.1);
+  group.add(body, head, eyeA, eyeB, wingA, wingB, tail, mouth);
+  group.traverse((obj) => {
+    if (obj.isMesh) obj.castShadow = true;
+  });
+  return group;
+}
+
+function loop(now) {
+  if (!game.started) return;
+  const dt = Math.min(game.clock.getDelta(), 0.05);
+  updateMovement(dt);
+  updateLocalEnemies(dt);
+  updateBoss(dt, now);
+  updateMeshes(now);
+  updateCamera();
+  updateHud(now);
+  game.renderer.render(game.scene, game.camera);
+  requestAnimationFrame(loop);
+}
+
+function updateMovement(dt) {
+  const direction = new THREE.Vector3();
+  if (game.input.keys.has("w")) direction.z -= 1;
+  if (game.input.keys.has("s")) direction.z += 1;
+  if (game.input.keys.has("a")) direction.x -= 1;
+  if (game.input.keys.has("d")) direction.x += 1;
+
+  const speed = applyEquipment(game.save).speed * (game.input.keys.has("shift") ? 1.45 : 1);
+  if (direction.lengthSq() > 0) {
+    direction.normalize();
+    const yaw = game.input.yaw;
+    const sin = Math.sin(yaw);
+    const cos = Math.cos(yaw);
+    const worldDir = new THREE.Vector3(direction.x * cos - direction.z * sin, 0, direction.x * sin + direction.z * cos);
+    game.playerVelocity.lerp(worldDir.multiplyScalar(speed), 0.18);
+    game.playerGroup.rotation.y = Math.atan2(game.playerVelocity.x, game.playerVelocity.z);
+  } else {
+    game.playerVelocity.lerp(new THREE.Vector3(0, 0, 0), 0.16);
+  }
+
+  const old = game.playerGroup.position.clone();
+  game.playerGroup.position.addScaledVector(game.playerVelocity, dt);
+  clampToZone(game.playerGroup.position);
+  if (collides(game.playerGroup.position)) {
+    game.playerGroup.position.copy(old);
+  }
+  game.save.health = Math.max(0, Math.min(game.save.maxHealth, game.save.health));
+
+  if (game.online && performance.now() - game.lastMoveSent > 90) {
+    game.lastMoveSent = performance.now();
+    game.socket.emit(NET.PLAYER_MOVE, { position: groupPosition(game.playerGroup) });
+  }
+}
+
+function updateLocalEnemies(dt) {
+  if (game.online || game.zone !== ZONES.FIELD) return;
+  for (const enemy of game.enemies.values()) {
+    const def = getEnemy(enemy.enemyId);
+    if (enemy.health <= 0) continue;
+    const dist = distance2d(enemy.position, groupPosition(game.playerGroup));
+    if (dist < 18 && dist > def.attackRange) {
+      movePointToward(enemy.position, groupPosition(game.playerGroup), def.speed * dt);
+    }
+    if (dist <= def.attackRange && performance.now() - (enemy.lastAttackAt || 0) > def.attackCooldownMs) {
+      enemy.lastAttackAt = performance.now();
+      damagePlayer(calculateIncomingDamage(def.damage, game.save));
+    }
+  }
+}
+
+function updateBoss(dt, now) {
+  if (game.zone !== ZONES.BOSS || !game.boss || game.boss.defeated) return;
+  if (game.bossGroup) {
+    game.bossGroup.rotation.y = Math.sin(now * 0.00045) * 0.16;
+    game.bossGroup.position.y = Math.sin(now * 0.001) * 0.18;
+  }
+  if (!game.online && now >= game.boss.nextAttackAt) {
+    const attackTypes = game.boss.phase === 1 ? ["fire_cone", "tail_sweep", "wing_gust"] : ["fire_cone", "tail_sweep", "wing_gust", "shadow_summon"];
+    const type = attackTypes[Math.floor(Math.random() * attackTypes.length)];
+    game.boss.attack = { type, startedAt: now, resolvesAt: now + 1100, resolved: false };
+    game.boss.nextAttackAt = now + 4200;
+    showTelegraph(type);
+    playUiSound("danger");
+  }
+  if (!game.online && game.boss.attack && now >= game.boss.attack.resolvesAt && !game.boss.attack.resolved) {
+    game.boss.attack.resolved = true;
+    resolveBossAttack(game.boss.attack.type);
+  }
+  if (game.boss.attack && now - game.boss.attack.startedAt > 1900) {
+    clearTelegraphs();
+    game.boss.attack = null;
+  }
+}
+
+function updateMeshes(now) {
+  syncEnemyMeshes();
+  syncLootMeshes();
+  for (const [id, mesh] of game.enemyMeshes.entries()) {
+    const enemy = game.enemies.get(id);
+    if (!enemy) continue;
+    mesh.position.lerp(new THREE.Vector3(enemy.position.x, 0, enemy.position.z), 0.32);
+    mesh.rotation.y += 0.01;
+    fitLabels(mesh);
+    const def = getEnemy(enemy.enemyId);
+    if (def.family === "slime") mesh.scale.y = 1 + Math.sin(now * 0.007 + id.length) * 0.08;
+    if (def.family === "wisp") mesh.position.y = Math.sin(now * 0.004 + id.length) * 0.35;
+  }
+  for (const mesh of game.lootMeshes.values()) {
+    mesh.rotation.y += 0.025;
+    mesh.position.y = 0.25 + Math.sin(now * 0.004 + mesh.id.length) * 0.12;
+  }
+  for (const player of game.remotePlayers.values()) {
+    if (player.target) {
+      player.mesh.position.lerp(player.target, 0.22);
+    }
+    fitLabels(player.mesh);
+  }
+  fitLabels(game.playerGroup);
+}
+
+function updateCamera() {
+  const target = game.playerGroup.position.clone().add(new THREE.Vector3(0, 1.7, 0));
+  const distance = game.input.distance;
+  const yaw = game.input.yaw;
+  const pitch = game.input.pitch;
+  const offset = new THREE.Vector3(
+    Math.sin(yaw) * Math.cos(pitch) * distance,
+    Math.sin(pitch) * distance,
+    Math.cos(yaw) * Math.cos(pitch) * distance
+  );
+  game.camera.position.lerp(target.clone().add(offset), 0.15);
+  game.camera.lookAt(target);
+}
+
+function updateHud(now = performance.now()) {
+  const stats = applyEquipment(game.save);
+  game.save = { ...game.save, ...stats };
+  const zone = getZone(game.zone);
+  ui.heroLabel.textContent = `${game.save.name || "New Hero"}${game.save.title ? `, ${game.save.title}` : ""}`;
+  ui.zoneLabel.textContent = zone.name;
+  ui.healthBar.style.width = `${Math.max(0, (game.save.health / game.save.maxHealth) * 100)}%`;
+  ui.healthText.textContent = `${Math.round(game.save.health)} / ${game.save.maxHealth} HP`;
+  ui.coinsText.textContent = `${game.save.coins} coins`;
+  const prevXp = XP_TABLE[game.save.level - 2] || 0;
+  const nextXp = xpToNextLevel(game.save.level);
+  const xpPct = game.save.level >= XP_TABLE.length ? 100 : ((game.save.xp - prevXp) / Math.max(1, nextXp - prevXp)) * 100;
+  ui.xpBar.style.width = `${THREE.MathUtils.clamp(xpPct, 0, 100)}%`;
+  ui.levelText.textContent = `Level ${game.save.level}`;
+  ui.xpText.textContent = `${game.save.xp} XP`;
+  ui.potionText.textContent = `Potion x${countItem("small_health_potion")}`;
+  const pulse = ABILITIES.hero_pulse;

@@ -1,0 +1,16 @@
+export const NET = {
+  PLAYER_JOIN: "player:join",
+  PLAYER_MOVE: "player:move",
+  PLAYER_ZONE: "player:zone",
+  PLAYER_SAVE: "player:save",
+  WORLD_SNAPSHOT: "world:snapshot",
+  WORLD_EVENT: "world:event",
+  COMBAT_ATTACK: "combat:attack",
+  COMBAT_ABILITY: "combat:ability",
+  LOOT_CLAIM: "loot:claim",
+  PARTY_CREATE: "party:create",
+  PARTY_JOIN: "party:join",
+  PARTY_LEAVE: "party:leave",
+  PARTY_INVITE: "party:invite",
+  BOSS_START: "boss:start"
+};
