@@ -86,6 +86,8 @@ function syncRemotePlayers(players) {
       game.save.learnedAbilities = player.learnedAbilities || game.save.learnedAbilities;
       game.save.hotbar = player.hotbar || game.save.hotbar;
       game.save.skillTreeNodes = player.skillTreeNodes || game.save.skillTreeNodes;
+      game.save.savedBuilds = player.savedBuilds || game.save.savedBuilds;
+      game.save.activeLoadout = player.activeLoadout || game.save.activeLoadout;
       game.save.state = player.state || game.save.state || "alive";
       if (player.respawnAt) {
         game.respawnAt = player.respawnAt;
@@ -237,6 +239,8 @@ function openPanel(panel) {
     settings: renderSettingsPanel,
     shop: renderShopPanel,
     spellbook: renderSpellbookPanel,
+    skillTree: renderSkillTreePanel,
+    loadouts: renderLoadoutPanel,
     mageTrainer: () => renderTrainerPanel("mage"),
     healerTrainer: () => renderTrainerPanel("healer"),
     help: renderHelpPanel,
@@ -513,6 +517,125 @@ function assignAbilityToHotbar(slot, abilityId) {
   renderSpellbookPanel();
 }
 
+function renderSkillTreePanel() {
+  const stats = applyEquipment(game.save);
+  ui.panelTitle.textContent = "Skill Tree";
+  ui.panelContent.innerHTML = `
+    <div class="stat-line"><span>Skill Points</span><strong>${stats.availableSkillPoints}</strong></div>
+    ${Object.values(SKILL_TREES).map((tree) => `
+      <div class="quest-row"><strong>${tree.name}</strong><small>${tree.nodeIds.length} nodes</small></div>
+      ${tree.nodeIds.map((nodeId) => {
+        const node = SKILL_NODES[nodeId];
+        const rank = stats.skillTreeNodes?.[nodeId] || 0;
+        const prereq = (node.prerequisites || []).map((entry) => `${SKILL_NODES[entry.nodeId]?.name || entry.nodeId} ${entry.rank}`).join(", ");
+        return `<div class="item-row">
+          <div><strong>${node.name}</strong><small>${rank}/${node.maxRank}. ${node.description}${prereq ? ` Requires ${prereq}.` : ""}</small></div>
+          <button class="mini-button" data-skill-node="${node.id}" ${rank >= node.maxRank || stats.availableSkillPoints <= 0 ? "disabled" : ""}>+</button>
+        </div>`;
+      }).join("")}
+    `).join("")}
+  `;
+  ui.panelContent.querySelectorAll("[data-skill-node]").forEach((button) => {
+    button.addEventListener("click", () => buySkillTreeNode(button.dataset.skillNode));
+  });
+}
+
+function buySkillTreeNode(nodeId) {
+  if (isLocallyDead()) return toast("You cannot train skill trees while defeated.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_BUY_SKILL_NODE, { nodeId }, (ack) => {
+      if (!ack?.ok) return toast(skillNodeReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("tick");
+      renderSkillTreePanel();
+    });
+    return;
+  }
+  const result = purchaseSkillNode(game.save, nodeId);
+  if (!result.ok) return toast(skillNodeReason(result.reason));
+  game.save = result.player;
+  saveGame();
+  playUiSound("tick");
+  renderSkillTreePanel();
+}
+
+function skillNodeReason(reason) {
+  if (reason === "prerequisite") return "That node needs another node first.";
+  if (reason === "points") return "No skill points available.";
+  if (reason === "max_rank") return "That node is already maxed.";
+  return "That skill node is unavailable.";
+}
+
+function renderLoadoutPanel() {
+  ui.panelTitle.textContent = "Loadouts";
+  const builds = game.save.savedBuilds || {};
+  ui.panelContent.innerHTML = ["A", "B"].map((slot) => {
+    const build = builds[slot];
+    return `<div class="item-row">
+      <div><strong>Loadout ${slot}</strong><small>${build?.label || "Empty build slot"}</small></div>
+      <div class="shop-actions">
+        <button data-save-loadout="${slot}">Save</button>
+        <button data-activate-loadout="${slot}" ${build ? "" : "disabled"}>Activate</button>
+      </div>
+    </div>`;
+  }).join("");
+  ui.panelContent.querySelectorAll("[data-save-loadout]").forEach((button) => {
+    button.addEventListener("click", () => saveCurrentLoadout(button.dataset.saveLoadout));
+  });
+  ui.panelContent.querySelectorAll("[data-activate-loadout]").forEach((button) => {
+    button.addEventListener("click", () => activateSavedLoadout(button.dataset.activateLoadout));
+  });
+}
+
+function saveCurrentLoadout(slot) {
+  const label = `Build ${slot}`;
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_SAVE_LOADOUT, { slot, label }, (ack) => {
+      if (!ack?.ok) return toast("Could not save that loadout.");
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      toast(`Saved Loadout ${slot}.`);
+      renderLoadoutPanel();
+    });
+    return;
+  }
+  const result = saveLoadout(game.save, slot, label);
+  if (!result.ok) return toast("Could not save that loadout.");
+  game.save = result.player;
+  saveGame();
+  toast(`Saved Loadout ${slot}.`);
+  renderLoadoutPanel();
+}
+
+function activateSavedLoadout(slot) {
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_ACTIVATE_LOADOUT, { slot }, (ack) => {
+      if (!ack?.ok) return toast(loadoutReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      applyVisualEquipment(game.playerGroup, game.save);
+      saveGame();
+      toast(`Activated Loadout ${slot}.`);
+      renderLoadoutPanel();
+    });
+    return;
+  }
+  const result = activateLoadout(game.save, slot);
+  if (!result.ok) return toast(loadoutReason(result.reason));
+  game.save = result.player;
+  applyVisualEquipment(game.playerGroup, game.save);
+  saveGame();
+  toast(`Activated Loadout ${slot}.`);
+  renderLoadoutPanel();
+}
+
+function loadoutReason(reason) {
+  if (reason === "ability") return "That loadout uses an unlearned ability.";
+  if (reason === "item") return "That loadout uses missing equipment.";
+  if (reason === "combat") return "Leave combat before changing loadouts.";
+  return "That loadout is unavailable.";
+}
+
 function renderHelpPanel() {
   ui.panelTitle.textContent = "Help";
   ui.panelContent.innerHTML = `
@@ -554,7 +677,9 @@ function applyServerPlayerUpdate(player) {
     inventory: player.inventory || game.save.inventory,
     learnedAbilities: player.learnedAbilities || game.save.learnedAbilities,
     hotbar: player.hotbar || game.save.hotbar,
-    skillTreeNodes: player.skillTreeNodes || game.save.skillTreeNodes
+    skillTreeNodes: player.skillTreeNodes || game.save.skillTreeNodes,
+    savedBuilds: player.savedBuilds || game.save.savedBuilds,
+    activeLoadout: player.activeLoadout || game.save.activeLoadout
   });
   game.save = applyEquipment(game.save);
 }

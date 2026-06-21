@@ -3,6 +3,7 @@ import { NET } from "../../shared/netMessages.js";
 import { addInventoryItem, addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
 import { spendAttributePoint, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, purchaseTrainerAbility } from "../../shared/trainers.js";
+import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
 import { applyQuestKill } from "../../shared/quests.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
 import { LootSystem } from "./LootSystem.js";
@@ -98,6 +99,27 @@ export class RoomManager {
     socket.on(NET.PLAYER_ASSIGN_HOTBAR, (payload, ack) => {
       const player = this.players.get(socket.id);
       const result = this.assignHotbar(player, payload?.slot, payload?.abilityId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_BUY_SKILL_NODE, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.buySkillNode(player, payload?.nodeId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_SAVE_LOADOUT, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.saveBuildLoadout(player, payload?.slot, payload?.label);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_ACTIVATE_LOADOUT, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.activateBuildLoadout(player, payload?.slot);
       ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
       if (result.ok) this.broadcastSnapshots();
     });
@@ -231,6 +253,30 @@ export class RoomManager {
   assignHotbar(player, slot, abilityId) {
     if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
     const result = assignHotbarAbility(player, slot, abilityId);
+    if (!result.ok) return result;
+    Object.assign(player, result.player);
+    return { ok: true };
+  }
+
+  buySkillNode(player, nodeId) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = purchaseSkillNode(player, nodeId);
+    if (!result.ok) return result;
+    Object.assign(player, result.player);
+    return { ok: true, node: result.node };
+  }
+
+  saveBuildLoadout(player, slot, label) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = saveLoadout(player, slot, label);
+    if (!result.ok) return result;
+    Object.assign(player, result.player);
+    return { ok: true };
+  }
+
+  activateBuildLoadout(player, slot) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = activateLoadout(player, slot);
     if (!result.ok) return result;
     Object.assign(player, result.player);
     return { ok: true };

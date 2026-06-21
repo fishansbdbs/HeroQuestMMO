@@ -9,6 +9,7 @@ import { NET } from "../../shared/netMessages.js";
 import { ICEZERO_MIGRATION_ID, migrateIceZeroSave } from "../../shared/saveMigration.js";
 import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from "../../shared/trainers.js";
+import { activateLoadout, purchaseSkillNode, saveLoadout, SKILL_NODES, SKILL_TREES } from "../../shared/skillTrees.js";
 import { applyQuestKill, createQuestProgress, getQuestList } from "../../shared/quests.js";
 import { getZone, ZONE_DEFS } from "../../shared/zones.js";
 import {
@@ -95,6 +96,11 @@ const bootRuntime = new Function(
   "assignHotbarAbility",
   "getTrainerAbilities",
   "purchaseTrainerAbility",
+  "activateLoadout",
+  "purchaseSkillNode",
+  "saveLoadout",
+  "SKILL_NODES",
+  "SKILL_TREES",
   "env",
   `"use strict";\n${runtimeSource}`
 );
@@ -144,5 +150,10 @@ bootRuntime(
   assignHotbarAbility,
   getTrainerAbilities,
   purchaseTrainerAbility,
+  activateLoadout,
+  purchaseSkillNode,
+  saveLoadout,
+  SKILL_NODES,
+  SKILL_TREES,
   import.meta.env
 );

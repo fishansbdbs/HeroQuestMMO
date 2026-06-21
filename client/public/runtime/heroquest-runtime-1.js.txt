@@ -235,6 +235,7 @@ function bootstrap() {
   if (smoke) {
     const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : ZONES.HUB;
     const phase2Smoke = params.get("phase2") === "progression";
+    const phase4Smoke = params.get("phase4") === "trees";
     game.save = applyEquipment({
       ...game.save,
       name: "SmokeTester",
@@ -242,8 +243,11 @@ function bootstrap() {
       xp: phase2Smoke ? 260 : game.save.xp,
       coins: phase2Smoke ? 150 : game.save.coins,
       inventory: phase2Smoke ? addInventoryItem(game.save.inventory || [], "rest_stone", 1) : game.save.inventory,
-      learnedAbilities: phase2Smoke ? [] : game.save.learnedAbilities,
-      hotbar: phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
+      learnedAbilities: phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
+      hotbar: phase4Smoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null] : phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
+      skillTreeNodes: phase4Smoke ? {} : game.save.skillTreeNodes,
+      savedBuilds: phase4Smoke ? {} : game.save.savedBuilds,
+      activeLoadout: phase4Smoke ? null : game.save.activeLoadout,
       zone,
       settings: { ...game.save.settings, showFps: true }
     });
@@ -344,6 +348,7 @@ function saveGame() {
     learnedAbilities: game.save.learnedAbilities || [],
     hotbar: game.save.hotbar,
     savedBuilds: game.save.savedBuilds,
+    activeLoadout: game.save.activeLoadout,
     bestiaryProgress: game.save.bestiaryProgress,
     zoneCompletion: game.save.zoneCompletion,
     waypoints: game.save.waypoints,
@@ -485,6 +490,8 @@ function buildHud() {
         <button class="icon" data-panel="inventory" title="Inventory (I)">I</button>
         <button class="icon" data-panel="character" title="Character (C)">C</button>
         <button class="icon" data-panel="spellbook" title="Spellbook (K)">K</button>
+        <button class="icon" data-panel="skillTree" title="Skill Tree (N)">N</button>
+        <button class="icon" data-panel="loadouts" title="Loadouts (B)">B</button>
         <button class="icon" data-panel="party" title="Party (P)">P</button>
         <button class="icon" data-panel="quests" title="Quest Log (M)">M</button>
         <button class="icon" data-panel="settings" title="Settings (Esc)">S</button>
@@ -617,6 +624,8 @@ function setupInput() {
     if (key === "i") openPanel("inventory");
     if (key === "c") openPanel("character");
     if (key === "k") openPanel("spellbook");
+    if (key === "n") openPanel("skillTree");
+    if (key === "b") openPanel("loadouts");
     if (key === "p") openPanel("party");
     if (key === "m") openPanel("quests");
     if (key === "h") openPanel("help");
@@ -715,6 +724,7 @@ function serializeForServer() {
     learnedAbilities: game.save.learnedAbilities || [],
     hotbar: game.save.hotbar,
     savedBuilds: game.save.savedBuilds,
+    activeLoadout: game.save.activeLoadout,
     bestiaryProgress: game.save.bestiaryProgress,
     zoneCompletion: game.save.zoneCompletion,
     waypoints: game.save.waypoints,

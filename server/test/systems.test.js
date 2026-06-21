@@ -12,6 +12,7 @@ import {
   useRestStone
 } from "../../shared/progression.js";
 import { assignHotbarAbility, purchaseTrainerAbility, validateAbilityTarget } from "../../shared/trainers.js";
+import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
 import { applyQuestKill, createQuestProgress } from "../../shared/quests.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
@@ -78,6 +79,11 @@ test("client runtime chunks compile after concatenation", () => {
       "assignHotbarAbility",
       "getTrainerAbilities",
       "purchaseTrainerAbility",
+      "activateLoadout",
+      "purchaseSkillNode",
+      "saveLoadout",
+      "SKILL_NODES",
+      "SKILL_TREES",
       "env",
       `"use strict";\n${runtimeSource}`
     );
@@ -357,6 +363,74 @@ test("ability targeting and hotbar assignment reject invalid friendly or hostile
   const invalid = assignHotbarAbility(player, 3, "fireball");
   assert.equal(invalid.ok, false);
   assert.equal(invalid.reason, "not_learned");
+});
+
+test("skill trees enforce prerequisites, ranks, and skill point spending", () => {
+  const player = applyEquipment({
+    ...STARTING_PLAYER,
+    level: 5,
+    xp: 420,
+    availableSkillPoints: 4,
+    skillTreeNodes: {}
+  });
+
+  const blocked = purchaseSkillNode(player, "heavy_slash");
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.reason, "prerequisite");
+
+  const rank1 = purchaseSkillNode(player, "might_training");
+  assert.equal(rank1.ok, true);
+  assert.equal(rank1.player.skillTreeNodes.might_training, 1);
+  assert.equal(rank1.player.availableSkillPoints, 3);
+
+  const rank2 = purchaseSkillNode(rank1.player, "might_training");
+  const heavy = purchaseSkillNode(rank2.player, "heavy_slash");
+  assert.equal(heavy.ok, true);
+  assert.equal(heavy.player.skillTreeNodes.heavy_slash, 1);
+  assert.equal(heavy.player.availableSkillPoints, 1);
+
+  const noPoints = purchaseSkillNode({
+    ...heavy.player,
+    skillTreeNodes: { might_training: 2, heavy_slash: 1, iron_body: 1 }
+  }, "mana_flow");
+  assert.equal(noPoints.ok, false);
+  assert.equal(noPoints.reason, "points");
+});
+
+test("loadouts save and activate owned abilities and equipment without duplicating items", () => {
+  const player = applyEquipment({
+    ...STARTING_PLAYER,
+    level: 5,
+    xp: 420,
+    inventory: [{ itemId: "stone_club", quantity: 1 }],
+    equippedWeapon: "stone_club",
+    equippedArmor: "traveler_tunic",
+    learnedAbilities: ["hero_pulse"],
+    hotbar: ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null],
+    skillTreeNodes: { might_training: 2 },
+    savedBuilds: {}
+  });
+
+  const saved = saveLoadout(player, "A", "Pulse Might");
+  assert.equal(saved.ok, true);
+  assert.equal(saved.player.savedBuilds.A.label, "Pulse Might");
+
+  const changed = {
+    ...saved.player,
+    equippedWeapon: "wooden_sword",
+    hotbar: ["auto", "slash", null, "guard", "potion", "dash", null, null],
+    skillTreeNodes: {}
+  };
+  const activated = activateLoadout(changed, "A");
+  assert.equal(activated.ok, true);
+  assert.equal(activated.player.equippedWeapon, "stone_club");
+  assert.equal(activated.player.hotbar[2], "hero_pulse");
+  assert.equal(activated.player.skillTreeNodes.might_training, 2);
+  assert.deepEqual(activated.player.inventory, [{ itemId: "stone_club", quantity: 1 }]);
+
+  const missingAbility = activateLoadout({ ...changed, learnedAbilities: [] }, "A");
+  assert.equal(missingAbility.ok, false);
+  assert.equal(missingAbility.reason, "ability");
 });
 
 test("enemy defeat produces rewards and marks quest progress", () => {

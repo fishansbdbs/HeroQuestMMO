@@ -69,7 +69,9 @@ export function sanitizePlayer(player) {
     inventory: player.inventory,
     learnedAbilities: player.learnedAbilities,
     hotbar: player.hotbar,
-    skillTreeNodes: player.skillTreeNodes
+    skillTreeNodes: player.skillTreeNodes,
+    savedBuilds: player.savedBuilds,
+    activeLoadout: player.activeLoadout
   };
 }
 
