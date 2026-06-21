@@ -71,7 +71,7 @@ function swingWeapon(kind = "auto") {
 function slashTrail(kind = "auto") {
   const color = kind === "slash" ? 0xffe38b : 0xd7d6ce;
   const trail = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.035, 8, 38, Math.PI * 1.2), mat(color, 0.62, true));
-  const forward = new THREE.Vector3(Math.sin(game.playerGroup.rotation.y), 0, Math.cos(game.playerGroup.rotation.y));
+  const forward = new THREE.Vector3(-Math.sin(game.playerGroup.rotation.y), 0, -Math.cos(game.playerGroup.rotation.y));
   trail.position.copy(game.playerGroup.position).addScaledVector(forward, 1.08);
   trail.position.y = 1.25;
   trail.rotation.set(Math.PI / 2, 0, game.playerGroup.rotation.y - Math.PI * 0.72);

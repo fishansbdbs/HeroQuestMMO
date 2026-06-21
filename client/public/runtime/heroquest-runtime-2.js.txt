@@ -250,6 +250,12 @@ function createHumanoidMesh({ name, color, local = false, skin = 0xf7f4ec, accen
   addPart("rightFoot", [0.36, 0.18, 0.52], [0.25, 0.12, -0.12], accent);
   addPart("backSash", [0.24, 1.1, 0.08], [0, 1.35, 0.31], accent);
 
+  const rightHandAnchor = new THREE.Group();
+  rightHandAnchor.position.set(0.04, -0.42, -0.16);
+  rightHandAnchor.userData.baseRotation = rightHandAnchor.rotation.clone();
+  parts.rightLowerArm.add(rightHandAnchor);
+  parts.rightHandAnchor = rightHandAnchor;
+
   const sword = new THREE.Group();
   const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.52, 0.12), mat(0xd7d6ce));
   const guard = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.1, 0.14), mat(0xd1a64f));
@@ -258,10 +264,11 @@ function createHumanoidMesh({ name, color, local = false, skin = 0xf7f4ec, accen
   guard.position.y = -0.18;
   handle.position.y = -0.42;
   sword.add(blade, guard, handle);
-  sword.position.set(0.89, 1.08, -0.32);
-  sword.rotation.set(0.22, 0.1, -0.42);
+  sword.position.set(0.02, 0.2, -0.08);
+  sword.rotation.set(-0.58, 0.22, -0.58);
   sword.userData.baseRotation = sword.rotation.clone();
-  group.add(sword);
+  rightHandAnchor.add(sword);
+  parts.weaponGroup = sword;
   parts.sword = sword;
   parts.blade = blade;
   parts.guard = guard;
@@ -508,7 +515,7 @@ function animateHumanoid(group, now, movement = 0) {
     if (parts.rightUpperArm) parts.rightUpperArm.rotation.x = -1.15 - arc * 0.72;
     if (parts.rightLowerArm) parts.rightLowerArm.rotation.x = -0.35 - arc * 0.5;
     if (parts.torso) parts.torso.rotation.z = -0.08 * arc;
-    if (parts.sword) parts.sword.rotation.z = -1.02 + arc * 1.65;
+    if (parts.sword) parts.sword.rotation.set(-0.72 - arc * 0.45, 0.25, -0.92 + arc * 1.55);
   } else if (group === game.playerGroup && game.guardUntil > now) {
     if (parts.rightUpperArm) parts.rightUpperArm.rotation.x = -0.95;
     if (parts.leftUpperArm) parts.leftUpperArm.rotation.x = -0.55;
@@ -537,27 +544,33 @@ function updateMovement(dt) {
     game.playerVelocity.set(0, 0, 0);
     return;
   }
-  const direction = new THREE.Vector3();
-  if (game.input.keys.has("w")) direction.z -= 1;
-  if (game.input.keys.has("s")) direction.z += 1;
-  if (game.input.keys.has("a")) direction.x -= 1;
-  if (game.input.keys.has("d")) direction.x += 1;
+  const moveInput = { forward: 0, strafe: 0 };
+  if (game.input.keys.has("w")) moveInput.forward += 1;
+  if (game.input.keys.has("s")) moveInput.forward -= 1;
+  if (game.input.keys.has("a")) moveInput.strafe -= 1;
+  if (game.input.keys.has("d")) moveInput.strafe += 1;
 
   const speed = applyEquipment(game.save).speed * (game.input.keys.has("shift") ? 1.45 : 1);
-  if (direction.lengthSq() > 0) {
-    direction.normalize();
-    const yaw = game.input.yaw;
-    const sin = Math.sin(yaw);
-    const cos = Math.cos(yaw);
-    const worldDir = new THREE.Vector3(direction.x * cos - direction.z * sin, 0, direction.x * sin + direction.z * cos);
-    game.playerVelocity.lerp(worldDir.multiplyScalar(speed), 0.18);
-    game.playerGroup.rotation.y = Math.atan2(game.playerVelocity.x, game.playerVelocity.z);
+  if (moveInput.forward !== 0 || moveInput.strafe !== 0) {
+    const cameraForward = new THREE.Vector3();
+    game.camera.getWorldDirection(cameraForward);
+    // Movement is camera-relative on the XZ plane; the blocky hero's visible front is local -Z.
+    const moveDir = createCameraRelativeMove(moveInput, cameraForward);
+    const worldDir = new THREE.Vector3(moveDir.x, 0, moveDir.z);
+    game.playerVelocity.lerp(worldDir.clone().multiplyScalar(speed), 0.22);
+    game.playerGroup.rotation.y = smoothAngleToward(
+      game.playerGroup.rotation.y,
+      visualYawForMoveDirection(worldDir),
+      THREE.MathUtils.clamp(dt * 14, 0, 1)
+    );
   } else {
     game.playerVelocity.lerp(new THREE.Vector3(0, 0, 0), 0.16);
   }
 
   const old = game.playerGroup.position.clone();
+  const stableY = game.playerGroup.position.y;
   game.playerGroup.position.addScaledVector(game.playerVelocity, dt);
+  game.playerGroup.position.y = stableY;
   clampToZone(game.playerGroup.position);
   if (collides(game.playerGroup.position)) {
     game.playerGroup.position.copy(old);

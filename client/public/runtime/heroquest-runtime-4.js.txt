@@ -167,7 +167,7 @@ function dash() {
   const now = performance.now();
   if (game.cooldowns.dash && now - game.cooldowns.dash < ABILITIES.dash.cooldownMs) return;
   game.cooldowns.dash = now;
-  const forward = new THREE.Vector3(Math.sin(game.playerGroup.rotation.y), 0, Math.cos(game.playerGroup.rotation.y));
+  const forward = new THREE.Vector3(-Math.sin(game.playerGroup.rotation.y), 0, -Math.cos(game.playerGroup.rotation.y));
   dashTrail();
   game.playerGroup.position.addScaledVector(forward, ABILITIES.dash.distance);
   clampToZone(game.playerGroup.position);

@@ -19,6 +19,7 @@ import {
   rollLoot,
   xpToNextLevel
 } from "../../shared/combat.js";
+import { createCameraRelativeMove, smoothAngleToward, visualYawForMoveDirection } from "../../shared/movement.js";
 
 const runtimeParts = [
   "/runtime/heroquest-runtime-1.js.txt",
@@ -34,9 +35,11 @@ const runtimeParts = [
   "/runtime/heroquest-runtime-9.js.txt"
 ];
 
+const runtimeCacheKey = import.meta.env.DEV ? `${GAME_VERSION}-${Date.now()}` : GAME_VERSION;
+
 const runtimeSource = await Promise.all(
   runtimeParts.map(async (path) => {
-    const response = await fetch(path);
+    const response = await fetch(`${path}?v=${encodeURIComponent(runtimeCacheKey)}`);
     if (!response.ok) {
       throw new Error(`Could not load runtime chunk: ${path}`);
     }
@@ -76,6 +79,9 @@ const bootRuntime = new Function(
   "distance2d",
   "rollLoot",
   "xpToNextLevel",
+  "createCameraRelativeMove",
+  "smoothAngleToward",
+  "visualYawForMoveDirection",
   "env",
   `"use strict";\n${runtimeSource}`
 );
@@ -112,5 +118,8 @@ bootRuntime(
   distance2d,
   rollLoot,
   xpToNextLevel,
+  createCameraRelativeMove,
+  smoothAngleToward,
+  visualYawForMoveDirection,
   import.meta.env
 );

@@ -121,7 +121,87 @@ const game = {
   localLootId: 1
 };
 
+const isLocalSmoke = ["localhost", "127.0.0.1"].includes(window.location.hostname) && new URLSearchParams(window.location.search).has("smoke");
+if (env.DEV || isLocalSmoke) installDebugHooks();
+
 bootstrap();
+
+function installDebugHooks() {
+  if (typeof window === "undefined") return;
+  const debugState = document.createElement("script");
+  debugState.type = "application/json";
+  debugState.id = "heroquest-debug-state";
+  debugState.hidden = true;
+  document.documentElement.appendChild(debugState);
+
+  window.__heroQuestDebug = {
+    snapshot() {
+      const parts = game.playerGroup?.userData?.parts || {};
+      const position = game.playerGroup ? groupPosition(game.playerGroup) : null;
+      return {
+        version: GAME_VERSION,
+        started: game.started,
+        zone: game.zone,
+        position,
+        rotationY: game.playerGroup?.rotation.y ?? 0,
+        velocity: {
+          x: game.playerVelocity.x,
+          y: game.playerVelocity.y,
+          z: game.playerVelocity.z
+        },
+        camera: game.camera
+          ? {
+              x: game.camera.position.x,
+              y: game.camera.position.y,
+              z: game.camera.position.z,
+              yaw: game.input.yaw,
+              pitch: game.input.pitch
+            }
+          : null,
+        keys: [...game.input.keys],
+        weapon: {
+          hasRightHandAnchor: Boolean(parts.rightHandAnchor),
+          hasWeaponGroup: Boolean(parts.weaponGroup),
+          swordParentedToHand: Boolean(parts.sword && parts.sword.parent === parts.rightHandAnchor),
+          swordRotation: parts.sword
+            ? {
+                x: parts.sword.rotation.x,
+                y: parts.sword.rotation.y,
+                z: parts.sword.rotation.z
+              }
+            : null
+        }
+      };
+    },
+    setKey(key, down = true) {
+      if (down) game.input.keys.add(String(key).toLowerCase());
+      else game.input.keys.delete(String(key).toLowerCase());
+    },
+    setCamera(yaw, pitch = game.input.pitch) {
+      game.input.yaw = yaw;
+      game.input.pitch = THREE.MathUtils.clamp(pitch, 0.22, 1.05);
+      if (game.started) updateCamera();
+    },
+    action(action) {
+      handleHotbarAction(action);
+    }
+  };
+
+  const publishDebugState = () => {
+    debugState.textContent = JSON.stringify(window.__heroQuestDebug.snapshot());
+  };
+
+  document.addEventListener("heroquest-debug-command", (event) => {
+    const detail = event.detail || {};
+    if (detail.type === "key") window.__heroQuestDebug.setKey(detail.key, detail.down);
+    if (detail.type === "camera") window.__heroQuestDebug.setCamera(detail.yaw, detail.pitch);
+    if (detail.type === "action") window.__heroQuestDebug.action(detail.action);
+    publishDebugState();
+  });
+
+  setInterval(publishDebugState, 120);
+  publishDebugState();
+}
 
 function bootstrap() {
   const params = new URLSearchParams(window.location.search);
@@ -226,7 +306,7 @@ function renderMainMenu() {
             <div class="kicker">Version ${GAME_VERSION}</div>
             <h1>HeroQuest MMO</h1>
           </div>
-          <div class="status-pill">Black Screen Hotfix</div>
+          <div class="status-pill">Movement & Weapon Hold Fix</div>
         </div>
         <p class="intro">
           The old kingdoms fell when shadow rifts opened across the world. From those rifts came slimes, goblins, wolves, wisps, golems, and greater beasts of darkness. Now new heroes gather in the town of Dawnrest, taking up simple weapons to push back the shadows one quest at a time.

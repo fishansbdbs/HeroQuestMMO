@@ -1,4 +1,4 @@
-export const GAME_VERSION = "1.2.3";
+export const GAME_VERSION = "1.2.4";
 
 export const ZONES = {
   HUB: "hub",
@@ -42,6 +42,30 @@ export const SNAPSHOT_MS = 120;
 export const PATCH_NOTES = {
   title: "HeroQuest MMO Patch Notes",
   versions: [
+    {
+      version: "1.2.4",
+      title: "Movement & Weapon Hold Fix",
+      date: "2026-06-21",
+      summary: "Camera-relative movement now faces the hero correctly, with clearer held-weapon visuals.",
+      sections: [
+        {
+          title: "Movement",
+          items: [
+            "Fixed third-person WASD movement direction.",
+            "Improved camera-relative movement.",
+            "Fixed character rotation facing the wrong way.",
+            "Improved player movement feel."
+          ]
+        },
+        {
+          title: "Weapons",
+          items: [
+            "Fixed sword attachment so weapons are held in the hand.",
+            "Improved sword swing visuals."
+          ]
+        }
+      ]
+    },
     {
       version: "1.2.3",
       title: "Black Screen Hotfix",

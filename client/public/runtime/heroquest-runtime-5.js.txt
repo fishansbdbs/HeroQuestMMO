@@ -203,7 +203,7 @@ function startCombatDemo() {
   const target = [...game.enemies.values()].sort((a, b) => b.maxHealth - a.maxHealth)[0];
   if (!target) return;
   game.playerGroup.position.set(target.position.x - 2.2, 0, target.position.z + 0.4);
-  game.playerGroup.rotation.y = Math.atan2(2.2, -0.4);
+  game.playerGroup.rotation.y = visualYawForMoveDirection({ x: 2.2, z: -0.4 });
   if (game.online) game.socket.emit(NET.PLAYER_MOVE, { position: groupPosition(game.playerGroup) });
   selectTarget(target);
   game.cooldowns.attack = 0;

@@ -13,6 +13,10 @@ import { BossSystem } from "../src/BossSystem.js";
 import { createPlayerState } from "../src/PlayerState.js";
 import { RoomManager } from "../src/RoomManager.js";
 
+const nearlyEqual = (actual, expected, epsilon = 0.000001) => {
+  assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be within ${epsilon} of ${expected}`);
+};
+
 test("client runtime chunks compile after concatenation", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
@@ -53,10 +57,62 @@ test("client runtime chunks compile after concatenation", () => {
       "distance2d",
       "rollLoot",
       "xpToNextLevel",
+      "createCameraRelativeMove",
+      "smoothAngleToward",
+      "visualYawForMoveDirection",
       "env",
       `"use strict";\n${runtimeSource}`
     );
   });
+});
+
+test("camera-relative movement maps WASD to flattened camera forward and right", async () => {
+  const { createCameraRelativeMove } = await import("../../shared/movement.js");
+  const cameraForward = { x: 0, y: -0.35, z: -1 };
+
+  const forward = createCameraRelativeMove({ forward: 1, strafe: 0 }, cameraForward);
+  nearlyEqual(forward.x, 0);
+  nearlyEqual(forward.y, 0);
+  nearlyEqual(forward.z, -1);
+
+  const backward = createCameraRelativeMove({ forward: -1, strafe: 0 }, cameraForward);
+  nearlyEqual(backward.x, 0);
+  nearlyEqual(backward.z, 1);
+
+  const left = createCameraRelativeMove({ forward: 0, strafe: -1 }, cameraForward);
+  nearlyEqual(left.x, -1);
+  nearlyEqual(left.z, 0);
+
+  const right = createCameraRelativeMove({ forward: 0, strafe: 1 }, cameraForward);
+  nearlyEqual(right.x, 1);
+  nearlyEqual(right.z, 0);
+
+  const diagonal = createCameraRelativeMove({ forward: 1, strafe: 1 }, cameraForward);
+  nearlyEqual(Math.hypot(diagonal.x, diagonal.z), 1);
+});
+
+test("visual yaw faces the blocky hero front toward movement without a 180 degree flip", async () => {
+  const { shortestAngleDelta, smoothAngleToward, visualYawForMoveDirection } = await import("../../shared/movement.js");
+
+  nearlyEqual(visualYawForMoveDirection({ x: 0, z: -1 }), 0);
+  nearlyEqual(visualYawForMoveDirection({ x: 1, z: 0 }), -Math.PI / 2);
+  nearlyEqual(Math.abs(visualYawForMoveDirection({ x: 0, z: 1 })), Math.PI);
+
+  const current = Math.PI - 0.1;
+  const target = -Math.PI + 0.1;
+  const next = smoothAngleToward(current, target, 0.5);
+
+  assert.ok(Math.abs(next) > 3);
+  assert.ok(Math.abs(shortestAngleDelta(next, target)) < Math.abs(shortestAngleDelta(current, target)));
+});
+
+test("player weapon is parented to a right hand anchor for held sword animation", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-2.js.txt"), "utf8");
+
+  assert.match(runtimeSource, /rightHandAnchor/);
+  assert.match(runtimeSource, /rightLowerArm\.add\(rightHandAnchor\)|parts\.rightLowerArm\.add\(rightHandAnchor\)/);
+  assert.match(runtimeSource, /parts\.weaponGroup/);
 });
 
 test("equipment and XP rewards update player stats", () => {
