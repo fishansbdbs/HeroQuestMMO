@@ -226,7 +226,7 @@ function renderMainMenu() {
             <div class="kicker">Version ${GAME_VERSION}</div>
             <h1>HeroQuest MMO</h1>
           </div>
-          <div class="status-pill">Core Fixes & Boss Telegraphs</div>
+          <div class="status-pill">Black Screen Hotfix</div>
         </div>
         <p class="intro">
           The old kingdoms fell when shadow rifts opened across the world. From those rifts came slimes, goblins, wolves, wisps, golems, and greater beasts of darkness. Now new heroes gather in the town of Dawnrest, taking up simple weapons to push back the shadows one quest at a time.

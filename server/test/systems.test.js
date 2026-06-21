@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment, addProgressRewards, calculateIncomingDamage } from "../../shared/combat.js";
 import { applyQuestKill, createQuestProgress } from "../../shared/quests.js";
@@ -10,6 +12,52 @@ import { CombatSystem } from "../src/CombatSystem.js";
 import { BossSystem } from "../src/BossSystem.js";
 import { createPlayerState } from "../src/PlayerState.js";
 import { RoomManager } from "../src/RoomManager.js";
+
+test("client runtime chunks compile after concatenation", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
+  const runtimeSource = runtimeParts
+    .map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8"))
+    .join("\n");
+
+  assert.doesNotThrow(() => {
+    new Function(
+      "THREE",
+      "io",
+      "ABILITIES",
+      "BOSS",
+      "ENEMIES",
+      "FIELD_SPAWNS",
+      "getEnemy",
+      "GAME_VERSION",
+      "PATCH_NOTES",
+      "PLAYER_LIMITS",
+      "STARTING_PLAYER",
+      "XP_TABLE",
+      "ZONES",
+      "getItem",
+      "ITEMS",
+      "STARTER_INVENTORY",
+      "NET",
+      "applyQuestKill",
+      "createQuestProgress",
+      "getQuestList",
+      "getZone",
+      "ZONE_DEFS",
+      "addInventoryItem",
+      "addProgressRewards",
+      "applyEquipment",
+      "calculateIncomingDamage",
+      "calculatePlayerDamage",
+      "consumeInventoryItem",
+      "distance2d",
+      "rollLoot",
+      "xpToNextLevel",
+      "env",
+      `"use strict";\n${runtimeSource}`
+    );
+  });
+});
 
 test("equipment and XP rewards update player stats", () => {
   const player = applyEquipment({

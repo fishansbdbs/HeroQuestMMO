@@ -162,20 +162,20 @@ function addCrystal(x, z, color) {
 
 function addChest(x, z, id = `chest_${game.chests.size + 1}`) {
   const group = new THREE.Group();
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1.2), mat(0x8d5d2e));
-  chest.position.set(0, 0.55, 0);
+  const chestMesh = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1.2), mat(0x8d5d2e));
+  chestMesh.position.set(0, 0.55, 0);
   const lid = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.25, 1.3), mat(0xd8b263));
   lid.position.set(0, 1.15, 0);
   const glow = new THREE.PointLight(0xffd27a, 0.8, 5);
   glow.position.set(0, 1.5, 0);
-  group.add(chest, lid, glow);
+  group.add(chestMesh, lid, glow);
   group.position.set(x, 0, z);
   group.userData.chestId = id;
   group.userData.lid = lid;
   game.world.add(group);
-  const chest = { id, x, z, position: { x, y: 0.25, z }, opened: false, mesh: group };
-  game.chests.set(id, chest);
-  setChestOpened(chest, game.save.openedChests?.includes(id));
+  const chestState = { id, x, z, position: { x, y: 0.25, z }, opened: false, mesh: group };
+  game.chests.set(id, chestState);
+  setChestOpened(chestState, game.save.openedChests?.includes(id));
   addWorldLabel("Treasure", x, 2.2, z);
 }
 

@@ -1,4 +1,4 @@
-export const GAME_VERSION = "1.2.2";
+export const GAME_VERSION = "1.2.3";
 
 export const ZONES = {
   HUB: "hub",
@@ -42,6 +42,22 @@ export const SNAPSHOT_MS = 120;
 export const PATCH_NOTES = {
   title: "HeroQuest MMO Patch Notes",
   versions: [
+    {
+      version: "1.2.3",
+      title: "Black Screen Hotfix",
+      date: "2026-06-21",
+      summary: "Emergency stabilization for the v1.2.2 runtime bundle while preserving chest interactions.",
+      sections: [
+        {
+          title: "Hotfix",
+          items: [
+            "Fixed fatal duplicate chest variable declaration causing black screen.",
+            "Added duplicate declaration scan for recent loot/shop/chest changes.",
+            "Preserved treasure chest interaction where possible."
+          ]
+        }
+      ]
+    },
     {
       version: "1.2.2",
       title: "Core Fixes & Boss Telegraphs",
