@@ -1,4 +1,4 @@
-import { rollLoot } from "../../shared/combat.js";
+import { distance2d, isPlayerDead, rollLoot } from "../../shared/combat.js";
 
 export class LootSystem {
   constructor(rng = Math.random) {
@@ -29,6 +29,18 @@ export class LootSystem {
     if (bag.ownerId && bag.ownerId !== playerId) return null;
     this.lootBags.delete(lootId);
     return bag;
+  }
+
+  claimForPlayer({ lootId, player, range = 4 }) {
+    const bag = this.lootBags.get(lootId);
+    if (!player) return { ok: false, reason: "missing_player" };
+    if (isPlayerDead(player)) return { ok: false, reason: "dead" };
+    if (!bag) return { ok: false, reason: "missing" };
+    if (bag.ownerId && bag.ownerId !== player.id) return { ok: false, reason: "owner" };
+    if (bag.zone && bag.zone !== player.zone) return { ok: false, reason: "zone" };
+    if (distance2d(player.position, bag.position) > range) return { ok: false, reason: "range" };
+    this.lootBags.delete(lootId);
+    return { ok: true, bag };
   }
 
   cleanup(maxAgeMs = 90000) {

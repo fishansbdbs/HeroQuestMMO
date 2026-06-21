@@ -17,8 +17,8 @@ function buildField() {
   for (let i = 0; i < 22; i += 1) addRock(randomRange(-48, 48), randomRange(-48, 48), 0.7 + Math.random() * 1.2);
   addCrystal(-30, 28, 0x95fff2);
   addCrystal(30, 24, 0xf0c06d);
-  addChest(-8, 22);
-  addChest(20, -22);
+  addChest(-8, 22, "field_north_cache");
+  addChest(20, -22, "field_south_cache");
   addPortal(0, 37, "Dawnrest", ZONES.HUB, 0x84bdff);
   addPortal(36, -34, "Shadow Peak", ZONES.BOSS, 0xff6b57, 3);
 }
@@ -109,21 +109,25 @@ function addBoard(x, z, label) {
 }
 
 function addDummy(x, z) {
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 2.6, 8), mat(0xc19458));
-  body.position.set(x, 1.3, z);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.48, 10, 8), mat(0xb6854d));
-  head.position.set(x, 2.85, z);
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 0.25), mat(0x7a5030));
-  arm.position.set(x, 2.1, z);
-  game.world.add(body, head, arm);
+  const def = getEnemy("training_dummy");
+  game.enemies.set("training_dummy", {
+    id: "training_dummy",
+    enemyId: "training_dummy",
+    zone: ZONES.HUB,
+    health: def.maxHealth,
+    maxHealth: def.maxHealth,
+    localOnly: true,
+    position: { x, y: 0, z }
+  });
   addWorldLabel("Training Dummy", x, 3.55, z);
 }
 
-function addNpc(x, z, label) {
-  const npc = createPlayerMesh(label, 0xf0c06d, false);
+function addNpc(x, z, label, dialogueId, color = 0xf0c06d) {
+  const npc = createPlayerMesh(label, color, false, { npc: true });
   npc.scale.setScalar(0.82);
   npc.position.set(x, 0, z);
   game.world.add(npc);
+  game.npcs.push({ x, z, label, dialogueId, radius: 3.2 });
 }
 
 function addTree(x, z, scale = 1) {
@@ -156,12 +160,22 @@ function addCrystal(x, z, color) {
   game.world.add(light);
 }
 
-function addChest(x, z) {
+function addChest(x, z, id = `chest_${game.chests.size + 1}`) {
+  const group = new THREE.Group();
   const chest = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1.2), mat(0x8d5d2e));
-  chest.position.set(x, 0.55, z);
+  chest.position.set(0, 0.55, 0);
   const lid = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.25, 1.3), mat(0xd8b263));
-  lid.position.set(x, 1.15, z);
-  game.world.add(chest, lid);
+  lid.position.set(0, 1.15, 0);
+  const glow = new THREE.PointLight(0xffd27a, 0.8, 5);
+  glow.position.set(0, 1.5, 0);
+  group.add(chest, lid, glow);
+  group.position.set(x, 0, z);
+  group.userData.chestId = id;
+  group.userData.lid = lid;
+  game.world.add(group);
+  const chest = { id, x, z, position: { x, y: 0.25, z }, opened: false, mesh: group };
+  game.chests.set(id, chest);
+  setChestOpened(chest, game.save.openedChests?.includes(id));
   addWorldLabel("Treasure", x, 2.2, z);
 }
 
@@ -185,22 +199,26 @@ function addCrack() {
   game.world.add(crack);
 }
 
-function createPlayerMesh(name, color, local) {
+function createPlayerMesh(name, color, local, loadout = {}) {
+  const equipment = local ? game.save : loadout;
   const group = createHumanoidMesh({
     name: name || "Hero",
-    color,
+    color: color || 0x4da7ff,
     local,
-    skin: 0xf1c798,
-    accent: local ? 0x2b3246 : 0x445160,
+    skin: 0xf7f4ec,
+    accent: color || 0x4da7ff,
     labelColor: local ? "#fff2bf" : "#d9edf8"
   });
+  applyVisualEquipment(group, equipment);
   if (!local) group.scale.setScalar(0.86);
   return group;
 }
 
-function createHumanoidMesh({ name, color, local = false, skin = 0xf1c798, accent = 0x2b3246, labelColor = "#ffffff" }) {
+function createHumanoidMesh({ name, color, local = false, skin = 0xf7f4ec, accent = 0x4da7ff, labelColor = "#ffffff" }) {
   const group = new THREE.Group();
   const parts = {};
+  const bodyColor = 0xf7f4ec;
+  const armorColor = 0xd8d1bf;
   const addPart = (key, size, position, partColor, rotation = null) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), mat(partColor));
     mesh.position.set(position[0], position[1], position[2]);
@@ -213,21 +231,24 @@ function createHumanoidMesh({ name, color, local = false, skin = 0xf1c798, accen
     return mesh;
   };
 
-  addPart("torso", [0.78, 1.02, 0.46], [0, 1.43, 0], color);
+  addPart("torso", [0.78, 1.02, 0.46], [0, 1.43, 0], bodyColor);
+  addPart("chestPlate", [0.84, 0.68, 0.08], [0, 1.55, -0.28], armorColor);
+  addPart("leftShoulder", [0.42, 0.22, 0.38], [-0.7, 1.98, -0.02], armorColor, [0, 0, 0.12]);
+  addPart("rightShoulder", [0.42, 0.22, 0.38], [0.7, 1.98, -0.02], armorColor, [0, 0, -0.12]);
   addPart("belt", [0.86, 0.2, 0.5], [0, 0.88, 0], accent);
   addPart("head", [0.66, 0.62, 0.58], [0, 2.34, -0.02], skin);
-  addPart("hair", [0.7, 0.18, 0.62], [0, 2.73, 0.01], accent);
-  addPart("face", [0.12, 0.08, 0.04], [-0.16, 2.34, -0.32], 0x111111);
-  addPart("faceB", [0.12, 0.08, 0.04], [0.16, 2.34, -0.32], 0x111111);
-  addPart("leftUpperArm", [0.28, 0.62, 0.3], [-0.68, 1.63, 0], color);
-  addPart("leftLowerArm", [0.25, 0.58, 0.27], [-0.69, 1.03, -0.02], skin);
-  addPart("rightUpperArm", [0.28, 0.62, 0.3], [0.68, 1.63, 0], color);
-  addPart("rightLowerArm", [0.25, 0.58, 0.27], [0.69, 1.03, -0.02], skin);
-  addPart("leftUpperLeg", [0.3, 0.64, 0.34], [-0.25, 0.55, 0], color);
-  addPart("rightUpperLeg", [0.3, 0.64, 0.34], [0.25, 0.55, 0], color);
+  addPart("helmet", [0.74, 0.18, 0.62], [0, 2.7, 0.01], armorColor);
+  addPart("leftUpperArm", [0.28, 0.62, 0.3], [-0.68, 1.63, 0], bodyColor);
+  addPart("leftLowerArm", [0.25, 0.58, 0.27], [-0.69, 1.03, -0.02], bodyColor);
+  addPart("rightUpperArm", [0.28, 0.62, 0.3], [0.68, 1.63, 0], bodyColor);
+  addPart("rightLowerArm", [0.25, 0.58, 0.27], [0.69, 1.03, -0.02], bodyColor);
+  addPart("leftGlove", [0.3, 0.16, 0.29], [-0.69, 0.68, -0.02], accent);
+  addPart("rightGlove", [0.3, 0.16, 0.29], [0.69, 0.68, -0.02], accent);
+  addPart("leftUpperLeg", [0.3, 0.64, 0.34], [-0.25, 0.55, 0], bodyColor);
+  addPart("rightUpperLeg", [0.3, 0.64, 0.34], [0.25, 0.55, 0], bodyColor);
   addPart("leftFoot", [0.36, 0.18, 0.52], [-0.25, 0.12, -0.12], accent);
   addPart("rightFoot", [0.36, 0.18, 0.52], [0.25, 0.12, -0.12], accent);
-  addPart("cape", [0.9, 1.34, 0.08], [0, 1.38, 0.31], accent);
+  addPart("backSash", [0.24, 1.1, 0.08], [0, 1.35, 0.31], accent);
 
   const sword = new THREE.Group();
   const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.52, 0.12), mat(0xd7d6ce));
@@ -242,6 +263,9 @@ function createHumanoidMesh({ name, color, local = false, skin = 0xf1c798, accen
   sword.userData.baseRotation = sword.rotation.clone();
   group.add(sword);
   parts.sword = sword;
+  parts.blade = blade;
+  parts.guard = guard;
+  parts.handle = handle;
 
   const label = makeLabel(name, labelColor);
   label.position.set(0, 3.18, 0);
@@ -250,6 +274,25 @@ function createHumanoidMesh({ name, color, local = false, skin = 0xf1c798, accen
   group.userData.local = local;
   group.userData.kind = local ? "hero" : "npc";
   return group;
+}
+
+function applyVisualEquipment(group, loadout = {}) {
+  if (!group?.userData?.parts) return;
+  const parts = group.userData.parts;
+  const weapon = getItem(loadout.equippedWeapon || "wooden_sword");
+  const armor = getItem(loadout.equippedArmor || "traveler_tunic");
+  const armorColor = armor?.rarity === "Epic" ? 0x6d5e8d : armor?.rarity === "Rare" ? 0x8a857b : armor?.rarity === "Uncommon" ? 0x7c8f76 : 0xd8d1bf;
+  [parts.chestPlate, parts.leftShoulder, parts.rightShoulder, parts.helmet].forEach((part) => {
+    if (!part?.material) return;
+    part.material.color.setHex(armorColor);
+    part.visible = true;
+  });
+  if (parts.blade?.material) {
+    const isClub = weapon?.id === "stone_club";
+    parts.blade.material.color.setHex(isClub ? 0x7b7365 : weapon?.rarity === "Epic" ? 0x3a243f : 0xd7d6ce);
+    parts.blade.scale.set(isClub ? 2.3 : 1, weapon?.id === "wooden_sword" ? 0.86 : weapon?.attack >= 7 ? 1.18 : 1, isClub ? 2.3 : 1);
+  }
+  if (parts.guard?.material) parts.guard.material.color.setHex(weapon?.rarity === "Epic" ? 0x9a76ff : 0xd1a64f);
 }
 
 function populateGoblinMesh(group, def) {
@@ -320,6 +363,16 @@ function createEnemyMesh(enemy) {
     const light = new THREE.PointLight(def.color, 2, 7);
     light.position.y = 1.5;
     group.add(orb, light);
+  } else if (def.family === "dummy") {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 2.6, 8), mat(0xc19458));
+    body.position.y = 1.3;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.72, 0.72), mat(0xd2a366));
+    head.position.y = 2.82;
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.25, 0.25), mat(0x7a5030));
+    arm.position.y = 2.1;
+    const target = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.46, 24), mat(0xe35c55, 0.9));
+    target.position.set(0, 1.52, -0.66);
+    group.add(body, head, arm, target);
   } else {
     const core = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 1), mat(0x77736b));
     core.position.y = 1.45;
@@ -467,6 +520,7 @@ function animateHumanoid(group, now, movement = 0) {
 function loop(now) {
   if (!game.started) return;
   const dt = Math.min(game.clock.getDelta(), 0.05);
+  updateDefeatState(now);
   updateMovement(dt);
   updateLocalEnemies(dt);
   updateBoss(dt, now);
@@ -479,6 +533,10 @@ function loop(now) {
 }
 
 function updateMovement(dt) {
+  if (isLocallyDead()) {
+    game.playerVelocity.set(0, 0, 0);
+    return;
+  }
   const direction = new THREE.Vector3();
   if (game.input.keys.has("w")) direction.z -= 1;
   if (game.input.keys.has("s")) direction.z += 1;
@@ -513,7 +571,7 @@ function updateMovement(dt) {
 }
 
 function updateLocalEnemies(dt) {
-  if (game.online || game.zone !== ZONES.FIELD) return;
+  if (game.online || isLocallyDead() || game.zone !== ZONES.FIELD) return;
   for (const enemy of game.enemies.values()) {
     const def = getEnemy(enemy.enemyId);
     if (enemy.health <= 0) continue;
@@ -529,24 +587,24 @@ function updateLocalEnemies(dt) {
 }
 
 function updateBoss(dt, now) {
-  if (game.zone !== ZONES.BOSS || !game.boss || game.boss.defeated) return;
+  if (isLocallyDead() || game.zone !== ZONES.BOSS || !game.boss || game.boss.defeated) return;
   if (game.bossGroup) {
     game.bossGroup.rotation.y = Math.sin(now * 0.00045) * 0.16;
     game.bossGroup.position.y = Math.sin(now * 0.001) * 0.18;
   }
-  if (!game.online && now >= game.boss.nextAttackAt) {
-    const attackTypes = game.boss.phase === 1 ? ["fire_cone", "tail_sweep", "wing_gust"] : ["fire_cone", "tail_sweep", "wing_gust", "shadow_summon"];
+  if (!game.online && !game.boss.attack && now >= game.boss.nextAttackAt) {
+    const attackTypes = game.boss.phase === 1 ? ["fire_cone", "tail_sweep", "wing_gust"] : ["fire_cone", "tail_sweep", "wing_gust", "shadow_slam", "shadow_summon"];
     const type = attackTypes[Math.floor(Math.random() * attackTypes.length)];
-    game.boss.attack = { type, startedAt: now, resolvesAt: now + 1100, resolved: false };
-    game.boss.nextAttackAt = now + 4200;
-    showTelegraph(type);
+    game.boss.attack = createClientBossAttack(type, now);
+    game.boss.nextAttackAt = now + game.boss.attack.recastMs;
+    showTelegraph(game.boss.attack);
     playUiSound("danger");
   }
   if (!game.online && game.boss.attack && now >= game.boss.attack.resolvesAt && !game.boss.attack.resolved) {
     game.boss.attack.resolved = true;
-    resolveBossAttack(game.boss.attack.type);
+    resolveBossAttack(game.boss.attack);
   }
-  if (game.boss.attack && now - game.boss.attack.startedAt > 1900) {
+  if (game.boss.attack && now - game.boss.attack.startedAt > (game.boss.attack.durationMs || 2200)) {
     clearTelegraphs();
     game.boss.attack = null;
   }

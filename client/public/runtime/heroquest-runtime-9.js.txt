@@ -11,6 +11,7 @@ function bossAttackText(type) {
   if (type === "fire_cone") return "Fire cone incoming.";
   if (type === "tail_sweep") return "Tail sweep. Move out.";
   if (type === "wing_gust") return "Wing gust. Hold position.";
+  if (type === "shadow_slam") return "Shadow slam on target.";
   if (type === "shadow_summon") return "Shadow summon.";
   return "The wyrm gathers power.";
 }

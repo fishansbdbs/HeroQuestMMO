@@ -158,6 +158,22 @@ export const ENEMIES = {
       { itemId: "shadow_scale", chance: 0.08 },
       { itemId: "small_health_potion", chance: 0.16 }
     ]
+  },
+  training_dummy: {
+    id: "training_dummy",
+    name: "Training Dummy",
+    family: "dummy",
+    zone: ZONES.HUB,
+    level: 1,
+    maxHealth: 120,
+    damage: 0,
+    xp: 0,
+    coins: 0,
+    speed: 0,
+    attackRange: 0,
+    attackCooldownMs: 999999,
+    color: 0xc19458,
+    loot: []
   }
 };
 

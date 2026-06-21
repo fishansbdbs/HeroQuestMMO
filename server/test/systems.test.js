@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { STARTING_PLAYER } from "../../shared/constants.js";
+import { STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment, addProgressRewards, calculateIncomingDamage } from "../../shared/combat.js";
 import { applyQuestKill, createQuestProgress } from "../../shared/quests.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
 import { PartySystem } from "../src/PartySystem.js";
 import { CombatSystem } from "../src/CombatSystem.js";
+import { BossSystem } from "../src/BossSystem.js";
+import { createPlayerState } from "../src/PlayerState.js";
+import { RoomManager } from "../src/RoomManager.js";
 
 test("equipment and XP rewards update player stats", () => {
   const player = applyEquipment({
@@ -93,4 +96,157 @@ test("party codes support create, join, and leave", () => {
   parties.leaveParty("leader");
   assert.equal(parties.getPartyForPlayer("leader"), null);
   assert.equal(parties.getPartyForPlayer("friend").leaderId, "friend");
+});
+
+test("saved defeated players recover at Dawnrest instead of loading at zero HP", () => {
+  const player = createPlayerState("p1", {
+    name: "Defeated Hero",
+    health: 0,
+    xp: 70,
+    zone: ZONES.BOSS,
+    position: { x: 12, y: 0, z: -4, rot: 1 }
+  });
+
+  assert.equal(player.state, "alive");
+  assert.equal(player.zone, ZONES.HUB);
+  assert.equal(player.health, player.maxHealth);
+  assert.deepEqual(player.position, { x: 0, y: 0, z: 6, rot: 0 });
+});
+
+test("dead players cannot attack, cast abilities, or spend cooldowns", () => {
+  const enemySystem = {
+    enemies: new Map([
+      ["slime-1", { id: "slime-1", zone: ZONES.FIELD, position: { x: 1, y: 0, z: 0 } }]
+    ]),
+    getZoneEnemies: () => [],
+    damageEnemy() {
+      throw new Error("dead players should not damage enemies");
+    }
+  };
+  const combat = new CombatSystem({ enemySystem, bossSystem: { damage: () => ({ defeated: false }) } });
+  const player = {
+    ...STARTING_PLAYER,
+    id: "p1",
+    zone: ZONES.FIELD,
+    position: { x: 0, y: 0, z: 0 },
+    health: 0,
+    state: "dead",
+    lastAttackAt: 0,
+    lastAbilityAt: 0
+  };
+
+  assert.deepEqual(combat.attack(player, "slime-1"), { ok: false, reason: "dead" });
+  assert.deepEqual(combat.ability(player), { ok: false, reason: "dead" });
+  assert.equal(player.lastAttackAt, 0);
+  assert.equal(player.lastAbilityAt, 0);
+});
+
+test("loot claims validate alive state and range before deleting the bag", () => {
+  const loot = new LootSystem(() => 0.5);
+  const bag = {
+    id: "loot_test",
+    zone: ZONES.FIELD,
+    position: { x: 8, y: 0.25, z: 0 },
+    ownerId: null,
+    coins: 10,
+    items: [],
+    createdAt: Date.now()
+  };
+  loot.lootBags.set(bag.id, bag);
+
+  const dead = loot.claimForPlayer({
+    lootId: bag.id,
+    player: { id: "p1", zone: ZONES.FIELD, position: { x: 8, y: 0, z: 0 }, health: 0, state: "dead" }
+  });
+  assert.equal(dead.ok, false);
+  assert.equal(dead.reason, "dead");
+  assert.equal(loot.lootBags.has(bag.id), true);
+
+  const far = loot.claimForPlayer({
+    lootId: bag.id,
+    player: { id: "p1", zone: ZONES.FIELD, position: { x: 0, y: 0, z: 0 }, health: 100, state: "alive" }
+  });
+  assert.equal(far.ok, false);
+  assert.equal(far.reason, "range");
+  assert.equal(loot.lootBags.has(bag.id), true);
+
+  const claimed = loot.claimForPlayer({
+    lootId: bag.id,
+    player: { id: "p1", zone: ZONES.FIELD, position: { x: 8, y: 0, z: 0 }, health: 100, state: "alive" }
+  });
+  assert.equal(claimed.ok, true);
+  assert.equal(claimed.bag.id, bag.id);
+  assert.equal(loot.lootBags.has(bag.id), false);
+});
+
+test("boss telegraphs include target slams, resolve after the warning, and keep cycling", () => {
+  const realNow = Date.now;
+  let now = 1000;
+  Date.now = () => now;
+  try {
+    const boss = new BossSystem({ rng: () => 0.7 });
+    boss.start();
+    boss.state.phase = 2;
+    boss.state.nextAttackAt = now;
+    const players = new Map([
+      [
+        "p1",
+        {
+          id: "p1",
+          zone: ZONES.BOSS,
+          health: 100,
+          maxHealth: 100,
+          defense: 0,
+          position: { x: 4, y: 0, z: 2 }
+        }
+      ]
+    ]);
+
+    const telegraph = boss.update(players).find((event) => event.type === "boss_telegraph");
+    assert.equal(telegraph.attack.type, "shadow_slam");
+    assert.equal(telegraph.attack.targetId, "p1");
+    assert.ok(telegraph.attack.resolvesAt - telegraph.attack.startedAt >= 1000);
+    assert.equal(players.get("p1").health, 100);
+
+    now = telegraph.attack.resolvesAt;
+    const resolved = boss.update(players);
+    assert.ok(players.get("p1").health < 100);
+    assert.ok(resolved.some((event) => event.type === "boss_impact"));
+
+    now = boss.state.nextAttackAt + 1;
+    const next = boss.update(players);
+    assert.ok(next.some((event) => event.type === "boss_telegraph"));
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("boss defeat rewards quest credit to participants and party members in the arena", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const attacker = createPlayerState("p1", { name: "Attacker", zone: ZONES.BOSS });
+    const ally = createPlayerState("p2", { name: "Ally", zone: ZONES.BOSS });
+    const away = createPlayerState("p3", { name: "Away", zone: ZONES.FIELD });
+    room.players.set(attacker.id, attacker);
+    room.players.set(ally.id, ally);
+    room.players.set(away.id, away);
+    const party = room.parties.createParty(attacker.id);
+    room.parties.joinParty(ally.id, party.code);
+    room.syncPartyIds();
+    room.boss.state.participants.add(attacker.id);
+
+    room.awardBossDefeat({ reward: { xp: 400, coins: 300 }, lootBag: null }, attacker);
+
+    assert.equal(attacker.questProgress.shadow_at_the_peak.current, 1);
+    assert.equal(attacker.questProgress.shadow_at_the_peak.complete, true);
+    assert.equal(ally.questProgress.shadow_at_the_peak.current, 1);
+    assert.equal(ally.questProgress.shadow_at_the_peak.complete, true);
+    assert.equal(away.questProgress.shadow_at_the_peak.current, 0);
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
 });

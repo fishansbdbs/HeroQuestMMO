@@ -10,6 +10,10 @@ function basicAttack() {
 function handleHotbarAction(action) {
   const slot = HOTBAR_DEFS.find((entry) => entry.action === action);
   if (!slot || slot.locked) return;
+  if (isLocallyDead()) {
+    toast("You are defeated. Wait for respawn.");
+    return;
+  }
   game.hotbarPressed = action;
   setTimeout(() => {
     if (game.hotbarPressed === action) game.hotbarPressed = null;
@@ -23,6 +27,7 @@ function handleHotbarAction(action) {
 }
 
 function toggleAutoAttack() {
+  if (isLocallyDead()) return;
   if (!getCurrentTarget()) {
     const nearest = findNearestEnemy(PLAYER_LIMITS.meleeRange + 1.2);
     if (nearest) selectTarget(nearest);
@@ -41,6 +46,10 @@ function toggleAutoAttack() {
 
 function updateAutoAttack(now) {
   if (!game.autoAttack) return;
+  if (isLocallyDead()) {
+    game.autoAttack = false;
+    return;
+  }
   const target = getCurrentTarget();
   if (!target) {
     game.autoAttack = false;
@@ -59,6 +68,10 @@ function updateAutoAttack(now) {
 }
 
 function performAttack({ kind = "auto", source = "manual" } = {}) {
+  if (isLocallyDead()) {
+    if (source !== "auto") toast("You cannot attack while defeated.");
+    return false;
+  }
   const now = performance.now();
   const cooldownKey = kind === "slash" ? "slash" : "attack";
   const cooldownMs = kind === "slash" ? ABILITIES.slash.cooldownMs : PLAYER_LIMITS.attackCooldownMs;
@@ -89,6 +102,10 @@ function performAttack({ kind = "auto", source = "manual" } = {}) {
   slashTrail(kind);
   const scale = kind === "slash" ? ABILITIES.slash.damageScale : 1;
   const damage = Math.max(1, Math.round(calculatePlayerDamage(game.save) * scale));
+  if (target.localOnly) {
+    damageLocalEnemy(target.id, damage, { kind });
+    return true;
+  }
   if (game.online) {
     game.socket.emit(NET.COMBAT_ATTACK, { targetId: target.id, kind: kind === "slash" ? "slash" : "auto" }, handleCombatAck);
     logCombat(`${kind === "slash" ? "Slash" : "Auto Attack"} sent at ${targetDisplayName(target)}.`);
@@ -100,6 +117,10 @@ function performAttack({ kind = "auto", source = "manual" } = {}) {
 }
 
 function useHeroPulse() {
+  if (isLocallyDead()) {
+    toast("You cannot use abilities while defeated.");
+    return;
+  }
   const now = performance.now();
   const weapon = getItem(game.save.equippedWeapon);
   const cooldown = ABILITIES.hero_pulse.cooldownMs * (weapon?.pulseCooldownBonus || 1);
@@ -108,11 +129,19 @@ function useHeroPulse() {
   playUiSound("pulse");
   pulseEffect();
   logCombat("Hero Pulse released.");
-  if (game.online) {
+  let hitLocalOnly = false;
+  for (const enemy of game.enemies.values()) {
+    if (enemy.localOnly && distance2d(enemy.position, groupPosition(game.playerGroup)) <= ABILITIES.hero_pulse.radius) {
+      hitLocalOnly = true;
+      damageLocalEnemy(enemy.id, Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale), { kind: "pulse" });
+    }
+  }
+  if (game.online && !hitLocalOnly) {
     game.socket.emit(NET.COMBAT_ABILITY, {}, handleCombatAck);
     return;
   }
   for (const enemy of game.enemies.values()) {
+    if (enemy.localOnly) continue;
     if (distance2d(enemy.position, groupPosition(game.playerGroup)) <= ABILITIES.hero_pulse.radius) {
       damageLocalEnemy(enemy.id, Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale), { kind: "pulse" });
     }
@@ -123,6 +152,7 @@ function useHeroPulse() {
 }
 
 function useGuard() {
+  if (isLocallyDead()) return;
   const now = performance.now();
   if (game.cooldowns.guard && now - game.cooldowns.guard < ABILITIES.guard.cooldownMs) return;
   game.cooldowns.guard = now;
@@ -133,6 +163,7 @@ function useGuard() {
 }
 
 function dash() {
+  if (isLocallyDead()) return;
   const now = performance.now();
   if (game.cooldowns.dash && now - game.cooldowns.dash < ABILITIES.dash.cooldownMs) return;
   game.cooldowns.dash = now;
@@ -145,6 +176,10 @@ function dash() {
 }
 
 function usePotion() {
+  if (isLocallyDead()) {
+    toast("You cannot drink potions while defeated.");
+    return;
+  }
   const now = performance.now();
   if (game.cooldowns.potion && now - game.cooldowns.potion < ABILITIES.potion.cooldownMs) return;
   const result = consumeInventoryItem(game.save.inventory, "small_health_potion", 1);
@@ -173,6 +208,15 @@ function damageLocalEnemy(enemyId, damage, options = {}) {
   logCombat(`${options.kind === "slash" ? "Slash" : options.kind === "pulse" ? "Hero Pulse" : "Hit"} ${def.name} for ${damage}.`);
   playUiSound("hit");
   if (enemy.health <= 0) {
+    if (enemy.enemyId === "training_dummy") {
+      toast("Training dummy reset incoming.");
+      logCombat("Training dummy reached 0 HP and will reset.");
+      setTimeout(() => {
+        const current = game.enemies.get(enemyId);
+        if (current) current.health = current.maxHealth;
+      }, 1800);
+      return;
+    }
     awardEnemy(def);
     spawnLocalLoot(def, enemy.position);
     startEnemyDeath(enemyId, def, enemy.position);
@@ -188,7 +232,7 @@ function awardEnemy(enemyDef) {
   const questUpdate = applyQuestKill(game.save.questProgress, enemyDef);
   game.save.questProgress = questUpdate.progress;
   if (game.save.level > beforeLevel) {
-    toast(`Level ${game.save.level}!`);
+    toast(`Level ${game.save.level}! Fully healed.`);
     levelUpEffect();
     playUiSound("level");
   }
@@ -214,16 +258,23 @@ function spawnLocalLoot(enemyDef, position) {
 }
 
 function claimLoot(lootId) {
+  if (isLocallyDead()) {
+    toast("You cannot collect loot while defeated.");
+    return;
+  }
   if (game.online) {
     game.socket.emit(NET.LOOT_CLAIM, { lootId }, (ack) => {
       if (ack?.ok) {
         applyLootBag(ack.bag);
         game.loot.delete(lootId);
         toast("Loot collected.");
+      } else {
+        toast(lootClaimReason(ack?.reason));
       }
     });
     return;
   }
   const bag = game.loot.get(lootId);
-  if (!bag) return;
-  applyLootBag(bag);
+  if (!bag) return toast("That loot is no longer available.");
+  if (distance2d(groupPosition(game.playerGroup), bag.position) > 4) return toast("Move closer to collect that loot.");
+  applyLootBag(bag);

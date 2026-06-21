@@ -1,5 +1,71 @@
+  if (snapshot.chests) {
+    for (const chestState of snapshot.chests) {
+      const chest = game.chests.get(chestState.id);
+      if (chest) setChestOpened(chest, chestState.openedBy?.includes(game.socket?.id));
+    }
+  }
   syncRemotePlayers(snapshot.players || []);
   updatePartyList(snapshot.parties || [], snapshot.players || []);
+}
+
+function handleWorldEvent(event) {
+  if (!event) return;
+  if (event.type === "boss_telegraph" && game.zone === ZONES.BOSS) {
+    game.boss = { ...game.boss, attack: event.attack };
+    showTelegraph(event.attack);
+    playUiSound("danger");
+    logCombat(`${event.attack?.name || bossAttackText(event.attack?.type)} incoming.`);
+  }
+  if (event.type === "boss_impact" && game.zone === ZONES.BOSS) {
+    bossImpactEffect(event.attack);
+    const hit = event.hits?.find((entry) => entry.playerId === game.socket?.id);
+    if (hit) {
+      game.save.health = hit.health;
+      floatingText(`-${hit.damage}`, groupPosition(game.playerGroup), "#ff8080");
+      if (hit.health <= 0) beginDefeat();
+    }
+  }
+  if (event.type === "boss_summon" && game.zone === ZONES.BOSS) {
+    bossImpactEffect(event.attack);
+    toast("The Shadow Wyrm summons shadow slimes.");
+  }
+  if (event.type === "boss_defeated") {
+    if (!event.playerIds || event.playerIds.includes(game.socket?.id)) completeBossQuestLocal(event.reward || { xp: BOSS.xp, coins: BOSS.coins });
+    clearTelegraphs();
+    toast("Shadow Wyrm defeated!");
+  }
+  if (event.type === "player_defeated" && event.playerId === game.socket?.id) {
+    beginDefeat(event.respawnAt || Date.now() + 5000);
+  }
+  if (event.type === "player_respawned" && event.playerId === game.socket?.id) {
+    finishRespawn();
+  }
+}
+
+function ensureTrainingDummy() {
+  if (game.enemies.has("training_dummy")) return;
+  const def = getEnemy("training_dummy");
+  game.enemies.set("training_dummy", {
+    id: "training_dummy",
+    enemyId: "training_dummy",
+    zone: ZONES.HUB,
+    health: def.maxHealth,
+    maxHealth: def.maxHealth,
+    localOnly: true,
+    position: { x: 16, y: 0, z: -12 }
+  });
+}
+
+function setChestOpened(chest, opened) {
+  chest.opened = Boolean(opened);
+  if (opened) {
+    game.save.openedChests = Array.from(new Set([...(game.save.openedChests || []), chest.id]));
+  }
+  const lid = chest.mesh?.userData?.lid;
+  if (lid) {
+    lid.rotation.x = opened ? -0.95 : 0;
+    lid.position.z = opened ? 0.28 : 0;
+  }
 }
 
 function syncRemotePlayers(players) {
@@ -7,18 +73,30 @@ function syncRemotePlayers(players) {
   for (const player of players) {
     if (player.id === game.socket?.id) {
       game.save.health = player.health ?? game.save.health;
+      game.save.xp = player.xp ?? game.save.xp;
+      game.save.coins = player.coins ?? game.save.coins;
+      game.save.level = player.level ?? game.save.level;
+      game.save.maxHealth = player.maxHealth ?? game.save.maxHealth;
+      game.save.state = player.state || game.save.state || "alive";
+      if (player.respawnAt) {
+        game.respawnAt = player.respawnAt;
+        beginDefeat(player.respawnAt);
+      } else if (game.save.state !== "dead") {
+        game.respawnAt = null;
+      }
       continue;
     }
     seen.add(player.id);
     let remote = game.remotePlayers.get(player.id);
     if (!remote) {
-      const mesh = createPlayerMesh(player.name, player.color, false);
+      const mesh = createPlayerMesh(player.name, player.color, false, player);
       game.scene.add(mesh);
       remote = { mesh, target: null };
       game.remotePlayers.set(player.id, remote);
     }
+    applyVisualEquipment(remote.mesh, player);
     remote.target = new THREE.Vector3(player.position.x, 0, player.position.z);
-    remote.mesh.visible = player.zone === game.zone;
+    remote.mesh.visible = player.zone === game.zone && player.state !== "dead";
   }
   for (const [id, remote] of game.remotePlayers.entries()) {
     if (!seen.has(id)) {
@@ -112,6 +190,34 @@ function findNearestLoot(range) {
   return nearest;
 }
 
+function findNearestChest(range) {
+  const player = groupPosition(game.playerGroup);
+  let nearest = null;
+  let best = Infinity;
+  for (const chest of game.chests.values()) {
+    const dist = distance2d(player, chest.position);
+    if (dist < range && dist < best) {
+      nearest = chest;
+      best = dist;
+    }
+  }
+  return nearest;
+}
+
+function findNearestNpc(range) {
+  const player = groupPosition(game.playerGroup);
+  let nearest = null;
+  let best = Infinity;
+  for (const npc of game.npcs) {
+    const dist = distance2d(player, npc);
+    if (dist < range && dist < best) {
+      nearest = npc;
+      best = dist;
+    }
+  }
+  return nearest;
+}
+
 function openPanel(panel) {
   ui.panel.classList.remove("hidden");
   const renderers = {
@@ -120,6 +226,8 @@ function openPanel(panel) {
     party: renderPartyPanel,
     quests: renderQuestPanel,
     settings: renderSettingsPanel,
+    shop: renderShopPanel,
+    help: renderHelpPanel,
     patch: renderPatchPanel
   };
   renderers[panel]?.();
@@ -167,10 +275,143 @@ function equipItem(itemId) {
   if (item.type === "weapon") game.save.equippedWeapon = itemId;
   if (item.type === "armor") game.save.equippedArmor = itemId;
   game.save = applyEquipment(game.save);
+  applyVisualEquipment(game.playerGroup, game.save);
   saveGame();
   playUiSound("equip");
   toast(`Equipped ${item.name}.`);
   renderInventoryPanel();
+}
+
+function renderShopPanel() {
+  ui.panelTitle.textContent = "Weapon Shop";
+  ui.panelContent.innerHTML = SHOP_ITEMS.map((stock) => {
+    const item = getItem(stock.itemId);
+    const owned = ownsItem(stock.itemId);
+    const equipped = game.save.equippedWeapon === stock.itemId || game.save.equippedArmor === stock.itemId;
+    const stat = item?.attack ? `+${item.attack} attack` : item?.heal ? `Heals ${item.heal} HP` : "Starter item";
+    const status = equipped ? "Equipped" : owned && item?.type !== "consumable" ? "Owned" : `${stock.price} coins`;
+    return `<div class="item-row shop-row">
+      <div><strong>${item?.name || stock.itemId}</strong><small>${item?.rarity || ""} ${stat}. ${item?.description || ""}</small></div>
+      <div class="shop-actions">
+        <span>${status}</span>
+        ${item?.type !== "consumable" ? `<button data-shop-equip="${stock.itemId}" ${owned ? "" : "disabled"}>Equip</button>` : ""}
+        <button data-shop-buy="${stock.itemId}" ${equipped && item?.type !== "consumable" ? "disabled" : ""}>${owned && item?.type !== "consumable" ? "Owned" : "Buy"}</button>
+      </div>
+    </div>`;
+  }).join("") + `<button id="close-shop">Close</button>`;
+  ui.panelContent.querySelectorAll("[data-shop-buy]").forEach((button) => {
+    button.addEventListener("click", () => buyShopItem(button.dataset.shopBuy));
+  });
+  ui.panelContent.querySelectorAll("[data-shop-equip]").forEach((button) => {
+    button.addEventListener("click", () => {
+      equipItem(button.dataset.shopEquip);
+      renderShopPanel();
+    });
+  });
+  ui.panelContent.querySelector("#close-shop").addEventListener("click", closePanel);
+}
+
+function ownsItem(itemId) {
+  return game.save.equippedWeapon === itemId || game.save.equippedArmor === itemId || countItem(itemId) > 0 || itemId === "wooden_sword";
+}
+
+function buyShopItem(itemId) {
+  if (isLocallyDead()) return toast("You cannot shop while defeated.");
+  const stock = SHOP_ITEMS.find((entry) => entry.itemId === itemId);
+  const item = getItem(itemId);
+  if (!stock || !item) return;
+  if (item.type !== "consumable" && ownsItem(itemId)) {
+    toast(`${item.name} is already owned.`);
+    return renderShopPanel();
+  }
+  if ((game.save.coins || 0) < stock.price) {
+    toast(`Need ${stock.price} coins for ${item.name}.`);
+    return;
+  }
+  game.save.coins -= stock.price;
+  game.save.inventory = addInventoryItem(game.save.inventory, itemId, 1);
+  game.save = applyEquipment(game.save);
+  saveGame();
+  playUiSound("pickup");
+  toast(`Bought ${item.name}.`);
+  renderShopPanel();
+}
+
+function openChest(chestId) {
+  if (isLocallyDead()) return toast("You cannot open chests while defeated.");
+  const chest = game.chests.get(chestId);
+  if (!chest) return toast("That chest is gone.");
+  if (chest.opened) return toast("That chest is already empty.");
+  if (game.online) {
+    game.socket.emit(NET.CHEST_CLAIM, { chestId }, (ack) => {
+      if (!ack?.ok) return toast(chestClaimReason(ack?.reason));
+      applyChestReward(chest, ack.reward);
+    });
+    return;
+  }
+  const reward = localChestReward(chestId);
+  applyChestReward(chest, reward);
+}
+
+function localChestReward(chestId) {
+  if (chestId === "field_south_cache") return { coins: 36, items: [{ itemId: "rusty_blade", quantity: 1 }] };
+  if (chestId === "field_north_cache") return { coins: 28, items: [{ itemId: "small_health_potion", quantity: 1 }] };
+  return { coins: 18, items: [{ itemId: "small_health_potion", quantity: 1 }] };
+}
+
+function applyChestReward(chest, reward) {
+  setChestOpened(chest, true);
+  game.save.coins += reward?.coins || 0;
+  for (const item of reward?.items || []) {
+    game.save.inventory = addInventoryItem(game.save.inventory, item.itemId, item.quantity || 1);
+  }
+  saveGame();
+  playUiSound("pickup");
+  toast(`Chest opened: +${reward?.coins || 0} coins${reward?.items?.length ? " and item loot" : ""}.`);
+}
+
+function openDialogue(dialogueId, index = 0) {
+  const dialogue = NPC_DIALOGUES[dialogueId];
+  if (!dialogue) return;
+  ui.panel.classList.remove("hidden");
+  ui.panelTitle.textContent = dialogue.name;
+  const line = dialogue.lines[index] || dialogue.lines[0];
+  ui.panelContent.innerHTML = `
+    <p class="intro">${escapeHtml(line)}</p>
+    <div class="dialogue-actions">
+      <button id="dialogue-next">${index < dialogue.lines.length - 1 ? "Next" : "Restart"}</button>
+      ${dialogueId === "shopkeeper" ? `<button id="dialogue-shop" class="primary">Open Shop</button>` : ""}
+      <button id="dialogue-close">Close</button>
+    </div>
+  `;
+  ui.panelContent.querySelector("#dialogue-next").addEventListener("click", () => openDialogue(dialogueId, index < dialogue.lines.length - 1 ? index + 1 : 0));
+  ui.panelContent.querySelector("#dialogue-close").addEventListener("click", closePanel);
+  ui.panelContent.querySelector("#dialogue-shop")?.addEventListener("click", () => openPanel("shop"));
+}
+
+function renderHelpPanel() {
+  ui.panelTitle.textContent = "Help";
+  ui.panelContent.innerHTML = `
+    <div class="quest-row"><strong>Interact</strong><small>Press E near NPCs, loot, chests, portals, the quest board, and the weapon shop.</small></div>
+    <div class="quest-row"><strong>Combat</strong><small>Click an enemy or press 1 to auto attack. Press 2 for Slash and Q or 3 for Hero Pulse.</small></div>
+    <div class="quest-row"><strong>Survival</strong><small>Use 5 to drink a potion. If defeated, attacks and loot are disabled until you respawn at Dawnrest.</small></div>
+    <div class="quest-row"><strong>Boss</strong><small>Red and orange boss zones are dangerous. Damage lands after the warning fades.</small></div>
+    <div class="quest-row"><strong>Inventory</strong><small>Open inventory with I. Visit the Dawnrest weapon shop for weapons and potions.</small></div>
+  `;
+}
+
+function lootClaimReason(reason) {
+  if (reason === "dead") return "You cannot collect loot while defeated.";
+  if (reason === "range") return "Move closer to collect that loot.";
+  if (reason === "owner") return "That loot belongs to another hero.";
+  return "That loot cannot be collected.";
+}
+
+function chestClaimReason(reason) {
+  if (reason === "dead") return "You cannot open chests while defeated.";
+  if (reason === "range") return "Move closer to open that chest.";
+  if (reason === "opened") return "That chest is already empty.";
+  return "That chest cannot be opened.";
 }
 
 function renderCharacterPanel() {
@@ -221,4 +462,4 @@ function renderPartyPanel() {
 
 function renderQuestPanel() {
   ui.panelTitle.textContent = "Quest Log";
-  ui.panelContent.innerHTML = getQuestList().map((quest) => {
+  ui.panelContent.innerHTML = getQuestList().map((quest) => {

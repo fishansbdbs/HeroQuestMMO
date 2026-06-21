@@ -11,6 +11,10 @@ export function distance2d(a, b) {
   return Math.sqrt(dx * dx + dz * dz);
 }
 
+export function isPlayerDead(player) {
+  return !player || player.state === "dead" || (player.health ?? 0) <= 0;
+}
+
 export function computeLevelFromXp(xp) {
   let level = 1;
   for (let i = 1; i < XP_TABLE.length; i += 1) {

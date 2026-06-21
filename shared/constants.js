@@ -1,4 +1,4 @@
-export const GAME_VERSION = "1.2.1";
+export const GAME_VERSION = "1.2.2";
 
 export const ZONES = {
   HUB: "hub",
@@ -19,6 +19,13 @@ export const STARTING_PLAYER = {
   equippedArmor: "traveler_tunic"
 };
 
+export const PLAYER_STATES = {
+  ALIVE: "alive",
+  DEAD: "dead"
+};
+
+export const RESPAWN_DELAY_MS = 5000;
+
 export const XP_TABLE = [0, 60, 145, 260, 420, 650, 940, 1300, 1760, 2300, 3000];
 
 export const PLAYER_LIMITS = {
@@ -35,6 +42,43 @@ export const SNAPSHOT_MS = 120;
 export const PATCH_NOTES = {
   title: "HeroQuest MMO Patch Notes",
   versions: [
+    {
+      version: "1.2.2",
+      title: "Core Fixes & Boss Telegraphs",
+      date: "2026-06-21",
+      summary: "Death recovery, boss quest credit, working interactions, cleaner hero visuals, and clearer MMO danger zones.",
+      sections: [
+        {
+          title: "Core Fixes",
+          items: [
+            "Fixed death and respawn behavior.",
+            "Fixed loading with 0 HP.",
+            "Fixed level-up healing.",
+            "Fixed enemy death cleanup.",
+            "Fixed loot pickup edge cases."
+          ]
+        },
+        {
+          title: "Boss Encounter",
+          items: [
+            "Fixed Shadow Wyrm quest completion.",
+            "Fixed boss attack loop.",
+            "Added boss telegraph danger zones.",
+            "Removed duplicate boss health bars."
+          ]
+        },
+        {
+          title: "World Interactions",
+          items: [
+            "Added working treasure chests.",
+            "Added working weapon shop.",
+            "Added NPC dialogue/tutorials.",
+            "Added working training dummy.",
+            "Improved player model customization foundation."
+          ]
+        }
+      ]
+    },
     {
       version: "1.2.1",
       title: "Combat & UI Overhaul",
@@ -67,7 +111,7 @@ export const PATCH_NOTES = {
       ]
     },
     {
-      version: "1.1",
+      version: "1.1.0",
       title: "First Adventure",
       date: "2026-06-20",
       summary: "The first playable online adventure across Dawnrest, Greenvale, and Shadow Peak.",

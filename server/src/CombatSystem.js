@@ -1,6 +1,6 @@
 import { ABILITIES } from "../../shared/abilities.js";
-import { PLAYER_LIMITS } from "../../shared/constants.js";
-import { calculatePlayerDamage, distance2d } from "../../shared/combat.js";
+import { PLAYER_LIMITS, ZONES } from "../../shared/constants.js";
+import { calculatePlayerDamage, distance2d, isPlayerDead } from "../../shared/combat.js";
 
 export class CombatSystem {
   constructor({ enemySystem, bossSystem, rng = Math.random }) {
@@ -11,6 +11,9 @@ export class CombatSystem {
 
   attack(player, targetId, options = {}) {
     const now = Date.now();
+    if (isPlayerDead(player)) {
+      return { ok: false, reason: "dead" };
+    }
     if (now - player.lastAttackAt < PLAYER_LIMITS.attackCooldownMs) {
       return { ok: false, reason: "cooldown" };
     }
@@ -20,7 +23,7 @@ export class CombatSystem {
 
     if (targetId === "shadow_wyrm") {
       const dist = distance2d(player.position, { x: 0, z: 0 });
-      if (player.zone !== "boss" || dist > 8) return { ok: false, reason: "range" };
+      if (player.zone !== ZONES.BOSS || dist > 8) return { ok: false, reason: "range" };
       const damage = Math.max(1, Math.round(calculatePlayerDamage(player, this.rng) * damageScale));
       return { ok: true, kind, damage, boss: this.bossSystem.damage(damage, player.id) };
     }
@@ -36,6 +39,9 @@ export class CombatSystem {
   ability(player) {
     const ability = ABILITIES.hero_pulse;
     const now = Date.now();
+    if (isPlayerDead(player)) {
+      return { ok: false, reason: "dead" };
+    }
     if (now - player.lastAbilityAt < ability.cooldownMs) {
       return { ok: false, reason: "cooldown" };
     }

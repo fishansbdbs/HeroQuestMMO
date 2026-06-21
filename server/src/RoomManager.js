@@ -1,6 +1,6 @@
-import { SNAPSHOT_MS, SERVER_TICK_MS, ZONES } from "../../shared/constants.js";
+import { PLAYER_STATES, RESPAWN_DELAY_MS, SNAPSHOT_MS, SERVER_TICK_MS, ZONES } from "../../shared/constants.js";
 import { NET } from "../../shared/netMessages.js";
-import { addInventoryItem, addProgressRewards, distance2d } from "../../shared/combat.js";
+import { addInventoryItem, addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
 import { applyQuestKill } from "../../shared/quests.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
 import { LootSystem } from "./LootSystem.js";
@@ -18,6 +18,7 @@ export class RoomManager {
     this.boss = new BossSystem({ lootSystem: this.loot });
     this.combat = new CombatSystem({ enemySystem: this.enemies, bossSystem: this.boss });
     this.parties = new PartySystem();
+    this.chests = createChests();
     this.lastTick = Date.now();
     this.tickTimer = setInterval(() => this.tick(), SERVER_TICK_MS);
     this.snapshotTimer = setInterval(() => this.broadcastSnapshots(), SNAPSHOT_MS);
@@ -35,6 +36,7 @@ export class RoomManager {
     socket.on(NET.PLAYER_MOVE, (payload) => {
       const player = this.players.get(socket.id);
       if (!player || !payload?.position) return;
+      if (isPlayerDead(player)) return;
       player.position = clampPosition(payload.position, player.zone);
       player.lastInputAt = Date.now();
     });
@@ -42,6 +44,10 @@ export class RoomManager {
     socket.on(NET.PLAYER_ZONE, (payload, ack) => {
       const player = this.players.get(socket.id);
       if (!player || !payload?.zone) return;
+      if (isPlayerDead(player)) {
+        ack?.({ ok: false, reason: "dead", player: sanitizePlayer(player) });
+        return;
+      }
       socket.leave(player.zone);
       player.zone = payload.zone;
       player.position = payload.position || defaultZonePosition(payload.zone);
@@ -85,16 +91,39 @@ export class RoomManager {
 
     socket.on(NET.LOOT_CLAIM, (payload, ack) => {
       const player = this.players.get(socket.id);
-      const bag = payload?.lootId ? this.loot.claim(payload.lootId, socket.id) : null;
-      if (!player || !bag || distance2d(player.position, bag.position) > 4) {
-        ack?.({ ok: false });
+      const claim = payload?.lootId ? this.loot.claimForPlayer({ lootId: payload.lootId, player, range: 4 }) : { ok: false, reason: "missing" };
+      if (!claim.ok) {
+        ack?.({ ok: false, reason: claim.reason });
         return;
       }
+      const bag = claim.bag;
       player.coins += bag.coins || 0;
       for (const item of bag.items || []) {
         player.inventory = addInventoryItem(player.inventory, item.itemId, item.quantity || 1);
       }
       ack?.({ ok: true, bag, player: sanitizePlayer(player) });
+      this.broadcastSnapshots();
+    });
+
+    socket.on(NET.CHEST_CLAIM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.claimChest(player, payload?.chestId);
+      ack?.(result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_RESPAWN, (_payload, ack) => {
+      const player = this.players.get(socket.id);
+      if (!player) return;
+      if (!isPlayerDead(player) || Date.now() < (player.respawnAt || 0)) {
+        ack?.({ ok: false, reason: "not_ready", player: sanitizePlayer(player) });
+        return;
+      }
+      const oldZone = player.zone;
+      this.respawnPlayer(player);
+      socket.leave(oldZone);
+      socket.join(ZONES.HUB);
+      ack?.({ ok: true, player: sanitizePlayer(player), snapshot: this.snapshotForZone(player.zone) });
       this.broadcastSnapshots();
     });
 
@@ -131,6 +160,7 @@ export class RoomManager {
   }
 
   applyCombatRewards(player, result) {
+    if (isPlayerDead(player)) return;
     const defeat = result?.result?.defeated ? result.result : null;
     if (defeat?.reward) {
       Object.assign(player, addProgressRewards(player, defeat.reward));
@@ -139,12 +169,40 @@ export class RoomManager {
     }
     const boss = result?.boss || result?.result?.boss;
     if (boss?.defeated || boss?.boss?.defeated) {
-      const reward = boss.reward || { xp: 400, coins: 300 };
+      this.awardBossDefeat(boss, player);
+    }
+  }
+
+  awardBossDefeat(bossResult, triggeringPlayer) {
+    const eligibleIds = new Set(this.boss.state.participants);
+    if (triggeringPlayer?.id) eligibleIds.add(triggeringPlayer.id);
+    for (const player of this.players.values()) {
+      if (player.zone === ZONES.BOSS) eligibleIds.add(player.id);
+    }
+    for (const id of [...eligibleIds]) {
+      const party = this.parties.getPartyForPlayer(id);
+      if (party) {
+        for (const memberId of party.members) {
+          const member = this.players.get(memberId);
+          if (member?.zone === ZONES.BOSS) eligibleIds.add(memberId);
+        }
+      }
+    }
+    const reward = bossResult.reward || { xp: 400, coins: 300 };
+    for (const id of eligibleIds) {
+      const player = this.players.get(id);
+      if (!player || isPlayerDead(player)) continue;
       Object.assign(player, addProgressRewards(player, reward));
       const questUpdate = applyQuestKill(player.questProgress, { id: "shadow_wyrm", family: "dragon" });
       player.questProgress = questUpdate.progress;
       player.title = "Wyrm-Touched";
     }
+    this.io.to(ZONES.BOSS).emit(NET.WORLD_EVENT, {
+      type: "boss_defeated",
+      playerIds: [...eligibleIds],
+      reward,
+      lootBag: bossResult.lootBag || null
+    });
   }
 
   syncPartyIds() {
@@ -159,8 +217,94 @@ export class RoomManager {
     const dt = now - this.lastTick;
     this.lastTick = now;
     this.enemies.update(this.players, dt);
-    this.boss.update(this.players);
+    this.processDeaths();
+    const bossEvents = this.boss.update(this.players);
+    this.handleBossEvents(bossEvents);
+    this.processDeaths();
+    this.processRespawns();
     this.loot.cleanup();
+  }
+
+  handleBossEvents(events) {
+    for (const event of events || []) {
+      if (event.type === "boss_summon") this.spawnShadowSlimes(event.attack?.shape?.points);
+      this.io.to(ZONES.BOSS).emit(NET.WORLD_EVENT, event);
+    }
+  }
+
+  spawnShadowSlimes(points = []) {
+    const spawnPoints = points.length ? points : [{ x: 7, z: 0 }, { x: -6, z: 4 }, { x: 2, z: -8 }];
+    for (const point of spawnPoints.slice(0, 3)) {
+      this.enemies.spawnEnemy("shadow_slime", { x: point.x, y: 0, z: point.z }, ZONES.BOSS);
+    }
+  }
+
+  processDeaths() {
+    for (const player of this.players.values()) {
+      if ((player.health ?? 0) <= 0 && player.state !== PLAYER_STATES.DEAD) {
+        this.markDefeated(player);
+      }
+    }
+  }
+
+  markDefeated(player) {
+    const now = Date.now();
+    player.health = 0;
+    player.state = PLAYER_STATES.DEAD;
+    player.defeatedAt = now;
+    player.respawnAt = now + RESPAWN_DELAY_MS;
+    player.lastAttackAt = now;
+    player.lastAbilityAt = now;
+    this.io.to(player.zone).emit(NET.WORLD_EVENT, {
+      type: "player_defeated",
+      playerId: player.id,
+      respawnAt: player.respawnAt
+    });
+  }
+
+  processRespawns() {
+    for (const player of this.players.values()) {
+      if (player.state === PLAYER_STATES.DEAD && Date.now() >= (player.respawnAt || 0)) {
+        const oldZone = player.zone;
+        this.respawnPlayer(player);
+        const socket = this.io.sockets?.sockets?.get?.(player.id);
+        if (socket) {
+          socket.leave(oldZone);
+          socket.join(player.zone);
+        }
+        this.io.to(player.zone).emit(NET.WORLD_EVENT, { type: "player_respawned", playerId: player.id });
+      }
+    }
+  }
+
+  respawnPlayer(player) {
+    Object.assign(player, {
+      state: PLAYER_STATES.ALIVE,
+      health: player.maxHealth,
+      zone: ZONES.HUB,
+      position: defaultZonePosition(ZONES.HUB),
+      defeatedAt: null,
+      respawnAt: null,
+      lastAttackAt: 0,
+      lastAbilityAt: 0
+    });
+  }
+
+  claimChest(player, chestId) {
+    const chest = this.chests.get(chestId);
+    if (!player) return { ok: false, reason: "missing_player" };
+    if (isPlayerDead(player)) return { ok: false, reason: "dead" };
+    if (!chest) return { ok: false, reason: "missing" };
+    if (chest.zone !== player.zone) return { ok: false, reason: "zone" };
+    if (chest.openedBy.has(player.id)) return { ok: false, reason: "opened" };
+    if (distance2d(player.position, chest.position) > 4) return { ok: false, reason: "range" };
+    chest.openedBy.add(player.id);
+    const reward = { coins: chest.coins, items: [...chest.items] };
+    player.coins += reward.coins;
+    for (const item of reward.items) {
+      player.inventory = addInventoryItem(player.inventory, item.itemId, item.quantity || 1);
+    }
+    return { ok: true, chestId, reward, player: sanitizePlayer(player) };
   }
 
   broadcastSnapshots() {
@@ -177,10 +321,22 @@ export class RoomManager {
       players: [...this.players.values()].filter((player) => player.zone === zone).map(sanitizePlayer),
       enemies: this.enemies.snapshot(zone),
       loot: this.loot.snapshot(zone),
+      chests: this.snapshotChests(zone),
       boss: this.boss.snapshot(),
       parties: this.parties.snapshot(),
       serverTime: Date.now()
     };
+  }
+
+  snapshotChests(zone) {
+    return [...this.chests.values()]
+      .filter((chest) => chest.zone === zone)
+      .map((chest) => ({
+        id: chest.id,
+        zone: chest.zone,
+        position: chest.position,
+        openedBy: [...chest.openedBy]
+      }));
   }
 }
 
@@ -198,4 +354,42 @@ function defaultZonePosition(zone) {
   if (zone === ZONES.FIELD) return { x: 0, y: 0, z: 31, rot: Math.PI };
   if (zone === ZONES.BOSS) return { x: 0, y: 0, z: 22, rot: Math.PI };
   return { x: 0, y: 0, z: 6, rot: 0 };
+}
+
+function createChests() {
+  return new Map([
+    [
+      "hub_weapon_cache",
+      {
+        id: "hub_weapon_cache",
+        zone: ZONES.HUB,
+        position: { x: -12, y: 0.25, z: 12 },
+        coins: 18,
+        items: [{ itemId: "small_health_potion", quantity: 1 }],
+        openedBy: new Set()
+      }
+    ],
+    [
+      "field_north_cache",
+      {
+        id: "field_north_cache",
+        zone: ZONES.FIELD,
+        position: { x: -8, y: 0.25, z: 22 },
+        coins: 28,
+        items: [{ itemId: "small_health_potion", quantity: 1 }],
+        openedBy: new Set()
+      }
+    ],
+    [
+      "field_south_cache",
+      {
+        id: "field_south_cache",
+        zone: ZONES.FIELD,
+        position: { x: 20, y: 0.25, z: -22 },
+        coins: 36,
+        items: [{ itemId: "rusty_blade", quantity: 1 }],
+        openedBy: new Set()
+      }
+    ]
+  ]);
 }

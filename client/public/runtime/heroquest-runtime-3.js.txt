@@ -35,6 +35,10 @@ function updateNetworkStatus() {
 
 function updateTargetFrame() {
   const target = getCurrentTarget();
+  if (target?.id === "shadow_wyrm") {
+    ui.targetFrame.classList.add("hidden");
+    return;
+  }
   ui.targetFrame.classList.toggle("hidden", !target);
   if (!target) return;
   const pct = Math.max(0, Math.min(100, (target.health / Math.max(1, target.maxHealth)) * 100));
@@ -54,7 +58,7 @@ function updateHotbar(now) {
     button.classList.toggle("cooling", cooldown > 0);
     button.classList.toggle("active", slot.action === "auto" && game.autoAttack);
     button.classList.toggle("pressed", game.hotbarPressed === slot.action);
-    button.disabled = Boolean(slot.locked) || (slot.action !== "auto" && cooldown > 0) || (slot.action === "potion" && countItem("small_health_potion") <= 0);
+    button.disabled = isLocallyDead() || Boolean(slot.locked) || (slot.action !== "auto" && cooldown > 0) || (slot.action === "potion" && countItem("small_health_potion") <= 0);
     if (overlay) overlay.style.height = cooldown > 0 ? `${Math.min(100, (cooldown / Math.max(1, slot.cooldownMs)) * 100)}%` : "0%";
     if (count) {
       if (slot.action === "potion") count.textContent = `x${countItem("small_health_potion")}`;
@@ -170,7 +174,18 @@ function updateFps(now) {
 
 function updatePrompt() {
   game.promptAction = null;
+  if (isLocallyDead()) {
+    ui.prompt.classList.add("hidden");
+    return;
+  }
   const player = groupPosition(game.playerGroup);
+  const nearestNpc = findNearestNpc(3.2);
+  if (nearestNpc) {
+    game.promptAction = () => openDialogue(nearestNpc.dialogueId);
+    ui.prompt.textContent = `E: Talk to ${nearestNpc.label}`;
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
   for (const portal of game.portals) {
     if (distance2d(player, portal) <= portal.radius) {
       const locked = game.save.level < portal.minLevel;
@@ -193,6 +208,22 @@ function updatePrompt() {
     ui.prompt.classList.remove("hidden");
     return;
   }
+  const nearestChest = findNearestChest(3.4);
+  if (nearestChest) {
+    game.promptAction = () => openChest(nearestChest.id);
+    ui.prompt.textContent = nearestChest.opened ? "Treasure chest is empty" : "E: Open Treasure Chest";
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
+  if (game.zone === ZONES.HUB && distance2d(player, { x: 16, z: -12 }) < 4) {
+    game.promptAction = () => {
+      selectTarget("training_dummy");
+      toast("Training dummy targeted.");
+    };
+    ui.prompt.textContent = "E: Target Training Dummy";
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
   if (game.zone === ZONES.HUB && distance2d(player, { x: 8, z: 16 }) < 4) {
     game.promptAction = () => openPanel("quests");
     ui.prompt.textContent = "E: Read Quest Board";
@@ -200,8 +231,8 @@ function updatePrompt() {
     return;
   }
   if (game.zone === ZONES.HUB && distance2d(player, { x: -10, z: 16 }) < 4) {
-    game.promptAction = () => openPanel("inventory");
-    ui.prompt.textContent = "E: Browse Equipment";
+    game.promptAction = () => openPanel("shop");
+    ui.prompt.textContent = "E: Browse Weapon Shop";
     ui.prompt.classList.remove("hidden");
     return;
   }
@@ -209,4 +240,8 @@ function updatePrompt() {
 }
 
 function interact() {
-  if (game.promptAction) {
+  if (isLocallyDead()) {
+    toast("You cannot interact while defeated.");
+    return;
+  }
+  if (game.promptAction) {

@@ -490,6 +490,30 @@ h1 {
   animation: toast-in 180ms ease both;
 }
 
+.defeat-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  background: rgba(5, 6, 10, 0.54);
+}
+
+.defeat-panel {
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid rgba(227, 92, 85, 0.5);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  padding: 22px;
+  text-align: center;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.58);
+}
+
+.defeat-panel h2 {
+  color: #ffb09e;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;
@@ -539,6 +563,15 @@ h1 {
   display: block;
   color: var(--muted);
   line-height: 1.35;
+}
+
+.shop-actions,
+.dialogue-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: end;
+  align-items: center;
 }
 
 .boss-frame {
