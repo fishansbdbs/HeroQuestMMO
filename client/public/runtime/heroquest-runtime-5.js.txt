@@ -85,6 +85,7 @@ function handleCombatAck(result) {
 
 function damagePlayer(amount) {
   if (isLocallyDead()) return;
+  markCombat();
   const guarded = performance.now() < game.guardUntil;
   const finalAmount = guarded ? Math.max(1, Math.round(amount * (1 - ABILITIES.guard.damageReduction))) : amount;
   game.save.health = Math.max(0, game.save.health - finalAmount);

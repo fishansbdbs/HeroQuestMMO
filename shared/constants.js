@@ -26,7 +26,7 @@ export const PLAYER_STATES = {
 
 export const RESPAWN_DELAY_MS = 5000;
 
-export const XP_TABLE = [0, 60, 145, 260, 420, 650, 940, 1300, 1760, 2300, 3000];
+export const XP_TABLE = [0, 60, 145, 260, 420, 650, 940, 1300, 1760, 2300, 3000, 3840, 4800, 5900, 7150];
 
 export const PLAYER_LIMITS = {
   partySize: 4,

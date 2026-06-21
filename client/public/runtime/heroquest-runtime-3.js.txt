@@ -53,19 +53,27 @@ function updateHotbar(now) {
   ui.hotbar?.querySelectorAll("[data-hotbar-action]").forEach((button) => {
     const slot = HOTBAR_DEFS.find((entry) => entry.action === button.dataset.hotbarAction);
     const cooldown = cooldownLeft(slot, now);
+    const notLearned = Boolean(slot?.requiresAbility && !knowsAbility(slot.requiresAbility));
     const overlay = button.querySelector(".slot-cooldown");
     const count = button.querySelector(".slot-count");
     button.classList.toggle("cooling", cooldown > 0);
     button.classList.toggle("active", slot.action === "auto" && game.autoAttack);
     button.classList.toggle("pressed", game.hotbarPressed === slot.action);
-    button.disabled = isLocallyDead() || Boolean(slot.locked) || (slot.action !== "auto" && cooldown > 0) || (slot.action === "potion" && countItem("small_health_potion") <= 0);
+    button.classList.toggle("locked", Boolean(slot.locked) || notLearned);
+    button.title = notLearned ? "Learn Hero Pulse from the Mage Trainer." : slot.tooltip;
+    button.disabled = isLocallyDead() || Boolean(slot.locked) || notLearned || (slot.action !== "auto" && cooldown > 0) || (slot.action === "potion" && countItem("small_health_potion") <= 0);
     if (overlay) overlay.style.height = cooldown > 0 ? `${Math.min(100, (cooldown / Math.max(1, slot.cooldownMs)) * 100)}%` : "0%";
     if (count) {
       if (slot.action === "potion") count.textContent = `x${countItem("small_health_potion")}`;
+      else if (slot.action === "pulse" && !notLearned) count.textContent = game.save.mana < ABILITIES.hero_pulse.manaCost ? "Mana" : "";
       else if (cooldown > 0) count.textContent = `${Math.ceil(cooldown / 1000)}`;
       else count.textContent = "";
     }
   });
+}
+
+function knowsAbility(abilityId) {
+  return (game.save.learnedAbilities || []).includes(abilityId);
 }
 
 function cooldownLeft(slot, now) {

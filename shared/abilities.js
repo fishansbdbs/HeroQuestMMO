@@ -22,6 +22,7 @@ export const ABILITIES = {
     name: "Hero Pulse",
     key: "3",
     cooldownMs: 12000,
+    manaCost: 25,
     radius: 5.2,
     damageScale: 0.8,
     knockback: 3.5,

@@ -4,6 +4,8 @@ export const NET = {
   PLAYER_ZONE: "player:zone",
   PLAYER_SAVE: "player:save",
   PLAYER_RESPAWN: "player:respawn",
+  PLAYER_SPEND_ATTRIBUTE: "player:spend_attribute",
+  PLAYER_USE_REST_STONE: "player:use_rest_stone",
   WORLD_SNAPSHOT: "world:snapshot",
   WORLD_EVENT: "world:event",
   COMBAT_ATTACK: "combat:attack",

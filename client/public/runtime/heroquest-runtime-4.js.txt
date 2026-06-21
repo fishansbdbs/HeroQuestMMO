@@ -96,6 +96,7 @@ function performAttack({ kind = "auto", source = "manual" } = {}) {
   }
 
   game.cooldowns[cooldownKey] = now;
+  markCombat();
   if (kind === "slash") game.cooldowns.attack = now;
   playUiSound(kind === "slash" ? "slash" : "swing");
   swingWeapon(kind);
@@ -121,11 +122,24 @@ function useHeroPulse() {
     toast("You cannot use abilities while defeated.");
     return;
   }
+  if (!knowsAbility("hero_pulse")) {
+    toast("Learn Hero Pulse from the Mage Trainer first.");
+    logCombat("Hero Pulse is not learned.");
+    return;
+  }
   const now = performance.now();
   const weapon = getItem(game.save.equippedWeapon);
   const cooldown = ABILITIES.hero_pulse.cooldownMs * (weapon?.pulseCooldownBonus || 1);
   if (game.cooldowns.pulse && now - game.cooldowns.pulse < cooldown) return;
+  const manaSpend = spendMana(game.save, ABILITIES.hero_pulse.manaCost || 0);
+  if (!manaSpend.ok) {
+    toast("Not enough mana.");
+    logCombat("Not enough mana for Hero Pulse.");
+    return;
+  }
+  game.save = manaSpend.player;
   game.cooldowns.pulse = now;
+  markCombat();
   playUiSound("pulse");
   pulseEffect();
   logCombat("Hero Pulse released.");
@@ -149,6 +163,16 @@ function useHeroPulse() {
   if (game.zone === ZONES.BOSS && game.boss && distance2d(groupPosition(game.playerGroup), { x: 0, z: 0 }) <= 8) {
     hitBoss(Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale), "pulse");
   }
+  saveGame();
+}
+
+function markCombat() {
+  game.lastCombatAt = performance.now();
+}
+
+function updateMana(dt) {
+  if (isLocallyDead()) return;
+  game.save = regenerateMana(game.save, dt, performance.now() - (game.lastCombatAt || 0) < 5000);
 }
 
 function useGuard() {
@@ -190,10 +214,11 @@ function usePotion() {
   }
   game.cooldowns.potion = now;
   game.save.inventory = result.inventory;
-  game.save.health = Math.min(game.save.maxHealth, game.save.health + ABILITIES.potion.heal);
+  const healAmount = ABILITIES.potion.heal + (game.save.potionBonus || 0);
+  game.save.health = Math.min(game.save.maxHealth, game.save.health + healAmount);
   playUiSound("pickup");
   toast("Health potion used.");
-  logCombat(`Potion restored ${ABILITIES.potion.heal} HP.`);
+  logCombat(`Potion restored ${healAmount} HP.`);
   saveGame();
 }
 

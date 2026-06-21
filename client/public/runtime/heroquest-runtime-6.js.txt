@@ -73,10 +73,19 @@ function syncRemotePlayers(players) {
   for (const player of players) {
     if (player.id === game.socket?.id) {
       game.save.health = player.health ?? game.save.health;
+      game.save.mana = player.mana ?? game.save.mana;
       game.save.xp = player.xp ?? game.save.xp;
       game.save.coins = player.coins ?? game.save.coins;
       game.save.level = player.level ?? game.save.level;
       game.save.maxHealth = player.maxHealth ?? game.save.maxHealth;
+      game.save.maxMana = player.maxMana ?? game.save.maxMana;
+      game.save.availableAttributePoints = player.availableAttributePoints ?? game.save.availableAttributePoints;
+      game.save.availableSkillPoints = player.availableSkillPoints ?? game.save.availableSkillPoints;
+      game.save.spentAttributes = player.spentAttributes || game.save.spentAttributes;
+      game.save.inventory = player.inventory || game.save.inventory;
+      game.save.learnedAbilities = player.learnedAbilities || game.save.learnedAbilities;
+      game.save.hotbar = player.hotbar || game.save.hotbar;
+      game.save.skillTreeNodes = player.skillTreeNodes || game.save.skillTreeNodes;
       game.save.state = player.state || game.save.state || "alive";
       if (player.respawnAt) {
         game.respawnAt = player.respawnAt;
@@ -251,7 +260,7 @@ function renderInventoryPanel() {
     ${inventory.length ? inventory.map((entry) => {
       const item = getItem(entry.itemId);
       const canEquip = item?.type === "weapon" || item?.type === "armor";
-      const canUse = item?.type === "consumable";
+      const canUse = item?.type === "consumable" || entry.itemId === "rest_stone";
       return `<div class="item-row">
         <div><strong>${item?.name || entry.itemId}</strong> x${entry.quantity}<small>${item?.rarity || ""} ${item?.description || ""}</small></div>
         <div>${canEquip ? `<button data-equip="${entry.itemId}">Equip</button>` : ""}${canUse ? `<button data-use="${entry.itemId}">Use</button>` : ""}</div>
@@ -264,6 +273,7 @@ function renderInventoryPanel() {
   ui.panelContent.querySelectorAll("[data-use]").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.use === "small_health_potion") usePotion();
+      if (button.dataset.use === "rest_stone") useRestStoneItem();
       renderInventoryPanel();
     });
   });
@@ -414,18 +424,105 @@ function chestClaimReason(reason) {
   return "That chest cannot be opened.";
 }
 
+function applyServerPlayerUpdate(player) {
+  if (!player) return;
+  Object.assign(game.save, {
+    health: player.health ?? game.save.health,
+    maxHealth: player.maxHealth ?? game.save.maxHealth,
+    mana: player.mana ?? game.save.mana,
+    maxMana: player.maxMana ?? game.save.maxMana,
+    level: player.level ?? game.save.level,
+    xp: player.xp ?? game.save.xp,
+    coins: player.coins ?? game.save.coins,
+    spentAttributes: player.spentAttributes || game.save.spentAttributes,
+    availableAttributePoints: player.availableAttributePoints ?? game.save.availableAttributePoints,
+    availableSkillPoints: player.availableSkillPoints ?? game.save.availableSkillPoints,
+    inventory: player.inventory || game.save.inventory,
+    learnedAbilities: player.learnedAbilities || game.save.learnedAbilities,
+    hotbar: player.hotbar || game.save.hotbar,
+    skillTreeNodes: player.skillTreeNodes || game.save.skillTreeNodes
+  });
+  game.save = applyEquipment(game.save);
+}
+
+function allocateAttributePoint(attributeId) {
+  if (isLocallyDead()) return toast("You cannot allocate stats while defeated.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_SPEND_ATTRIBUTE, { attributeId, count: 1 }, (ack) => {
+      if (!ack?.ok) return toast(ack?.reason === "points" ? "No attribute points available." : "That stat cannot be increased.");
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("tick");
+      renderCharacterPanel();
+    });
+    return;
+  }
+  const result = spendAttributePoint(game.save, attributeId, 1);
+  if (!result.ok) return toast(result.reason === "points" ? "No attribute points available." : "That stat cannot be increased.");
+  game.save = result.player;
+  saveGame();
+  playUiSound("tick");
+  renderCharacterPanel();
+}
+
+function useRestStoneItem() {
+  if (isLocallyDead()) return toast("You cannot reset stats while defeated.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_USE_REST_STONE, {}, (ack) => {
+      if (!ack?.ok) return toast("No Rest Stone available.");
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("equip");
+      toast("Rest Stone restored your points.");
+      renderCharacterPanel();
+    });
+    return;
+  }
+  const result = useRestStone(game.save);
+  if (!result.ok) return toast("No Rest Stone available.");
+  game.save = result.player;
+  saveGame();
+  playUiSound("equip");
+  toast("Rest Stone restored your points.");
+  renderCharacterPanel();
+}
+
 function renderCharacterPanel() {
   const stats = applyEquipment(game.save);
+  const attributeRows = [
+    { id: "health", label: "Health", benefit: "+12 max HP, +1 potion healing" },
+    { id: "strength", label: "Strength", benefit: "+2 physical power" },
+    { id: "magic", label: "Magic", benefit: "+2 spell power, +2 healing, +5 mana" },
+    { id: "defense", label: "Defense", benefit: "+2 defense, better Guard" }
+  ];
   ui.panelTitle.textContent = "Character";
   ui.panelContent.innerHTML = `
     <div class="item-row"><div><strong>${escapeHtml(game.save.name || "New Hero")}</strong><small>${game.save.title || "No title yet"}</small></div><div>Lv. ${stats.level}</div></div>
-    <div class="stat-line"><span>Attack</span><strong>${stats.attack}</strong></div>
+    <div class="stat-line"><span>HP</span><strong>${Math.round(stats.health)} / ${stats.maxHealth}</strong></div>
+    <div class="stat-line"><span>Mana</span><strong>${Math.floor(stats.mana)} / ${stats.maxMana}</strong></div>
+    <div class="stat-line"><span>Physical Power</span><strong>${stats.physicalPower}</strong></div>
+    <div class="stat-line"><span>Spell Power</span><strong>${stats.spellPower}</strong></div>
+    <div class="stat-line"><span>Healing Power</span><strong>${stats.healingPower}</strong></div>
     <div class="stat-line"><span>Defense</span><strong>${stats.defense}</strong></div>
+    <div class="stat-line"><span>Damage Reduction</span><strong>${Math.round((stats.damageReduction || 0) * 100)}%</strong></div>
     <div class="stat-line"><span>Speed</span><strong>${stats.speed.toFixed(1)}</strong></div>
     <div class="stat-line"><span>Coins</span><strong>${stats.coins}</strong></div>
+    <div class="stat-line"><span>Attribute Points</span><strong>${stats.availableAttributePoints}</strong></div>
+    <div class="stat-line"><span>Skill Points</span><strong>${stats.availableSkillPoints}</strong></div>
     <div class="stat-line"><span>Weapon</span><strong>${getItem(stats.equippedWeapon)?.name}</strong></div>
     <div class="stat-line"><span>Armor</span><strong>${getItem(stats.equippedArmor)?.name}</strong></div>
+    ${attributeRows.map((attribute) => `
+      <div class="item-row">
+        <div><strong>${attribute.label}</strong><small>${stats.spentAttributes?.[attribute.id] || 0} spent. Next point: ${attribute.benefit}.</small></div>
+        <button class="mini-button" data-attribute="${attribute.id}" ${stats.availableAttributePoints <= 0 ? "disabled" : ""}>+</button>
+      </div>
+    `).join("")}
+    ${countItem("rest_stone") > 0 ? `<button id="reset-stats" class="primary">Reset Stats</button>` : ""}
   `;
+  ui.panelContent.querySelectorAll("[data-attribute]").forEach((button) => {
+    button.addEventListener("click", () => allocateAttributePoint(button.dataset.attribute));
+  });
+  ui.panelContent.querySelector("#reset-stats")?.addEventListener("click", useRestStoneItem);
 }
 
 function renderPartyPanel() {

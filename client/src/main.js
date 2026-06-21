@@ -6,6 +6,8 @@ import { BOSS, ENEMIES, FIELD_SPAWNS, getEnemy } from "../../shared/enemies.js";
 import { GAME_VERSION, PATCH_NOTES, PLAYER_LIMITS, STARTING_PLAYER, XP_TABLE, ZONES } from "../../shared/constants.js";
 import { getItem, ITEMS, STARTER_INVENTORY } from "../../shared/items.js";
 import { NET } from "../../shared/netMessages.js";
+import { ICEZERO_MIGRATION_ID, migrateIceZeroSave } from "../../shared/saveMigration.js";
+import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
 import { applyQuestKill, createQuestProgress, getQuestList } from "../../shared/quests.js";
 import { getZone, ZONE_DEFS } from "../../shared/zones.js";
 import {
@@ -82,6 +84,13 @@ const bootRuntime = new Function(
   "createCameraRelativeMove",
   "smoothAngleToward",
   "visualYawForMoveDirection",
+  "ICEZERO_MIGRATION_ID",
+  "migrateIceZeroSave",
+  "applyProgressionStats",
+  "regenerateMana",
+  "spendAttributePoint",
+  "spendMana",
+  "useRestStone",
   "env",
   `"use strict";\n${runtimeSource}`
 );
@@ -121,5 +130,12 @@ bootRuntime(
   createCameraRelativeMove,
   smoothAngleToward,
   visualYawForMoveDirection,
+  ICEZERO_MIGRATION_ID,
+  migrateIceZeroSave,
+  applyProgressionStats,
+  regenerateMana,
+  spendAttributePoint,
+  spendMana,
+  useRestStone,
   import.meta.env
 );

@@ -1,10 +1,11 @@
 ﻿const SERVER_URL = env.VITE_SERVER_URL || "http://localhost:3000";
 const STORAGE_KEY = "heroquest-mmo-v1-save";
+const SAVE_BACKUP_KEY = `${STORAGE_KEY}-backup-${ICEZERO_MIGRATION_ID}`;
 const COLORS = [0x4da7ff, 0x55d07a, 0xf2c867, 0xe86e58, 0xb38cff, 0x70e4d2];
 const HOTBAR_DEFS = [
   { slot: 1, action: "auto", name: "Auto Attack", key: "1", icon: "A", cooldownMs: ABILITIES.auto_attack.cooldownMs, tooltip: "Toggle auto attacks against your selected target." },
   { slot: 2, action: "slash", name: "Slash", key: "2", icon: "/", cooldownMs: ABILITIES.slash.cooldownMs, tooltip: "150% melee damage. Requires a nearby target." },
-  { slot: 3, action: "pulse", name: "Hero Pulse", key: "3", icon: "O", cooldownMs: ABILITIES.hero_pulse.cooldownMs, tooltip: "Shockwave nearby enemies and the boss." },
+  { slot: 3, action: "pulse", name: "Hero Pulse", key: "3", icon: "O", cooldownMs: ABILITIES.hero_pulse.cooldownMs, requiresAbility: "hero_pulse", tooltip: "Learn Hero Pulse from the Mage Trainer before using it." },
   { slot: 4, action: "guard", name: "Guard", key: "4", icon: "[]", cooldownMs: ABILITIES.guard.cooldownMs, tooltip: "Reduce incoming damage by half for 3 seconds." },
   { slot: 5, action: "potion", name: "Potion", key: "5", icon: "+", cooldownMs: ABILITIES.potion.cooldownMs, tooltip: "Use a health potion if one is available." },
   { slot: 6, action: "dash", name: "Dash", key: "6", icon: ">>", cooldownMs: ABILITIES.dash.cooldownMs, tooltip: "Burst forward with a short movement trail." },
@@ -103,6 +104,7 @@ const game = {
   autoAttack: false,
   lastAutoAttackAt: 0,
   guardUntil: 0,
+  lastCombatAt: 0,
   combatLog: [],
   lastPingMs: null,
   questCollapsed: false,
@@ -170,6 +172,13 @@ function installDebugHooks() {
                 z: parts.sword.rotation.z
               }
             : null
+        },
+        progression: {
+          mana: game.save.mana,
+          maxMana: game.save.maxMana,
+          availableAttributePoints: game.save.availableAttributePoints,
+          availableSkillPoints: game.save.availableSkillPoints,
+          spentAttributes: game.save.spentAttributes
         }
       };
     },
@@ -209,10 +218,16 @@ function bootstrap() {
   game.debugDemo = params.get("demo");
   if (smoke) {
     const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : ZONES.HUB;
+    const phase2Smoke = params.get("phase2") === "progression";
     game.save = applyEquipment({
       ...game.save,
       name: "SmokeTester",
       color: COLORS[1],
+      xp: phase2Smoke ? 260 : game.save.xp,
+      coins: phase2Smoke ? 150 : game.save.coins,
+      inventory: phase2Smoke ? addInventoryItem(game.save.inventory || [], "rest_stone", 1) : game.save.inventory,
+      learnedAbilities: phase2Smoke ? [] : game.save.learnedAbilities,
+      hotbar: phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
       zone,
       settings: { ...game.save.settings, showFps: true }
     });
@@ -249,20 +264,32 @@ function loadSave() {
     },
     title: ""
   };
+  const finalizeSave = (incoming) => {
+    const result = migrateIceZeroSave(incoming);
+    if (result.migrated) {
+      try {
+        localStorage.setItem(SAVE_BACKUP_KEY, JSON.stringify(result.backup));
+      } catch {
+        // Backup failure should not block a safe load.
+      }
+    }
+    const loaded = recoverSavedHealth(applyEquipment({
+      ...base,
+      ...result.save,
+      settings: { ...base.settings, ...(result.save.settings || {}) },
+      questProgress: { ...base.questProgress, ...(result.save.questProgress || {}) },
+      openedChests: result.save.openedChests || [],
+      inventory: result.save.inventory || base.inventory
+    }));
+    loaded.migrationMessages = result.messages || [];
+    return loaded;
+  };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return recoverSavedHealth(applyEquipment(base));
-    const parsed = JSON.parse(raw);
-    return recoverSavedHealth(applyEquipment({
-      ...base,
-      ...parsed,
-      settings: { ...base.settings, ...(parsed.settings || {}) },
-      questProgress: { ...base.questProgress, ...(parsed.questProgress || {}) },
-      openedChests: parsed.openedChests || [],
-      inventory: parsed.inventory || base.inventory
-    }));
+    if (!raw) return finalizeSave(base);
+    return finalizeSave(raw);
   } catch {
-    return recoverSavedHealth(applyEquipment(base));
+    return finalizeSave(base);
   }
 }
 
@@ -291,7 +318,24 @@ function saveGame() {
     openedChests: game.save.openedChests || [],
     questProgress: game.save.questProgress,
     settings: game.save.settings,
-    title: game.save.title
+    title: game.save.title,
+    migrations: game.save.migrations || [],
+    saveSchemaVersion: game.save.saveSchemaVersion,
+    spentAttributes: game.save.spentAttributes,
+    availableAttributePoints: game.save.availableAttributePoints,
+    availableSkillPoints: game.save.availableSkillPoints,
+    skillTreeNodes: game.save.skillTreeNodes || {},
+    learnedAbilities: game.save.learnedAbilities || [],
+    hotbar: game.save.hotbar,
+    savedBuilds: game.save.savedBuilds,
+    bestiaryProgress: game.save.bestiaryProgress,
+    zoneCompletion: game.save.zoneCompletion,
+    waypoints: game.save.waypoints,
+    achievements: game.save.achievements,
+    firstClearRewards: game.save.firstClearRewards,
+    restStones: game.save.restStones,
+    mana: game.save.mana,
+    maxMana: game.save.maxMana
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
 }
@@ -377,6 +421,8 @@ function startGame() {
   game.clock.start();
   requestAnimationFrame(loop);
   toast("Welcome to Dawnrest.");
+  for (const message of game.save.migrationMessages || []) toast(message);
+  delete game.save.migrationMessages;
   if (game.debugDemo === "combat") setTimeout(startCombatDemo, 650);
 }
 
@@ -388,6 +434,8 @@ function buildHud() {
           <div class="frame-title"><strong id="hero-label">Hero</strong><span id="zone-label">Dawnrest</span></div>
           <div class="bar health"><i id="health-bar"></i></div>
           <div class="stat-line"><span id="health-text">100 / 100 HP</span><span id="guard-text">Guard ready</span></div>
+          <div class="bar mana"><i id="mana-bar"></i></div>
+          <div class="stat-line"><span id="mana-text">50 / 50 mana</span><span id="points-text"></span></div>
           <div class="bar xp"><i id="xp-bar"></i></div>
           <div class="stat-line"><span id="level-text">Level 1</span><span id="xp-text">0 XP</span><span id="coins-text">50 coins</span></div>
         </div>
@@ -460,6 +508,9 @@ function buildHud() {
   ui.zoneLabel = uiRoot.querySelector("#zone-label");
   ui.healthBar = uiRoot.querySelector("#health-bar");
   ui.healthText = uiRoot.querySelector("#health-text");
+  ui.manaBar = uiRoot.querySelector("#mana-bar");
+  ui.manaText = uiRoot.querySelector("#mana-text");
+  ui.pointsText = uiRoot.querySelector("#points-text");
   ui.guardText = uiRoot.querySelector("#guard-text");
   ui.coinsText = uiRoot.querySelector("#coins-text");
   ui.xpBar = uiRoot.querySelector("#xp-bar");
@@ -629,12 +680,29 @@ function serializeForServer() {
     xp: game.save.xp,
     coins: game.save.coins,
     health: game.save.health,
+    mana: game.save.mana,
+    maxMana: game.save.maxMana,
     state: game.save.state || "alive",
     equippedWeapon: game.save.equippedWeapon,
     equippedArmor: game.save.equippedArmor,
     inventory: game.save.inventory,
     questProgress: game.save.questProgress,
-    title: game.save.title
+    title: game.save.title,
+    migrations: game.save.migrations || [],
+    saveSchemaVersion: game.save.saveSchemaVersion,
+    spentAttributes: game.save.spentAttributes,
+    availableAttributePoints: game.save.availableAttributePoints,
+    availableSkillPoints: game.save.availableSkillPoints,
+    skillTreeNodes: game.save.skillTreeNodes || {},
+    learnedAbilities: game.save.learnedAbilities || [],
+    hotbar: game.save.hotbar,
+    savedBuilds: game.save.savedBuilds,
+    bestiaryProgress: game.save.bestiaryProgress,
+    zoneCompletion: game.save.zoneCompletion,
+    waypoints: game.save.waypoints,
+    achievements: game.save.achievements,
+    firstClearRewards: game.save.firstClearRewards,
+    restStones: game.save.restStones
   };
 }
 

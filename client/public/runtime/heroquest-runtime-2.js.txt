@@ -532,6 +532,7 @@ function loop(now) {
   updateLocalEnemies(dt);
   updateBoss(dt, now);
   updateAutoAttack(now);
+  updateMana(dt);
   updateMeshes(now);
   updateCamera();
   updateHud(now);
@@ -676,6 +677,12 @@ function updateHud(now = performance.now()) {
   ui.zoneLabel.textContent = zone.name;
   ui.healthBar.style.width = `${Math.max(0, (game.save.health / game.save.maxHealth) * 100)}%`;
   ui.healthText.textContent = `${Math.round(game.save.health)} / ${game.save.maxHealth} HP`;
+  ui.manaBar.style.width = `${Math.max(0, (game.save.mana / Math.max(1, game.save.maxMana)) * 100)}%`;
+  ui.manaText.textContent = `${Math.floor(game.save.mana)} / ${game.save.maxMana} mana`;
+  const pointText = [];
+  if (game.save.availableAttributePoints > 0) pointText.push(`${game.save.availableAttributePoints} attr`);
+  if (game.save.availableSkillPoints > 0) pointText.push(`${game.save.availableSkillPoints} skill`);
+  ui.pointsText.textContent = pointText.join(" / ");
   ui.coinsText.textContent = `${game.save.coins} coins`;
   const prevXp = XP_TABLE[game.save.level - 2] || 0;
   const nextXp = xpToNextLevel(game.save.level);

@@ -1,6 +1,7 @@
 import { PLAYER_STATES, RESPAWN_DELAY_MS, SNAPSHOT_MS, SERVER_TICK_MS, ZONES } from "../../shared/constants.js";
 import { NET } from "../../shared/netMessages.js";
 import { addInventoryItem, addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
+import { spendAttributePoint, useRestStone } from "../../shared/progression.js";
 import { applyQuestKill } from "../../shared/quests.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
 import { LootSystem } from "./LootSystem.js";
@@ -63,12 +64,27 @@ export class RoomManager {
       Object.assign(player, {
         xp: payload.xp ?? player.xp,
         coins: payload.coins ?? player.coins,
+        mana: payload.mana ?? player.mana,
         inventory: payload.inventory ?? player.inventory,
         equippedWeapon: payload.equippedWeapon ?? player.equippedWeapon,
         equippedArmor: payload.equippedArmor ?? player.equippedArmor,
         questProgress: payload.questProgress ?? player.questProgress,
         title: payload.title ?? player.title
       });
+    });
+
+    socket.on(NET.PLAYER_SPEND_ATTRIBUTE, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.allocateAttribute(player, payload?.attributeId, payload?.count);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_USE_REST_STONE, (_payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.resetWithRestStone(player);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
     });
 
     socket.on(NET.COMBAT_ATTACK, (payload, ack) => {
@@ -171,6 +187,22 @@ export class RoomManager {
     if (boss?.defeated || boss?.boss?.defeated) {
       this.awardBossDefeat(boss, player);
     }
+  }
+
+  allocateAttribute(player, attributeId, count = 1) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = spendAttributePoint(player, attributeId, count);
+    if (!result.ok) return result;
+    Object.assign(player, result.player);
+    return { ok: true };
+  }
+
+  resetWithRestStone(player) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = useRestStone(player);
+    if (!result.ok) return result;
+    Object.assign(player, result.player);
+    return { ok: true };
   }
 
   awardBossDefeat(bossResult, triggeringPlayer) {

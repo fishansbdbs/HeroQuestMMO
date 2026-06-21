@@ -1,6 +1,7 @@
 import { ABILITIES } from "../../shared/abilities.js";
 import { PLAYER_LIMITS, ZONES } from "../../shared/constants.js";
 import { calculatePlayerDamage, distance2d, isPlayerDead } from "../../shared/combat.js";
+import { spendMana } from "../../shared/progression.js";
 
 export class CombatSystem {
   constructor({ enemySystem, bossSystem, rng = Math.random }) {
@@ -42,9 +43,15 @@ export class CombatSystem {
     if (isPlayerDead(player)) {
       return { ok: false, reason: "dead" };
     }
+    if (!(player.learnedAbilities || []).includes("hero_pulse")) {
+      return { ok: false, reason: "not_learned" };
+    }
     if (now - player.lastAbilityAt < ability.cooldownMs) {
       return { ok: false, reason: "cooldown" };
     }
+    const manaSpend = spendMana(player, ability.manaCost || 0);
+    if (!manaSpend.ok) return { ok: false, reason: "mana" };
+    Object.assign(player, manaSpend.player);
     player.lastAbilityAt = now;
     const damage = Math.max(4, Math.round(calculatePlayerDamage(player, this.rng) * ability.damageScale));
     const hits = [];

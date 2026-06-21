@@ -123,6 +123,13 @@ export const ITEMS = {
     heal: 30,
     description: "Restores 30 health."
   },
+  rest_stone: {
+    id: "rest_stone",
+    name: "Rest Stone",
+    type: "special",
+    rarity: RARITIES.RARE,
+    description: "Resets spent attribute and skill points while preserving level, XP, abilities, and gear."
+  },
   slime_gel: {
     id: "slime_gel",
     name: "Slime Gel",

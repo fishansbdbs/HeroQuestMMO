@@ -311,6 +311,10 @@ h1 {
   background: linear-gradient(90deg, #5fa8ff, #b38cff);
 }
 
+.bar.mana > i {
+  background: linear-gradient(90deg, #3f8cff, #70e4d2);
+}
+
 .ability-chip {
   min-width: 76px;
   text-align: center;
