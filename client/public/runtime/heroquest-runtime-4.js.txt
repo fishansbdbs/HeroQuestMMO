@@ -7,6 +7,25 @@ function basicAttack() {
   performAttack({ kind: "auto", source: "manual" });
 }
 
+function resolveHotbarSlot(baseSlot) {
+  if (!baseSlot) return { slot: 0, action: "empty", name: "Empty", key: "", icon: "--", cooldownMs: 0, locked: true, tooltip: "Empty hotbar slot." };
+  const assigned = (game.save.hotbar || [])[baseSlot.slot - 1];
+  if (baseSlot.slot === 3) {
+    if (assigned === "hero_pulse" || assigned === "pulse") return { ...baseSlot, action: "pulse", requiresAbility: "hero_pulse" };
+    return { ...baseSlot, action: "empty3", name: "Empty", icon: "--", cooldownMs: 0, locked: true, tooltip: "Open the Spellbook with K to assign an ability." };
+  }
+  return baseSlot;
+}
+
+function handleHotbarSlot(slotNumber) {
+  const slot = resolveHotbarSlot(HOTBAR_DEFS.find((entry) => entry.slot === slotNumber));
+  if (!slot || slot.locked || slot.action.startsWith("empty")) {
+    toast("That hotbar slot is empty.");
+    return;
+  }
+  handleHotbarAction(slot.action);
+}
+
 function handleHotbarAction(action) {
   const slot = HOTBAR_DEFS.find((entry) => entry.action === action);
   if (!slot || slot.locked) return;

@@ -2,6 +2,7 @@ import { PLAYER_STATES, RESPAWN_DELAY_MS, SNAPSHOT_MS, SERVER_TICK_MS, ZONES } f
 import { NET } from "../../shared/netMessages.js";
 import { addInventoryItem, addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
 import { spendAttributePoint, useRestStone } from "../../shared/progression.js";
+import { assignHotbarAbility, purchaseTrainerAbility } from "../../shared/trainers.js";
 import { applyQuestKill } from "../../shared/quests.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
 import { LootSystem } from "./LootSystem.js";
@@ -83,6 +84,20 @@ export class RoomManager {
     socket.on(NET.PLAYER_USE_REST_STONE, (_payload, ack) => {
       const player = this.players.get(socket.id);
       const result = this.resetWithRestStone(player);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_BUY_ABILITY, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.buyAbility(player, payload?.abilityId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_ASSIGN_HOTBAR, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.assignHotbar(player, payload?.slot, payload?.abilityId);
       ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
       if (result.ok) this.broadcastSnapshots();
     });
@@ -200,6 +215,22 @@ export class RoomManager {
   resetWithRestStone(player) {
     if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
     const result = useRestStone(player);
+    if (!result.ok) return result;
+    Object.assign(player, result.player);
+    return { ok: true };
+  }
+
+  buyAbility(player, abilityId) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = purchaseTrainerAbility(player, abilityId);
+    if (!result.ok) return result;
+    Object.assign(player, result.player);
+    return { ok: true, ability: result.ability };
+  }
+
+  assignHotbar(player, slot, abilityId) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = assignHotbarAbility(player, slot, abilityId);
     if (!result.ok) return result;
     Object.assign(player, result.player);
     return { ok: true };

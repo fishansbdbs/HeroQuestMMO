@@ -51,11 +51,16 @@ function updateTargetFrame() {
 
 function updateHotbar(now) {
   ui.hotbar?.querySelectorAll("[data-hotbar-action]").forEach((button) => {
-    const slot = HOTBAR_DEFS.find((entry) => entry.action === button.dataset.hotbarAction);
+    const baseSlot = HOTBAR_DEFS.find((entry) => entry.slot === Number(button.dataset.hotbarSlot));
+    const slot = resolveHotbarSlot(baseSlot);
     const cooldown = cooldownLeft(slot, now);
     const notLearned = Boolean(slot?.requiresAbility && !knowsAbility(slot.requiresAbility));
     const overlay = button.querySelector(".slot-cooldown");
     const count = button.querySelector(".slot-count");
+    button.dataset.hotbarAction = slot.action;
+    button.querySelector(".slot-key").textContent = slot.key;
+    button.querySelector(".slot-icon").textContent = slot.icon;
+    button.querySelector(".slot-name").textContent = slot.name;
     button.classList.toggle("cooling", cooldown > 0);
     button.classList.toggle("active", slot.action === "auto" && game.autoAttack);
     button.classList.toggle("pressed", game.hotbarPressed === slot.action);

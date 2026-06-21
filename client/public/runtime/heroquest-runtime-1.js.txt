@@ -35,8 +35,24 @@ const NPC_DIALOGUES = {
     name: "Combat Trainer",
     lines: [
       "Click an enemy or press 1 to start auto attack. Press 2 for Slash when you are close.",
-      "Use Q or hotbar slot 3 for Hero Pulse. It hits nearby enemies and the training dummy.",
+      "Strength improves weapon hits and physical abilities. Magic improves spells, mana, and healing.",
       "Use 5 to drink a potion. Enemies and the dummy show health bars and damage numbers."
+    ]
+  },
+  mage_trainer: {
+    name: "Arcanist Mira",
+    lines: [
+      "I teach combat magic and physical techniques that need focused training.",
+      "Hero Pulse is no longer free training. Buy it here, then slot it from your spellbook.",
+      "Magic powers Hero Pulse, Fireball, and Water Blast. Strength powers Ground Pound and Dark Punch."
+    ]
+  },
+  healer_trainer: {
+    name: "Sister Elara",
+    lines: [
+      "Healing scales from Magic and is meant for allies, party members, and yourself.",
+      "Healing Orb creates a shared recovery pickup. Mend Ally targets a friendly player.",
+      "Open your spellbook after training to place support abilities on your hotbar."
     ]
   },
   shopkeeper: {
@@ -468,6 +484,7 @@ function buildHud() {
       <div class="bottom-left">
         <button class="icon" data-panel="inventory" title="Inventory (I)">I</button>
         <button class="icon" data-panel="character" title="Character (C)">C</button>
+        <button class="icon" data-panel="spellbook" title="Spellbook (K)">K</button>
         <button class="icon" data-panel="party" title="Party (P)">P</button>
         <button class="icon" data-panel="quests" title="Quest Log (M)">M</button>
         <button class="icon" data-panel="settings" title="Settings (Esc)">S</button>
@@ -477,10 +494,10 @@ function buildHud() {
       <div class="bottom-center">
         <div class="hotbar" id="hotbar">
           ${HOTBAR_DEFS.map((slot) => `
-            <button class="hotbar-slot ${slot.locked ? "locked" : ""}" data-hotbar-action="${slot.action}" title="${escapeHtml(slot.tooltip)}" ${slot.locked ? "disabled" : ""}>
-              <span class="slot-key">${slot.key}</span>
-              <span class="slot-icon">${slot.icon}</span>
-              <span class="slot-name">${slot.name}</span>
+            <button class="hotbar-slot ${resolveHotbarSlot(slot).locked ? "locked" : ""}" data-hotbar-slot="${slot.slot}" data-hotbar-action="${resolveHotbarSlot(slot).action}" title="${escapeHtml(resolveHotbarSlot(slot).tooltip)}" ${resolveHotbarSlot(slot).locked ? "disabled" : ""}>
+              <span class="slot-key">${resolveHotbarSlot(slot).key}</span>
+              <span class="slot-icon">${resolveHotbarSlot(slot).icon}</span>
+              <span class="slot-name">${resolveHotbarSlot(slot).name}</span>
               <span class="slot-cooldown"></span>
               <span class="slot-count"></span>
             </button>
@@ -552,7 +569,7 @@ function buildHud() {
     playUiSound("tick");
   });
   uiRoot.querySelectorAll("[data-hotbar-action]").forEach((button) => {
-    button.addEventListener("click", () => handleHotbarAction(button.dataset.hotbarAction));
+    button.addEventListener("click", () => handleHotbarSlot(Number(button.dataset.hotbarSlot)));
   });
   uiRoot.querySelectorAll("[data-panel]").forEach((button) => {
     button.addEventListener("click", () => openPanel(button.dataset.panel));
@@ -599,16 +616,17 @@ function setupInput() {
     game.input.keys.add(key);
     if (key === "i") openPanel("inventory");
     if (key === "c") openPanel("character");
+    if (key === "k") openPanel("spellbook");
     if (key === "p") openPanel("party");
     if (key === "m") openPanel("quests");
     if (key === "h") openPanel("help");
     if (key === "escape") togglePanel("settings");
-    if (key === "1") handleHotbarAction("auto");
-    if (key === "2") handleHotbarAction("slash");
-    if (key === "3") handleHotbarAction("pulse");
-    if (key === "4") handleHotbarAction("guard");
-    if (key === "5") handleHotbarAction("potion");
-    if (key === "6") handleHotbarAction("dash");
+    if (key === "1") handleHotbarSlot(1);
+    if (key === "2") handleHotbarSlot(2);
+    if (key === "3") handleHotbarSlot(3);
+    if (key === "4") handleHotbarSlot(4);
+    if (key === "5") handleHotbarSlot(5);
+    if (key === "6") handleHotbarSlot(6);
     if (key === "q") handleHotbarAction("pulse");
     if (key === "e") interact();
     if (key === " ") handleHotbarAction("dash");
@@ -768,5 +786,7 @@ function buildHub() {
   addDummy(16, -12);
   addNpc(0, 13, "Quest Guide", "quest_guide", 0x75c792);
   addNpc(13, -9, "Combat Trainer", "combat_trainer", 0xf0c06d);
+  addNpc(2, 8, "Mage Trainer", "mage_trainer", 0x7d7dff);
+  addNpc(-2, 8, "Healer", "healer_trainer", 0xffe1a3);
   addNpc(-5, 15, "Shopkeeper", "shopkeeper", 0xc4473d);
   addNpc(24, 22, "Portal Keeper", "portal_keeper", 0x84bdff);

@@ -11,6 +11,7 @@ import {
   spendMana,
   useRestStone
 } from "../../shared/progression.js";
+import { assignHotbarAbility, purchaseTrainerAbility, validateAbilityTarget } from "../../shared/trainers.js";
 import { applyQuestKill, createQuestProgress } from "../../shared/quests.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
@@ -74,6 +75,9 @@ test("client runtime chunks compile after concatenation", () => {
       "spendAttributePoint",
       "spendMana",
       "useRestStone",
+      "assignHotbarAbility",
+      "getTrainerAbilities",
+      "purchaseTrainerAbility",
       "env",
       `"use strict";\n${runtimeSource}`
     );
@@ -304,6 +308,55 @@ test("Rest Stone refunds spent progression without wiping learned abilities or p
   assert.deepEqual(result.player.learnedAbilities, ["hero_pulse"]);
   assert.deepEqual(result.player.inventory, [{ itemId: "small_health_potion", quantity: 2 }]);
   assert.equal(result.player.health >= 1, true);
+});
+
+test("trainer purchases validate requirements, coins, and duplicates", () => {
+  const fireballReady = applyEquipment({
+    ...STARTING_PLAYER,
+    level: 4,
+    xp: 260,
+    coins: 250,
+    spentAttributes: { health: 0, strength: 0, magic: 5, defense: 0 },
+    learnedAbilities: []
+  });
+
+  const bought = purchaseTrainerAbility(fireballReady, "fireball");
+  assert.equal(bought.ok, true);
+  assert.equal(bought.player.coins, 50);
+  assert.ok(bought.player.learnedAbilities.includes("fireball"));
+
+  const duplicate = purchaseTrainerAbility(bought.player, "fireball");
+  assert.equal(duplicate.ok, false);
+  assert.equal(duplicate.reason, "known");
+
+  const underleveled = purchaseTrainerAbility({ ...fireballReady, level: 2, coins: 500 }, "fireball");
+  assert.equal(underleveled.ok, false);
+  assert.equal(underleveled.reason, "level");
+
+  const missingMagic = purchaseTrainerAbility({ ...fireballReady, spentAttributes: { magic: 0 }, coins: 500 }, "fireball");
+  assert.equal(missingMagic.ok, false);
+  assert.equal(missingMagic.reason, "attribute");
+});
+
+test("ability targeting and hotbar assignment reject invalid friendly or hostile use", () => {
+  assert.equal(validateAbilityTarget("fireball", "hostile").ok, true);
+  assert.equal(validateAbilityTarget("fireball", "friendly").ok, false);
+  assert.equal(validateAbilityTarget("mend_ally", "friendly").ok, true);
+  assert.equal(validateAbilityTarget("mend_ally", "hostile").ok, false);
+  assert.equal(validateAbilityTarget("healing_orb", "self").ok, true);
+
+  const player = {
+    ...STARTING_PLAYER,
+    learnedAbilities: ["hero_pulse"],
+    hotbar: ["auto", "slash", null, "guard", "potion", "dash", null, null]
+  };
+  const assigned = assignHotbarAbility(player, 3, "hero_pulse");
+  assert.equal(assigned.ok, true);
+  assert.equal(assigned.player.hotbar[2], "hero_pulse");
+
+  const invalid = assignHotbarAbility(player, 3, "fireball");
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.reason, "not_learned");
 });
 
 test("enemy defeat produces rewards and marks quest progress", () => {

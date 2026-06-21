@@ -236,6 +236,9 @@ function openPanel(panel) {
     quests: renderQuestPanel,
     settings: renderSettingsPanel,
     shop: renderShopPanel,
+    spellbook: renderSpellbookPanel,
+    mageTrainer: () => renderTrainerPanel("mage"),
+    healerTrainer: () => renderTrainerPanel("healer"),
     help: renderHelpPanel,
     patch: renderPatchPanel
   };
@@ -391,12 +394,123 @@ function openDialogue(dialogueId, index = 0) {
     <div class="dialogue-actions">
       <button id="dialogue-next">${index < dialogue.lines.length - 1 ? "Next" : "Restart"}</button>
       ${dialogueId === "shopkeeper" ? `<button id="dialogue-shop" class="primary">Open Shop</button>` : ""}
+      ${dialogueId === "mage_trainer" ? `<button id="dialogue-mage" class="primary">Train Magic</button>` : ""}
+      ${dialogueId === "healer_trainer" ? `<button id="dialogue-healer" class="primary">Train Healing</button>` : ""}
       <button id="dialogue-close">Close</button>
     </div>
   `;
   ui.panelContent.querySelector("#dialogue-next").addEventListener("click", () => openDialogue(dialogueId, index < dialogue.lines.length - 1 ? index + 1 : 0));
   ui.panelContent.querySelector("#dialogue-close").addEventListener("click", closePanel);
   ui.panelContent.querySelector("#dialogue-shop")?.addEventListener("click", () => openPanel("shop"));
+  ui.panelContent.querySelector("#dialogue-mage")?.addEventListener("click", () => openPanel("mageTrainer"));
+  ui.panelContent.querySelector("#dialogue-healer")?.addEventListener("click", () => openPanel("healerTrainer"));
+}
+
+function renderTrainerPanel(trainerId) {
+  const title = trainerId === "healer" ? "Healer" : "Mage Trainer";
+  ui.panelTitle.textContent = title;
+  const abilities = getTrainerAbilities(trainerId);
+  ui.panelContent.innerHTML = abilities.map((ability) => {
+    const learned = knowsAbility(ability.id);
+    const reqs = abilityRequirementText(ability);
+    const status = learned ? "Learned" : `${ability.price} coins`;
+    return `<div class="item-row">
+      <div>
+        <strong>${ability.name}</strong>
+        <small>${ability.description} ${reqs}</small>
+        <small>Scaling: ${ability.scalingStat || "none"} | Mana: ${ability.manaCost || 0} | Cooldown: ${Math.round((ability.cooldownMs || 0) / 1000)}s</small>
+      </div>
+      <div class="shop-actions">
+        <span>${status}</span>
+        <button data-train-ability="${ability.id}" ${learned ? "disabled" : ""}>Buy</button>
+      </div>
+    </div>`;
+  }).join("") + `<button id="open-spellbook" class="primary">Open Spellbook</button>`;
+  ui.panelContent.querySelectorAll("[data-train-ability]").forEach((button) => {
+    button.addEventListener("click", () => buyTrainerAbility(button.dataset.trainAbility, trainerId));
+  });
+  ui.panelContent.querySelector("#open-spellbook").addEventListener("click", () => openPanel("spellbook"));
+}
+
+function abilityRequirementText(ability) {
+  const attributes = Object.entries(ability.attributeRequirements || {})
+    .map(([id, value]) => `${id} ${value}`)
+    .join(", ");
+  return `Requires level ${ability.levelRequirement || 1}${attributes ? `, ${attributes}` : ""}.`;
+}
+
+function buyTrainerAbility(abilityId, trainerId) {
+  if (isLocallyDead()) return toast("You cannot train while defeated.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_BUY_ABILITY, { abilityId }, (ack) => {
+      if (!ack?.ok) return toast(trainerBuyReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("pickup");
+      toast(`Learned ${ack.ability?.name || abilityId}.`);
+      renderTrainerPanel(trainerId);
+    });
+    return;
+  }
+  const result = purchaseTrainerAbility(game.save, abilityId);
+  if (!result.ok) return toast(trainerBuyReason(result.reason));
+  game.save = result.player;
+  saveGame();
+  playUiSound("pickup");
+  toast(`Learned ${result.ability.name}.`);
+  renderTrainerPanel(trainerId);
+}
+
+function trainerBuyReason(reason) {
+  if (reason === "known") return "That ability is already learned.";
+  if (reason === "level") return "Your level is too low for that training.";
+  if (reason === "attribute") return "Your attributes do not meet the requirement.";
+  if (reason === "coins") return "Not enough coins.";
+  return "That training is unavailable.";
+}
+
+function renderSpellbookPanel() {
+  ui.panelTitle.textContent = "Spellbook";
+  const abilities = ["hero_pulse", "ground_pound", "fireball", "dark_punch", "water_blast", "healing_orb", "mend_ally"]
+    .map((abilityId) => ABILITIES[abilityId])
+    .filter(Boolean);
+  ui.panelContent.innerHTML = abilities.map((ability) => {
+    const learned = knowsAbility(ability.id);
+    const slotted = (game.save.hotbar || []).includes(ability.id);
+    return `<div class="item-row">
+      <div>
+        <strong>${ability.name}</strong>
+        <small>${learned ? "Learned" : "Locked"} from ${ability.trainerId === "healer" ? "Sister Elara" : "Arcanist Mira"}. ${ability.description}</small>
+        <small>Mana ${ability.manaCost || 0}. ${abilityRequirementText(ability)}</small>
+      </div>
+      <div class="shop-actions">
+        <span>${slotted ? "Slotted" : learned ? "Ready" : "Locked"}</span>
+        ${ability.id === "hero_pulse" ? `<button data-slot-ability="${ability.id}" data-slot="3" ${learned ? "" : "disabled"}>${slotted ? "Slot 3" : "Assign 3"}</button>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  ui.panelContent.querySelectorAll("[data-slot-ability]").forEach((button) => {
+    button.addEventListener("click", () => assignAbilityToHotbar(Number(button.dataset.slot), button.dataset.slotAbility));
+  });
+}
+
+function assignAbilityToHotbar(slot, abilityId) {
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_ASSIGN_HOTBAR, { slot, abilityId }, (ack) => {
+      if (!ack?.ok) return toast("That ability cannot be assigned.");
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      toast("Hotbar updated.");
+      renderSpellbookPanel();
+    });
+    return;
+  }
+  const result = assignHotbarAbility(game.save, slot, abilityId);
+  if (!result.ok) return toast("That ability cannot be assigned.");
+  game.save = result.player;
+  saveGame();
+  toast("Hotbar updated.");
+  renderSpellbookPanel();
 }
 
 function renderHelpPanel() {
