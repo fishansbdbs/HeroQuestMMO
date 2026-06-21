@@ -1,4 +1,4 @@
-export const GAME_VERSION = "1.1.0";
+export const GAME_VERSION = "1.2.1";
 
 export const ZONES = {
   HUB: "hub",
@@ -33,18 +33,54 @@ export const SERVER_TICK_MS = 100;
 export const SNAPSHOT_MS = 120;
 
 export const PATCH_NOTES = {
-  title: "Version 1.1 - First Adventure",
-  items: [
-    "Added Dawnrest hub town",
-    "Added Greenvale Outskirts starter zone",
-    "Added online players",
-    "Added slimes, goblins, wolves, wisps, and golems",
-    "Added Shadow Wyrm boss arena",
-    "Added basic combat",
-    "Added XP and coins",
-    "Added loot drops",
-    "Added inventory and equipment",
-    "Added party system",
-    "Added Netlify and Render deployment support"
+  title: "HeroQuest MMO Patch Notes",
+  versions: [
+    {
+      version: "1.2.1",
+      title: "Combat & UI Overhaul",
+      date: "2026-06-20",
+      summary: "Blocky character silhouettes, MMO hotbar combat, richer target feedback, and a grouped patch notes surface.",
+      sections: [
+        {
+          title: "Combat Hotbar",
+          items: [
+            "Added slots 1-8 with icons, keybinds, cooldown sweeps, disabled states, and tooltips.",
+            "Added Auto Attack targeting, Slash, Hero Pulse, Guard, Potion, Dash, and two future locked slots.",
+            "Added target rings, target frames, combat log pulses, damage numbers, hit sparks, and loot toasts."
+          ]
+        },
+        {
+          title: "Characters & Enemies",
+          items: [
+            "Rebuilt the hero, NPCs, and goblins as segmented blocky humanoids with unique proportions.",
+            "Added enemy nameplates with level and health bars.",
+            "Added family-specific defeat effects for slimes, goblins, wolves, wisps, and golems."
+          ]
+        },
+        {
+          title: "World Polish",
+          items: [
+            "Improved HUD panels, boss warnings, quest tracker collapse behavior, and online/party indicators.",
+            "Added clearer combat affordances while preserving the Netlify client and Render server deployment paths."
+          ]
+        }
+      ]
+    },
+    {
+      version: "1.1",
+      title: "First Adventure",
+      date: "2026-06-20",
+      summary: "The first playable online adventure across Dawnrest, Greenvale, and Shadow Peak.",
+      sections: [
+        {
+          title: "Launch Content",
+          items: [
+            "Added Dawnrest hub town and Greenvale Outskirts starter zone.",
+            "Added slimes, goblins, wolves, wisps, golems, and the Shadow Wyrm boss arena.",
+            "Added online players, XP, coins, loot drops, inventory, equipment, quests, parties, Netlify, and Render support."
+          ]
+        }
+      ]
+    }
   ]
 };

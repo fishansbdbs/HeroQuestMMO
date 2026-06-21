@@ -1,0 +1,127 @@
+    const bit = new THREE.Mesh(geo, mat(color, 0.82, family === "wisp"));
+    bit.position.set(position.x, 0.8 + Math.random() * 0.9, position.z);
+    bit.userData.velocity = new THREE.Vector3(randomRange(-2.3, 2.3), randomRange(1, 3), randomRange(-2.3, 2.3));
+    game.scene.add(bit);
+    const started = performance.now();
+    const animate = () => {
+      const t = (performance.now() - started) / 650;
+      bit.position.addScaledVector(bit.userData.velocity, 0.014);
+      bit.userData.velocity.y -= 0.05;
+      bit.material.opacity = Math.max(0, 0.82 - t * 0.82);
+      if (t < 1) requestAnimationFrame(animate);
+      else game.scene.remove(bit);
+    };
+    animate();
+  }
+  logCombat(`${def.name} defeated.`);
+}
+
+function floatingText(text, position, color) {
+  const label = makeLabel(text, color);
+  label.position.set(position.x, (position.y || 0) + 2.4, position.z);
+  game.scene.add(label);
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 900;
+    label.position.y += 0.015;
+    label.material.opacity = Math.max(0, 1 - t);
+    if (t < 1) requestAnimationFrame(animate);
+    else game.scene.remove(label);
+  };
+  animate();
+}
+
+function makeLabel(text, color = "#ffffff") {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.roundRect(24, 28, 464, 66, 16);
+  ctx.fill();
+  ctx.font = "700 34px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillStyle = color;
+  ctx.fillText(text, 256, 74);
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  sprite.scale.set(1.9, 0.48, 1);
+  return sprite;
+}
+
+function addWorldLabel(text, x, y, z) {
+  const label = makeLabel(text, "#ffe9b8");
+  label.userData.fixedLabel = true;
+  label.position.set(x, y, z);
+  game.world.add(label);
+}
+
+function fitLabels(group) {
+  if (!group || !game.camera) return;
+  for (const child of group.children) {
+    if (!child.isSprite || child.userData.fixedLabel) continue;
+    const world = new THREE.Vector3();
+    child.getWorldPosition(world);
+    const dist = game.camera.position.distanceTo(world);
+    child.visible = game.save.settings.nameTags && dist > 4.6;
+    const width = THREE.MathUtils.clamp(dist * 0.085, 0.7, 1.65);
+    child.scale.set(width, width * 0.25, 1);
+  }
+}
+
+function mat(color, opacity = 1, emissive = false) {
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.72,
+    metalness: 0.04,
+    transparent: opacity < 1,
+    opacity
+  });
+  if (emissive) {
+    material.emissive = new THREE.Color(color);
+    material.emissiveIntensity = 0.55;
+  }
+  return material;
+}
+
+function movePointToward(position, target, amount) {
+  const dx = target.x - position.x;
+  const dz = target.z - position.z;
+  const length = Math.max(0.001, Math.sqrt(dx * dx + dz * dz));
+  position.x += (dx / length) * amount;
+  position.z += (dz / length) * amount;
+}
+
+function clampToZone(position) {
+  const bounds = getZone(game.zone).bounds;
+  position.x = THREE.MathUtils.clamp(position.x, -bounds, bounds);
+  position.z = THREE.MathUtils.clamp(position.z, -bounds, bounds);
+  if (game.zone === ZONES.BOSS) {
+    const radius = Math.sqrt(position.x * position.x + position.z * position.z);
+    if (radius > 25.5) {
+      position.x = (position.x / radius) * 25.5;
+      position.z = (position.z / radius) * 25.5;
+    }
+  }
+}
+
+function collides(position) {
+  return game.blockers.some((box) => Math.abs(position.x - box.x) < box.halfX && Math.abs(position.z - box.z) < box.halfZ);
+}
+
+function groupPosition(group) {
+  return { x: group.position.x, y: group.position.y, z: group.position.z, rot: group.rotation.y };
+}
+
+function clearMeshes(map) {
+  for (const mesh of map.values()) game.scene?.remove(mesh);
+  map.clear();
+}
+
+function resize() {
+  if (!game.renderer || !game.camera) return;
+  game.camera.aspect = window.innerWidth / window.innerHeight;
+  game.camera.updateProjectionMatrix();
+  game.renderer.setSize(window.innerWidth, window.innerHeight);
+}
+

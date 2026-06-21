@@ -1,0 +1,97 @@
+    const progress = game.save.questProgress[quest.id] || { current: 0, complete: false };
+    return `<div class="quest-row ${progress.complete ? "complete" : ""}">
+      <div><strong>${quest.name}</strong><small>${quest.description}</small></div>
+      <div>${progress.current}/${quest.required}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderSettingsPanel() {
+  ui.panelTitle.textContent = "Settings";
+  const settings = game.save.settings;
+  ui.panelContent.innerHTML = `
+    ${sliderRow("Master Volume", "master", settings.master, 0, 1, 0.05)}
+    ${sliderRow("Music Volume", "music", settings.music, 0, 1, 0.05)}
+    ${sliderRow("SFX Volume", "sfx", settings.sfx, 0, 1, 0.05)}
+    ${sliderRow("Mouse Sensitivity", "sensitivity", settings.sensitivity, 0.3, 1.8, 0.05)}
+    ${sliderRow("Camera Distance", "cameraDistance", settings.cameraDistance, 7, 18, 1)}
+    <label class="setting-row"><span>Graphics Quality</span><select data-setting="quality"><option ${settings.quality === "high" ? "selected" : ""}>high</option><option ${settings.quality === "low" ? "selected" : ""}>low</option></select></label>
+    ${toggleRow("Show FPS", "showFps", settings.showFps)}
+    ${toggleRow("Reduced Motion", "reducedMotion", settings.reducedMotion)}
+    ${toggleRow("Screen Shake", "screenShake", settings.screenShake)}
+    ${toggleRow("Name Tags", "nameTags", settings.nameTags)}
+    <button id="fullscreen">Fullscreen</button>
+  `;
+  ui.panelContent.querySelectorAll("[data-setting]").forEach((control) => {
+    control.addEventListener("input", () => {
+      const key = control.dataset.setting;
+      if (control.type === "checkbox") settings[key] = control.checked;
+      else if (control.type === "range") settings[key] = Number(control.value);
+      else settings[key] = control.value;
+      game.input.distance = settings.cameraDistance;
+      saveGame();
+    });
+  });
+  ui.panelContent.querySelector("#fullscreen").addEventListener("click", () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+    else document.exitFullscreen();
+  });
+}
+
+function renderPatchPanel() {
+  ui.panelTitle.textContent = "Patch Notes";
+  ui.panelContent.innerHTML = `
+    <div class="patch-stack">
+      ${PATCH_NOTES.versions.map((version, index) => `
+        <details class="patch-version" ${index === 0 ? "open" : ""}>
+          <summary>
+            <span><strong>v${version.version}</strong> ${version.title}</span>
+            <small>${version.date}</small>
+          </summary>
+          <p>${version.summary}</p>
+          <div class="patch-section-grid">
+            ${version.sections.map((section) => `
+              <section class="patch-card">
+                <h3>${section.title}</h3>
+                ${section.items.map((item) => `<div class="patch-item">${item}</div>`).join("")}
+              </section>
+            `).join("")}
+          </div>
+        </details>
+      `).join("")}
+    </div>
+  `;
+}
+
+function formatPatchNotesPlainText() {
+  return PATCH_NOTES.versions.map((version) => {
+    const sections = version.sections.map((section) => `${section.title}\n${section.items.map((item) => `- ${item}`).join("\n")}`).join("\n\n");
+    return `v${version.version} - ${version.title}\n${version.summary}\n\n${sections}`;
+  }).join("\n\n");
+}
+
+function sliderRow(label, key, value, min, max, step) {
+  return `<label class="setting-row"><span>${label}</span><input data-setting="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" /></label>`;
+}
+
+function toggleRow(label, key, value) {
+  return `<label class="setting-row"><span>${label}</span><input data-setting="${key}" type="checkbox" ${value ? "checked" : ""} /></label>`;
+}
+
+function createAudioManager() {
+  let context = null;
+  let musicOsc = null;
+  const getContext = () => {
+    if (!context) context = new AudioContext();
+    return context;
+  };
+  const manager = {
+    get context() {
+      return context;
+    },
+    play(type) {
+      if (game.save.settings.master <= 0) return;
+      const context = getContext();
+      const osc = context.createOscillator();
+      const gain = context.createGain();
+      const now = context.currentTime;

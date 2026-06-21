@@ -1,447 +1,229 @@
-  }
-  for (const [id, mesh] of game.lootMeshes.entries()) {
-    if (!game.loot.has(id)) {
-      game.scene.remove(mesh);
-      game.lootMeshes.delete(id);
-    }
+    playUiSound("tick");
+    game.promptAction();
   }
 }
 
-function createLootMesh(bag) {
-  const group = new THREE.Group();
-  const rare = bag.items?.some((item) => ["shadow_fang", "wyrm_scale_shield", "wisp_wand", "stoneguard_plate"].includes(item.itemId));
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), mat(rare ? 0xd08cff : 0xf0c05a, 0.92, rare));
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, rare ? 4.6 : 2.6, 8), mat(rare ? 0xd08cff : 0xffdc88, 0.38, true));
-  beam.position.y = rare ? 2.2 : 1.2;
-  group.add(body, beam);
-  group.position.set(bag.position.x, bag.position.y || 0.25, bag.position.z);
-  group.id = bag.id;
-  return group;
+function basicAttack() {
+  performAttack({ kind: "auto", source: "manual" });
 }
 
-function findNearestEnemy(range) {
-  const player = groupPosition(game.playerGroup);
-  let nearest = null;
-  let best = Infinity;
-  for (const enemy of game.enemies.values()) {
-    const dist = distance2d(player, enemy.position);
-    if (dist < range && dist < best) {
-      nearest = enemy;
-      best = dist;
-    }
-  }
-  return nearest;
-}
-
-function findNearestLoot(range) {
-  const player = groupPosition(game.playerGroup);
-  let nearest = null;
-  let best = Infinity;
-  for (const bag of game.loot.values()) {
-    const dist = distance2d(player, bag.position);
-    if (dist < range && dist < best) {
-      nearest = bag;
-      best = dist;
-    }
-  }
-  return nearest;
-}
-
-function openPanel(panel) {
-  ui.panel.classList.remove("hidden");
-  const renderers = {
-    inventory: renderInventoryPanel,
-    character: renderCharacterPanel,
-    party: renderPartyPanel,
-    quests: renderQuestPanel,
-    settings: renderSettingsPanel,
-    patch: renderPatchPanel
-  };
-  renderers[panel]?.();
-}
-
-function togglePanel(panel) {
-  if (!ui.panel.classList.contains("hidden")) closePanel();
-  else openPanel(panel);
-}
-
-function closePanel() {
-  ui.panel.classList.add("hidden");
-}
-
-function renderInventoryPanel() {
-  ui.panelTitle.textContent = "Inventory";
-  const inventory = game.save.inventory || [];
-  ui.panelContent.innerHTML = `
-    <div class="stat-line"><span>Weapon</span><strong>${getItem(game.save.equippedWeapon)?.name}</strong></div>
-    <div class="stat-line"><span>Armor</span><strong>${getItem(game.save.equippedArmor)?.name}</strong></div>
-    ${inventory.length ? inventory.map((entry) => {
-      const item = getItem(entry.itemId);
-      const canEquip = item?.type === "weapon" || item?.type === "armor";
-      const canUse = item?.type === "consumable";
-      return `<div class="item-row">
-        <div><strong>${item?.name || entry.itemId}</strong> x${entry.quantity}<small>${item?.rarity || ""} ${item?.description || ""}</small></div>
-        <div>${canEquip ? `<button data-equip="${entry.itemId}">Equip</button>` : ""}${canUse ? `<button data-use="${entry.itemId}">Use</button>` : ""}</div>
-      </div>`;
-    }).join("") : `<p class="intro">No loose items yet. Monsters drop glowing bags in the world.</p>`}
-  `;
-  ui.panelContent.querySelectorAll("[data-equip]").forEach((button) => {
-    button.addEventListener("click", () => equipItem(button.dataset.equip));
-  });
-  ui.panelContent.querySelectorAll("[data-use]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (button.dataset.use === "small_health_potion") usePotion();
-      renderInventoryPanel();
-    });
-  });
-}
-
-function equipItem(itemId) {
-  const item = getItem(itemId);
-  if (!item) return;
-  if (item.type === "weapon") game.save.equippedWeapon = itemId;
-  if (item.type === "armor") game.save.equippedArmor = itemId;
-  game.save = applyEquipment(game.save);
-  saveGame();
-  playUiSound("equip");
-  toast(`Equipped ${item.name}.`);
-  renderInventoryPanel();
-}
-
-function renderCharacterPanel() {
-  const stats = applyEquipment(game.save);
-  ui.panelTitle.textContent = "Character";
-  ui.panelContent.innerHTML = `
-    <div class="item-row"><div><strong>${escapeHtml(game.save.name || "New Hero")}</strong><small>${game.save.title || "No title yet"}</small></div><div>Lv. ${stats.level}</div></div>
-    <div class="stat-line"><span>Attack</span><strong>${stats.attack}</strong></div>
-    <div class="stat-line"><span>Defense</span><strong>${stats.defense}</strong></div>
-    <div class="stat-line"><span>Speed</span><strong>${stats.speed.toFixed(1)}</strong></div>
-    <div class="stat-line"><span>Coins</span><strong>${stats.coins}</strong></div>
-    <div class="stat-line"><span>Weapon</span><strong>${getItem(stats.equippedWeapon)?.name}</strong></div>
-    <div class="stat-line"><span>Armor</span><strong>${getItem(stats.equippedArmor)?.name}</strong></div>
-  `;
-}
-
-function renderPartyPanel() {
-  ui.panelTitle.textContent = "Party";
-  ui.panelContent.innerHTML = `
-    <p class="intro">Create a code and send it to friends. Parties support 2-4 players and share boss credit when members fight in the arena.</p>
-    <button class="primary" id="create-party">Create Party Code</button>
-    <div class="setup-grid">
-      <input id="party-code" maxlength="4" placeholder="Code" />
-      <button id="join-party">Join</button>
-    </div>
-    <button id="leave-party">Leave Party</button>
-  `;
-  ui.panelContent.querySelector("#create-party").addEventListener("click", () => {
-    if (!game.online) {
-      toast("Party codes need the online server.");
-      return;
-    }
-    game.socket.emit(NET.PARTY_CREATE, {}, (ack) => {
-      if (ack?.ok) toast(`Party code: ${ack.party.code}`);
-    });
-  });
-  ui.panelContent.querySelector("#join-party").addEventListener("click", () => {
-    if (!game.online) return toast("Party codes need the online server.");
-    const code = ui.panelContent.querySelector("#party-code").value;
-    game.socket.emit(NET.PARTY_JOIN, { code }, (ack) => {
-      toast(ack?.ok ? `Joined party ${ack.party.code}.` : ack?.error || "Could not join party.");
-    });
-  });
-  ui.panelContent.querySelector("#leave-party").addEventListener("click", () => {
-    if (game.online) game.socket.emit(NET.PARTY_LEAVE, {}, () => toast("Left party."));
-  });
-}
-
-function renderQuestPanel() {
-  ui.panelTitle.textContent = "Quest Log";
-  ui.panelContent.innerHTML = getQuestList().map((quest) => {
-    const progress = game.save.questProgress[quest.id] || { current: 0, complete: false };
-    return `<div class="quest-row ${progress.complete ? "complete" : ""}">
-      <div><strong>${quest.name}</strong><small>${quest.description}</small></div>
-      <div>${progress.current}/${quest.required}</div>
-    </div>`;
-  }).join("");
-}
-
-function renderSettingsPanel() {
-  ui.panelTitle.textContent = "Settings";
-  const settings = game.save.settings;
-  ui.panelContent.innerHTML = `
-    ${sliderRow("Master Volume", "master", settings.master, 0, 1, 0.05)}
-    ${sliderRow("Music Volume", "music", settings.music, 0, 1, 0.05)}
-    ${sliderRow("SFX Volume", "sfx", settings.sfx, 0, 1, 0.05)}
-    ${sliderRow("Mouse Sensitivity", "sensitivity", settings.sensitivity, 0.3, 1.8, 0.05)}
-    ${sliderRow("Camera Distance", "cameraDistance", settings.cameraDistance, 7, 18, 1)}
-    <label class="setting-row"><span>Graphics Quality</span><select data-setting="quality"><option ${settings.quality === "high" ? "selected" : ""}>high</option><option ${settings.quality === "low" ? "selected" : ""}>low</option></select></label>
-    ${toggleRow("Show FPS", "showFps", settings.showFps)}
-    ${toggleRow("Reduced Motion", "reducedMotion", settings.reducedMotion)}
-    ${toggleRow("Screen Shake", "screenShake", settings.screenShake)}
-    ${toggleRow("Name Tags", "nameTags", settings.nameTags)}
-    <button id="fullscreen">Fullscreen</button>
-  `;
-  ui.panelContent.querySelectorAll("[data-setting]").forEach((control) => {
-    control.addEventListener("input", () => {
-      const key = control.dataset.setting;
-      if (control.type === "checkbox") settings[key] = control.checked;
-      else if (control.type === "range") settings[key] = Number(control.value);
-      else settings[key] = control.value;
-      game.input.distance = settings.cameraDistance;
-      saveGame();
-    });
-  });
-  ui.panelContent.querySelector("#fullscreen").addEventListener("click", () => {
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-    else document.exitFullscreen();
-  });
-}
-
-function renderPatchPanel() {
-  ui.panelTitle.textContent = "Patch Notes";
-  ui.panelContent.innerHTML = `<h3>${PATCH_NOTES.title}</h3>${PATCH_NOTES.items.map((item) => `<div class="quest-row"><div>${item}</div></div>`).join("")}`;
-}
-
-function sliderRow(label, key, value, min, max, step) {
-  return `<label class="setting-row"><span>${label}</span><input data-setting="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" /></label>`;
-}
-
-function toggleRow(label, key, value) {
-  return `<label class="setting-row"><span>${label}</span><input data-setting="${key}" type="checkbox" ${value ? "checked" : ""} /></label>`;
-}
-
-function createAudioManager() {
-  const context = new AudioContext();
-  let musicOsc = null;
-  const manager = {
-    context,
-    play(type) {
-      if (game.save.settings.master <= 0) return;
-      const osc = context.createOscillator();
-      const gain = context.createGain();
-      const now = context.currentTime;
-      const profiles = {
-        tick: [420, 0.05],
-        low: [120, 0.12],
-        swing: [260, 0.08],
-        hit: [90, 0.12],
-        hurt: [70, 0.18],
-        pickup: [620, 0.12],
-        level: [880, 0.3],
-        pulse: [180, 0.25],
-        dash: [320, 0.08],
-        danger: [55, 0.24],
-        equip: [540, 0.1],
-        boss: [110, 0.5]
-      };
-      const [freq, duration] = profiles[type] || profiles.tick;
-      osc.frequency.setValueAtTime(freq, now);
-      osc.frequency.exponentialRampToValueAtTime(freq * 1.8, now + duration);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.18 * game.save.settings.master * game.save.settings.sfx, now + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-      osc.connect(gain).connect(context.destination);
-      osc.start(now);
-      osc.stop(now + duration + 0.02);
-    },
-    ensureMusic() {
-      if (musicOsc || game.save.settings.music <= 0) return;
-      musicOsc = context.createOscillator();
-      const gain = context.createGain();
-      musicOsc.type = "sine";
-      musicOsc.frequency.value = game.zone === ZONES.BOSS ? 74 : 110;
-      gain.gain.value = 0.018 * game.save.settings.master * game.save.settings.music;
-      musicOsc.connect(gain).connect(context.destination);
-      musicOsc.start();
-    }
-  };
-  return manager;
-}
-
-function playUiSound(type) {
-  if (game.audio) {
-    if (game.audio.context.state === "suspended") game.audio.context.resume();
-    game.audio.play(type);
-    game.audio.ensureMusic();
-  }
-}
-
-function pulseEffect() {
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.35, 32), mat(0x77d8ff, 0.65, true));
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.copy(game.playerGroup.position);
-  ring.position.y = 0.08;
-  game.scene.add(ring);
-  const started = performance.now();
-  const animate = () => {
-    const t = (performance.now() - started) / 360;
-    ring.scale.setScalar(1 + t * 14);
-    ring.material.opacity = Math.max(0, 0.65 - t * 0.65);
-    if (t < 1) requestAnimationFrame(animate);
-    else game.scene.remove(ring);
-  };
-  animate();
-}
-
-function swingWeapon() {
-  const sword = game.playerGroup.children.find((child) => child.geometry?.type === "BoxGeometry");
-  if (!sword) return;
-  const original = sword.rotation.z;
-  sword.rotation.z = -1.2;
+function handleHotbarAction(action) {
+  const slot = HOTBAR_DEFS.find((entry) => entry.action === action);
+  if (!slot || slot.locked) return;
+  game.hotbarPressed = action;
   setTimeout(() => {
-    sword.rotation.z = original;
-  }, 120);
+    if (game.hotbarPressed === action) game.hotbarPressed = null;
+  }, 140);
+  if (action === "auto") toggleAutoAttack();
+  if (action === "slash") performAttack({ kind: "slash", source: "hotbar" });
+  if (action === "pulse") useHeroPulse();
+  if (action === "guard") useGuard();
+  if (action === "potion") usePotion();
+  if (action === "dash") dash();
 }
 
-function floatingText(text, position, color) {
-  const label = makeLabel(text, color);
-  label.position.set(position.x, (position.y || 0) + 2.4, position.z);
-  game.scene.add(label);
-  const started = performance.now();
-  const animate = () => {
-    const t = (performance.now() - started) / 900;
-    label.position.y += 0.015;
-    label.material.opacity = Math.max(0, 1 - t);
-    if (t < 1) requestAnimationFrame(animate);
-    else game.scene.remove(label);
-  };
-  animate();
+function toggleAutoAttack() {
+  if (!getCurrentTarget()) {
+    const nearest = findNearestEnemy(PLAYER_LIMITS.meleeRange + 1.2);
+    if (nearest) selectTarget(nearest);
+    else if (game.zone === ZONES.BOSS && game.boss && !game.boss.defeated) selectTarget("shadow_wyrm");
+  }
+  if (!getCurrentTarget()) {
+    toast("Select a target first.");
+    logCombat("No target in range for auto attack.");
+    return;
+  }
+  game.autoAttack = !game.autoAttack;
+  game.lastAutoAttackAt = 0;
+  logCombat(game.autoAttack ? "Auto attack started." : "Auto attack stopped.");
+  playUiSound("tick");
 }
 
-function makeLabel(text, color = "#ffffff") {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "rgba(0,0,0,0.55)";
-  ctx.roundRect(24, 28, 464, 66, 16);
-  ctx.fill();
-  ctx.font = "700 34px system-ui";
-  ctx.textAlign = "center";
-  ctx.fillStyle = color;
-  ctx.fillText(text, 256, 74);
-  const texture = new THREE.CanvasTexture(canvas);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
-  sprite.scale.set(1.9, 0.48, 1);
-  return sprite;
-}
-
-function addWorldLabel(text, x, y, z) {
-  const label = makeLabel(text, "#ffe9b8");
-  label.userData.fixedLabel = true;
-  label.position.set(x, y, z);
-  game.world.add(label);
-}
-
-function fitLabels(group) {
-  if (!group || !game.camera) return;
-  for (const child of group.children) {
-    if (!child.isSprite || child.userData.fixedLabel) continue;
-    const world = new THREE.Vector3();
-    child.getWorldPosition(world);
-    const dist = game.camera.position.distanceTo(world);
-    child.visible = game.save.settings.nameTags && dist > 4.6;
-    const width = THREE.MathUtils.clamp(dist * 0.085, 0.7, 1.65);
-    child.scale.set(width, width * 0.25, 1);
+function updateAutoAttack(now) {
+  if (!game.autoAttack) return;
+  const target = getCurrentTarget();
+  if (!target) {
+    game.autoAttack = false;
+    return;
+  }
+  const maxRange = target.id === "shadow_wyrm" ? 8 : PLAYER_LIMITS.meleeRange;
+  if (distance2d(groupPosition(game.playerGroup), target.position) > maxRange + 0.25) {
+    game.autoAttack = false;
+    logCombat("Auto attack stopped: target out of range.");
+    return;
+  }
+  if (now - game.lastAutoAttackAt >= PLAYER_LIMITS.attackCooldownMs) {
+    game.lastAutoAttackAt = now;
+    performAttack({ kind: "auto", source: "auto" });
   }
 }
 
-function mat(color, opacity = 1, emissive = false) {
-  const material = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.72,
-    metalness: 0.04,
-    transparent: opacity < 1,
-    opacity
-  });
-  if (emissive) {
-    material.emissive = new THREE.Color(color);
-    material.emissiveIntensity = 0.55;
+function performAttack({ kind = "auto", source = "manual" } = {}) {
+  const now = performance.now();
+  const cooldownKey = kind === "slash" ? "slash" : "attack";
+  const cooldownMs = kind === "slash" ? ABILITIES.slash.cooldownMs : PLAYER_LIMITS.attackCooldownMs;
+  if (game.cooldowns[cooldownKey] && now - game.cooldowns[cooldownKey] < cooldownMs) return false;
+  let target = getCurrentTarget();
+  if (!target) {
+    target = findNearestEnemy(PLAYER_LIMITS.meleeRange);
+    if (target) selectTarget(target);
   }
-  return material;
+  if (!target && game.zone === ZONES.BOSS && game.boss && !game.boss.defeated) {
+    target = { id: "shadow_wyrm", name: BOSS.name, position: { x: 0, y: 0, z: 0 }, health: game.boss.health, maxHealth: game.boss.maxHealth, level: BOSS.level };
+    selectTarget("shadow_wyrm");
+  }
+  if (!target) {
+    if (source !== "auto") logCombat("No target selected.");
+    return false;
+  }
+  const maxRange = target.id === "shadow_wyrm" ? 8 : PLAYER_LIMITS.meleeRange;
+  if (distance2d(groupPosition(game.playerGroup), target.position) > maxRange) {
+    if (source !== "auto") logCombat(`${targetDisplayName(target)} is out of range.`);
+    return false;
+  }
+
+  game.cooldowns[cooldownKey] = now;
+  if (kind === "slash") game.cooldowns.attack = now;
+  playUiSound(kind === "slash" ? "slash" : "swing");
+  swingWeapon(kind);
+  slashTrail(kind);
+  const scale = kind === "slash" ? ABILITIES.slash.damageScale : 1;
+  const damage = Math.max(1, Math.round(calculatePlayerDamage(game.save) * scale));
+  if (game.online) {
+    game.socket.emit(NET.COMBAT_ATTACK, { targetId: target.id, kind: kind === "slash" ? "slash" : "auto" }, handleCombatAck);
+    logCombat(`${kind === "slash" ? "Slash" : "Auto Attack"} sent at ${targetDisplayName(target)}.`);
+    return true;
+  }
+  if (target.id === "shadow_wyrm") hitBoss(damage, kind);
+  else damageLocalEnemy(target.id, damage, { kind });
+  return true;
 }
 
-function movePointToward(position, target, amount) {
-  const dx = target.x - position.x;
-  const dz = target.z - position.z;
-  const length = Math.max(0.001, Math.sqrt(dx * dx + dz * dz));
-  position.x += (dx / length) * amount;
-  position.z += (dz / length) * amount;
-}
-
-function clampToZone(position) {
-  const bounds = getZone(game.zone).bounds;
-  position.x = THREE.MathUtils.clamp(position.x, -bounds, bounds);
-  position.z = THREE.MathUtils.clamp(position.z, -bounds, bounds);
-  if (game.zone === ZONES.BOSS) {
-    const radius = Math.sqrt(position.x * position.x + position.z * position.z);
-    if (radius > 25.5) {
-      position.x = (position.x / radius) * 25.5;
-      position.z = (position.z / radius) * 25.5;
+function useHeroPulse() {
+  const now = performance.now();
+  const weapon = getItem(game.save.equippedWeapon);
+  const cooldown = ABILITIES.hero_pulse.cooldownMs * (weapon?.pulseCooldownBonus || 1);
+  if (game.cooldowns.pulse && now - game.cooldowns.pulse < cooldown) return;
+  game.cooldowns.pulse = now;
+  playUiSound("pulse");
+  pulseEffect();
+  logCombat("Hero Pulse released.");
+  if (game.online) {
+    game.socket.emit(NET.COMBAT_ABILITY, {}, handleCombatAck);
+    return;
+  }
+  for (const enemy of game.enemies.values()) {
+    if (distance2d(enemy.position, groupPosition(game.playerGroup)) <= ABILITIES.hero_pulse.radius) {
+      damageLocalEnemy(enemy.id, Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale), { kind: "pulse" });
     }
   }
+  if (game.zone === ZONES.BOSS && game.boss && distance2d(groupPosition(game.playerGroup), { x: 0, z: 0 }) <= 8) {
+    hitBoss(Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale), "pulse");
+  }
 }
 
-function collides(position) {
-  return game.blockers.some((box) => Math.abs(position.x - box.x) < box.halfX && Math.abs(position.z - box.z) < box.halfZ);
+function useGuard() {
+  const now = performance.now();
+  if (game.cooldowns.guard && now - game.cooldowns.guard < ABILITIES.guard.cooldownMs) return;
+  game.cooldowns.guard = now;
+  game.guardUntil = now + ABILITIES.guard.durationMs;
+  shieldEffect();
+  playUiSound("guard");
+  logCombat("Guard raised.");
 }
 
-function groupPosition(group) {
-  return { x: group.position.x, y: group.position.y, z: group.position.z, rot: group.rotation.y };
+function dash() {
+  const now = performance.now();
+  if (game.cooldowns.dash && now - game.cooldowns.dash < ABILITIES.dash.cooldownMs) return;
+  game.cooldowns.dash = now;
+  const forward = new THREE.Vector3(Math.sin(game.playerGroup.rotation.y), 0, Math.cos(game.playerGroup.rotation.y));
+  dashTrail();
+  game.playerGroup.position.addScaledVector(forward, ABILITIES.dash.distance);
+  clampToZone(game.playerGroup.position);
+  playUiSound("dash");
+  logCombat("Dash.");
 }
 
-function clearMeshes(map) {
-  for (const mesh of map.values()) game.scene?.remove(mesh);
-  map.clear();
+function usePotion() {
+  const now = performance.now();
+  if (game.cooldowns.potion && now - game.cooldowns.potion < ABILITIES.potion.cooldownMs) return;
+  const result = consumeInventoryItem(game.save.inventory, "small_health_potion", 1);
+  if (!result.consumed) {
+    toast("No health potion available.");
+    logCombat("No potion available.");
+    return;
+  }
+  game.cooldowns.potion = now;
+  game.save.inventory = result.inventory;
+  game.save.health = Math.min(game.save.maxHealth, game.save.health + ABILITIES.potion.heal);
+  playUiSound("pickup");
+  toast("Health potion used.");
+  logCombat(`Potion restored ${ABILITIES.potion.heal} HP.`);
+  saveGame();
 }
 
-function resize() {
-  if (!game.renderer || !game.camera) return;
-  game.camera.aspect = window.innerWidth / window.innerHeight;
-  game.camera.updateProjectionMatrix();
-  game.renderer.setSize(window.innerWidth, window.innerHeight);
+function damageLocalEnemy(enemyId, damage, options = {}) {
+  const enemy = game.enemies.get(enemyId);
+  if (!enemy) return;
+  enemy.health = Math.max(0, enemy.health - damage);
+  const def = getEnemy(enemy.enemyId);
+  floatingText(`-${damage}`, enemy.position, options.kind === "slash" ? "#ffe38b" : "#ffdd9a");
+  hitSpark(enemy.position, options.kind);
+  flashMesh(game.enemyMeshes.get(enemyId), 0xfff0a0);
+  logCombat(`${options.kind === "slash" ? "Slash" : options.kind === "pulse" ? "Hero Pulse" : "Hit"} ${def.name} for ${damage}.`);
+  playUiSound("hit");
+  if (enemy.health <= 0) {
+    awardEnemy(def);
+    spawnLocalLoot(def, enemy.position);
+    startEnemyDeath(enemyId, def, enemy.position);
+  }
 }
 
-function countItem(itemId) {
-  return game.save.inventory?.find((entry) => entry.itemId === itemId)?.quantity || 0;
+function awardEnemy(enemyDef) {
+  const loot = rollLoot(enemyDef);
+  const beforeLevel = game.save.level;
+  game.save = addProgressRewards(game.save, { xp: loot.xp, coins: loot.coins });
+  toast(`+${loot.xp} XP, +${loot.coins} coins`);
+  logCombat(`Reward: ${loot.xp} XP and ${loot.coins} coins.`);
+  const questUpdate = applyQuestKill(game.save.questProgress, enemyDef);
+  game.save.questProgress = questUpdate.progress;
+  if (game.save.level > beforeLevel) {
+    toast(`Level ${game.save.level}!`);
+    levelUpEffect();
+    playUiSound("level");
+  }
+  for (const quest of questUpdate.completed) {
+    toast(`Quest complete: ${quest.name}`);
+    game.save = addProgressRewards(game.save, quest.reward);
+    if (quest.reward.itemId) game.save.inventory = addInventoryItem(game.save.inventory, quest.reward.itemId, 1);
+    if (quest.reward.title) game.save.title = quest.reward.title;
+  }
+  saveGame();
 }
 
-function lootLabel(bag) {
-  const first = bag.items?.[0] ? getItem(bag.items[0].itemId)?.name : null;
-  return first || (bag.coins ? `${bag.coins} coins` : "loot");
+function spawnLocalLoot(enemyDef, position) {
+  const drop = rollLoot(enemyDef);
+  const id = `local_loot_${game.localLootId++}`;
+  game.loot.set(id, {
+    id,
+    zone: game.zone,
+    position: { ...position, y: 0.25 },
+    coins: 0,
+    items: drop.items
+  });
 }
 
-function bossAttackText(type) {
-  if (type === "fire_cone") return "Fire cone incoming.";
-  if (type === "tail_sweep") return "Tail sweep. Move out.";
-  if (type === "wing_gust") return "Wing gust. Hold position.";
-  if (type === "shadow_summon") return "Shadow summon.";
-  return "The wyrm gathers power.";
-}
-
-function toast(message) {
-  if (!ui.toastStack) return;
-  const node = document.createElement("div");
-  node.className = "toast";
-  node.textContent = message;
-  ui.toastStack.appendChild(node);
-  setTimeout(() => node.remove(), 3300);
-}
-
-function randomRange(min, max) {
-  return min + Math.random() * (max - min);
-}
-
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  })[char]);
-}
+function claimLoot(lootId) {
+  if (game.online) {
+    game.socket.emit(NET.LOOT_CLAIM, { lootId }, (ack) => {
+      if (ack?.ok) {
+        applyLootBag(ack.bag);
+        game.loot.delete(lootId);
+        toast("Loot collected.");
+      }
+    });
+    return;
+  }
+  const bag = game.loot.get(lootId);
+  if (!bag) return;
+  applyLootBag(bag);

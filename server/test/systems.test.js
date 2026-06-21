@@ -6,6 +6,7 @@ import { applyQuestKill, createQuestProgress } from "../../shared/quests.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
 import { PartySystem } from "../src/PartySystem.js";
+import { CombatSystem } from "../src/CombatSystem.js";
 
 test("equipment and XP rewards update player stats", () => {
   const player = applyEquipment({
@@ -44,6 +45,40 @@ test("enemy defeat produces rewards and marks quest progress", () => {
 
   const progress = applyQuestKill(createQuestProgress(), result.enemyDef);
   assert.equal(progress.progress.slime_trouble.current, 1);
+});
+
+test("slash attack uses the authoritative 150 percent damage scale", () => {
+  const enemySystem = {
+    enemies: new Map([
+      [
+        "goblin-1",
+        {
+          id: "goblin-1",
+          zone: "field",
+          position: { x: 1, y: 0, z: 0 }
+        }
+      ]
+    ]),
+    damageEnemy(payload) {
+      return { defeated: false, payload };
+    }
+  };
+  const bossSystem = { damage: () => ({ defeated: false }) };
+  const combat = new CombatSystem({ enemySystem, bossSystem, rng: () => 0.5 });
+  const player = {
+    ...STARTING_PLAYER,
+    id: "p1",
+    zone: "field",
+    position: { x: 0, y: 0, z: 0 },
+    lastAttackAt: 0
+  };
+
+  const result = combat.attack(player, "goblin-1", { kind: "slash" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.kind, "slash");
+  assert.equal(result.damage, 17);
+  assert.equal(result.result.payload.damage, 17);
 });
 
 test("party codes support create, join, and leave", () => {

@@ -9,25 +9,28 @@ export class CombatSystem {
     this.rng = rng;
   }
 
-  attack(player, targetId) {
+  attack(player, targetId, options = {}) {
     const now = Date.now();
     if (now - player.lastAttackAt < PLAYER_LIMITS.attackCooldownMs) {
       return { ok: false, reason: "cooldown" };
     }
     player.lastAttackAt = now;
+    const kind = options.kind === "slash" ? "slash" : "auto";
+    const damageScale = kind === "slash" ? ABILITIES.slash.damageScale : 1;
 
     if (targetId === "shadow_wyrm") {
       const dist = distance2d(player.position, { x: 0, z: 0 });
       if (player.zone !== "boss" || dist > 8) return { ok: false, reason: "range" };
-      return { ok: true, boss: this.bossSystem.damage(calculatePlayerDamage(player, this.rng), player.id) };
+      const damage = Math.max(1, Math.round(calculatePlayerDamage(player, this.rng) * damageScale));
+      return { ok: true, kind, damage, boss: this.bossSystem.damage(damage, player.id) };
     }
 
     const enemy = this.enemySystem.enemies.get(targetId);
     if (!enemy || enemy.zone !== player.zone || distance2d(player.position, enemy.position) > PLAYER_LIMITS.meleeRange) {
       return { ok: false, reason: "range" };
     }
-    const damage = calculatePlayerDamage(player, this.rng);
-    return { ok: true, damage, result: this.enemySystem.damageEnemy({ zone: player.zone, enemyInstanceId: targetId, damage, attackerId: player.id }) };
+    const damage = Math.max(1, Math.round(calculatePlayerDamage(player, this.rng) * damageScale));
+    return { ok: true, kind, damage, result: this.enemySystem.damageEnemy({ zone: player.zone, enemyInstanceId: targetId, damage, attackerId: player.id }) };
   }
 
   ability(player) {

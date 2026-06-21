@@ -24,7 +24,14 @@ const runtimeParts = [
   "/runtime/heroquest-runtime-1.js.txt",
   "/runtime/heroquest-runtime-2.js.txt",
   "/runtime/heroquest-runtime-3.js.txt",
-  "/runtime/heroquest-runtime-4.js.txt"
+  "/runtime/heroquest-runtime-4.js.txt",
+  "/runtime/heroquest-runtime-5.js.txt",
+  "/runtime/heroquest-runtime-6.js.txt",
+  "/runtime/heroquest-runtime-7.js.txt",
+  "/runtime/heroquest-runtime-7b.js.txt",
+  "/runtime/heroquest-runtime-8.js.txt",
+  "/runtime/heroquest-runtime-8b.js.txt",
+  "/runtime/heroquest-runtime-9.js.txt"
 ];
 
 const runtimeSource = await Promise.all(

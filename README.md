@@ -1,8 +1,8 @@
 # HeroQuest MMO
 
-HeroQuest MMO Version 1.1 is a small online fantasy MMO-lite for the browser. Players create a hero, spawn in the hub town of Dawnrest, see other online players, travel to Greenvale Outskirts, fight simple monsters, collect XP, coins, and loot, equip gear, join parties by code, complete starter quests, and challenge the Shadow Wyrm boss in Shadow Peak.
+HeroQuest MMO Version 1.2.1 is a small online fantasy MMO-lite for the browser. Players create a blocky hero, spawn in the hub town of Dawnrest, see other online players, travel to Greenvale Outskirts, fight monsters with an MMO hotbar, collect XP, coins, and loot, equip gear, join parties by code, complete starter quests, and challenge the Shadow Wyrm boss in Shadow Peak.
 
-The game uses procedural low-poly Three.js geometry, DOM UI, generated Web Audio sounds, LocalStorage saves, Socket.IO multiplayer, and simple server-authoritative combat/reward checks. There are no paid APIs, copyrighted assets, or external model dependencies.
+The game uses procedural blocky Three.js geometry, DOM UI, generated Web Audio sounds, LocalStorage saves, Socket.IO multiplayer, and simple server-authoritative combat/reward checks. There are no paid APIs, copyrighted assets, or external model dependencies.
 
 ## Project Structure
 
@@ -56,10 +56,14 @@ WASD        Move
 Mouse drag  Rotate camera
 Shift       Sprint
 Space       Dash
-Left click  Basic attack
-Q           Hero Pulse
+Left click  Select enemy, or basic attack if no enemy is clicked
 E           Interact or collect loot
-1           Use health potion
+1           Toggle Auto Attack
+2           Slash
+3 / Q       Hero Pulse
+4           Guard
+5           Use health potion
+6           Dash
 I           Inventory
 C           Character panel
 P           Party panel
@@ -151,7 +155,7 @@ Edit `shared/enemies.js`.
 
 1. Add an enemy definition to `ENEMIES`.
 2. Add it to a spawn table such as `FIELD_SPAWNS`.
-3. If it uses a new visual family, add a renderer branch in `client/src/main.js` inside `createEnemyMesh`.
+3. If it uses a new visual family, add a renderer branch in `client/public/runtime/heroquest-runtime-2.js.txt` inside `createEnemyMesh`.
 4. Run `npm run check`.
 
 ## Add New Items
@@ -208,4 +212,4 @@ Then visit `/health` on the server and play through menu, character creation, Da
 - Collision is intentionally simple around major props and arena bounds.
 - Boss credit and party rewards are a foundation, not a full raid system.
 - Art is procedural and stylized rather than detailed.
-- The client runtime is shipped as loader plus public chunks for Version 1.1 speed; future versions should split renderer, UI, input, and world modules into first-class source modules as the game grows.
+- The client runtime is shipped as loader plus public chunks for Version 1.2.1 speed; future versions should split renderer, UI, input, and world modules into first-class source modules as the game grows.

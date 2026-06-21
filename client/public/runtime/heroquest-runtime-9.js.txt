@@ -1,0 +1,43 @@
+function countItem(itemId) {
+  return game.save.inventory?.find((entry) => entry.itemId === itemId)?.quantity || 0;
+}
+
+function lootLabel(bag) {
+  const first = bag.items?.[0] ? getItem(bag.items[0].itemId)?.name : null;
+  return first || (bag.coins ? `${bag.coins} coins` : "loot");
+}
+
+function bossAttackText(type) {
+  if (type === "fire_cone") return "Fire cone incoming.";
+  if (type === "tail_sweep") return "Tail sweep. Move out.";
+  if (type === "wing_gust") return "Wing gust. Hold position.";
+  if (type === "shadow_summon") return "Shadow summon.";
+  return "The wyrm gathers power.";
+}
+
+function toast(message) {
+  if (!ui.toastStack) return;
+  const node = document.createElement("div");
+  node.className = "toast";
+  node.textContent = message;
+  ui.toastStack.appendChild(node);
+  setTimeout(() => node.remove(), 3300);
+}
+
+function randomRange(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  })[char]);
+}

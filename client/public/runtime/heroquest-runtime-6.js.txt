@@ -1,0 +1,224 @@
+  syncRemotePlayers(snapshot.players || []);
+  updatePartyList(snapshot.parties || [], snapshot.players || []);
+}
+
+function syncRemotePlayers(players) {
+  const seen = new Set();
+  for (const player of players) {
+    if (player.id === game.socket?.id) {
+      game.save.health = player.health ?? game.save.health;
+      continue;
+    }
+    seen.add(player.id);
+    let remote = game.remotePlayers.get(player.id);
+    if (!remote) {
+      const mesh = createPlayerMesh(player.name, player.color, false);
+      game.scene.add(mesh);
+      remote = { mesh, target: null };
+      game.remotePlayers.set(player.id, remote);
+    }
+    remote.target = new THREE.Vector3(player.position.x, 0, player.position.z);
+    remote.mesh.visible = player.zone === game.zone;
+  }
+  for (const [id, remote] of game.remotePlayers.entries()) {
+    if (!seen.has(id)) {
+      game.scene.remove(remote.mesh);
+      game.remotePlayers.delete(id);
+    }
+  }
+}
+
+function updatePartyList(parties, players) {
+  const myParty = parties.find((party) => party.members.includes(game.socket?.id));
+  if (!myParty) {
+    ui.partyList.textContent = "No party";
+    return;
+  }
+  const names = myParty.members.map((id) => players.find((player) => player.id === id)?.name || "Hero");
+  ui.partyList.innerHTML = `<strong>Party ${myParty.code}</strong><br>${names.join("<br>")}`;
+}
+
+function syncEnemyMeshes() {
+  for (const [id, enemy] of game.enemies.entries()) {
+    if (!game.enemyMeshes.has(id)) {
+      const mesh = createEnemyMesh(enemy);
+      game.scene.add(mesh);
+      game.enemyMeshes.set(id, mesh);
+    }
+  }
+  for (const [id, mesh] of game.enemyMeshes.entries()) {
+    if (!game.enemies.has(id)) {
+      if (mesh.userData.dying) continue;
+      game.scene.remove(mesh);
+      game.enemyMeshes.delete(id);
+    }
+  }
+}
+
+function syncLootMeshes() {
+  for (const [id, bag] of game.loot.entries()) {
+    if (!game.lootMeshes.has(id)) {
+      const mesh = createLootMesh(bag);
+      game.scene.add(mesh);
+      game.lootMeshes.set(id, mesh);
+    }
+
+﻿  }
+  for (const [id, mesh] of game.lootMeshes.entries()) {
+    if (!game.loot.has(id)) {
+      game.scene.remove(mesh);
+      game.lootMeshes.delete(id);
+    }
+  }
+}
+
+function createLootMesh(bag) {
+  const group = new THREE.Group();
+  const rare = bag.items?.some((item) => ["shadow_fang", "wyrm_scale_shield", "wisp_wand", "stoneguard_plate"].includes(item.itemId));
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), mat(rare ? 0xd08cff : 0xf0c05a, 0.92, rare));
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, rare ? 4.6 : 2.6, 8), mat(rare ? 0xd08cff : 0xffdc88, 0.38, true));
+  beam.position.y = rare ? 2.2 : 1.2;
+  group.add(body, beam);
+  group.position.set(bag.position.x, bag.position.y || 0.25, bag.position.z);
+  group.userData.lootId = bag.id;
+  return group;
+}
+
+function findNearestEnemy(range) {
+  const player = groupPosition(game.playerGroup);
+  let nearest = null;
+  let best = Infinity;
+  for (const enemy of game.enemies.values()) {
+    const dist = distance2d(player, enemy.position);
+    if (dist < range && dist < best) {
+      nearest = enemy;
+      best = dist;
+    }
+  }
+  return nearest;
+}
+
+function findNearestLoot(range) {
+  const player = groupPosition(game.playerGroup);
+  let nearest = null;
+  let best = Infinity;
+  for (const bag of game.loot.values()) {
+    const dist = distance2d(player, bag.position);
+    if (dist < range && dist < best) {
+      nearest = bag;
+      best = dist;
+    }
+  }
+  return nearest;
+}
+
+function openPanel(panel) {
+  ui.panel.classList.remove("hidden");
+  const renderers = {
+    inventory: renderInventoryPanel,
+    character: renderCharacterPanel,
+    party: renderPartyPanel,
+    quests: renderQuestPanel,
+    settings: renderSettingsPanel,
+    patch: renderPatchPanel
+  };
+  renderers[panel]?.();
+}
+
+function togglePanel(panel) {
+  if (!ui.panel.classList.contains("hidden")) closePanel();
+  else openPanel(panel);
+}
+
+function closePanel() {
+  ui.panel.classList.add("hidden");
+}
+
+function renderInventoryPanel() {
+  ui.panelTitle.textContent = "Inventory";
+  const inventory = game.save.inventory || [];
+  ui.panelContent.innerHTML = `
+    <div class="stat-line"><span>Weapon</span><strong>${getItem(game.save.equippedWeapon)?.name}</strong></div>
+    <div class="stat-line"><span>Armor</span><strong>${getItem(game.save.equippedArmor)?.name}</strong></div>
+    ${inventory.length ? inventory.map((entry) => {
+      const item = getItem(entry.itemId);
+      const canEquip = item?.type === "weapon" || item?.type === "armor";
+      const canUse = item?.type === "consumable";
+      return `<div class="item-row">
+        <div><strong>${item?.name || entry.itemId}</strong> x${entry.quantity}<small>${item?.rarity || ""} ${item?.description || ""}</small></div>
+        <div>${canEquip ? `<button data-equip="${entry.itemId}">Equip</button>` : ""}${canUse ? `<button data-use="${entry.itemId}">Use</button>` : ""}</div>
+      </div>`;
+    }).join("") : `<p class="intro">No loose items yet. Monsters drop glowing bags in the world.</p>`}
+  `;
+  ui.panelContent.querySelectorAll("[data-equip]").forEach((button) => {
+    button.addEventListener("click", () => equipItem(button.dataset.equip));
+  });
+  ui.panelContent.querySelectorAll("[data-use]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.use === "small_health_potion") usePotion();
+      renderInventoryPanel();
+    });
+  });
+}
+
+function equipItem(itemId) {
+  const item = getItem(itemId);
+  if (!item) return;
+  if (item.type === "weapon") game.save.equippedWeapon = itemId;
+  if (item.type === "armor") game.save.equippedArmor = itemId;
+  game.save = applyEquipment(game.save);
+  saveGame();
+  playUiSound("equip");
+  toast(`Equipped ${item.name}.`);
+  renderInventoryPanel();
+}
+
+function renderCharacterPanel() {
+  const stats = applyEquipment(game.save);
+  ui.panelTitle.textContent = "Character";
+  ui.panelContent.innerHTML = `
+    <div class="item-row"><div><strong>${escapeHtml(game.save.name || "New Hero")}</strong><small>${game.save.title || "No title yet"}</small></div><div>Lv. ${stats.level}</div></div>
+    <div class="stat-line"><span>Attack</span><strong>${stats.attack}</strong></div>
+    <div class="stat-line"><span>Defense</span><strong>${stats.defense}</strong></div>
+    <div class="stat-line"><span>Speed</span><strong>${stats.speed.toFixed(1)}</strong></div>
+    <div class="stat-line"><span>Coins</span><strong>${stats.coins}</strong></div>
+    <div class="stat-line"><span>Weapon</span><strong>${getItem(stats.equippedWeapon)?.name}</strong></div>
+    <div class="stat-line"><span>Armor</span><strong>${getItem(stats.equippedArmor)?.name}</strong></div>
+  `;
+}
+
+function renderPartyPanel() {
+  ui.panelTitle.textContent = "Party";
+  ui.panelContent.innerHTML = `
+    <p class="intro">Create a code and send it to friends. Parties support 2-4 players and share boss credit when members fight in the arena.</p>
+    <button class="primary" id="create-party">Create Party Code</button>
+    <div class="setup-grid">
+      <input id="party-code" maxlength="4" placeholder="Code" />
+      <button id="join-party">Join</button>
+    </div>
+    <button id="leave-party">Leave Party</button>
+  `;
+  ui.panelContent.querySelector("#create-party").addEventListener("click", () => {
+    if (!game.online) {
+      toast("Party codes need the online server.");
+      return;
+    }
+    game.socket.emit(NET.PARTY_CREATE, {}, (ack) => {
+      if (ack?.ok) toast(`Party code: ${ack.party.code}`);
+    });
+  });
+  ui.panelContent.querySelector("#join-party").addEventListener("click", () => {
+    if (!game.online) return toast("Party codes need the online server.");
+    const code = ui.panelContent.querySelector("#party-code").value;
+    game.socket.emit(NET.PARTY_JOIN, { code }, (ack) => {
+      toast(ack?.ok ? `Joined party ${ack.party.code}.` : ack?.error || "Could not join party.");
+    });
+  });
+  ui.panelContent.querySelector("#leave-party").addEventListener("click", () => {
+    if (game.online) game.socket.emit(NET.PARTY_LEAVE, {}, () => toast("Left party."));
+  });
+}
+
+function renderQuestPanel() {
+  ui.panelTitle.textContent = "Quest Log";
+  ui.panelContent.innerHTML = getQuestList().map((quest) => {

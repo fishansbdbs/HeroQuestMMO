@@ -68,7 +68,7 @@ export class RoomManager {
     socket.on(NET.COMBAT_ATTACK, (payload, ack) => {
       const player = this.players.get(socket.id);
       if (!player) return;
-      const result = this.combat.attack(player, payload?.targetId);
+      const result = this.combat.attack(player, payload?.targetId, { kind: payload?.kind });
       this.applyCombatRewards(player, result);
       ack?.(result);
       this.broadcastSnapshots();

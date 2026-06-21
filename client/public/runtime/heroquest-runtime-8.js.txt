@@ -1,0 +1,120 @@
+  };
+  animate();
+}
+
+function shieldEffect() {
+  const shield = new THREE.Mesh(new THREE.SphereGeometry(1.25, 18, 12), mat(0x83d7ff, 0.18, true));
+  shield.position.copy(game.playerGroup.position);
+  shield.position.y = 1.25;
+  game.scene.add(shield);
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / ABILITIES.guard.durationMs;
+    shield.position.copy(game.playerGroup.position);
+    shield.position.y = 1.25;
+    shield.scale.setScalar(1 + Math.sin(performance.now() * 0.012) * 0.04);
+    shield.material.opacity = Math.max(0, 0.18 - t * 0.12);
+    if (t < 1 && performance.now() < game.guardUntil) requestAnimationFrame(animate);
+    else game.scene.remove(shield);
+  };
+  animate();
+}
+
+function dashTrail() {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.62, 28), mat(0x9ad5ff, 0.48, true));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.copy(game.playerGroup.position);
+  ring.position.y = 0.08;
+  game.scene.add(ring);
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 300;
+    ring.scale.setScalar(1 + t * 4);
+    ring.material.opacity = Math.max(0, 0.48 - t * 0.48);
+    if (t < 1) requestAnimationFrame(animate);
+    else game.scene.remove(ring);
+  };
+  animate();
+}
+
+function levelUpEffect() {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.62, 36), mat(0xffe38b, 0.68, true));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.copy(game.playerGroup.position);
+  ring.position.y = 0.12;
+  game.scene.add(ring);
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 900;
+    ring.position.copy(game.playerGroup.position);
+    ring.position.y = 0.12;
+    ring.scale.setScalar(1 + t * 8);
+    ring.material.opacity = Math.max(0, 0.68 - t * 0.68);
+    if (t < 1) requestAnimationFrame(animate);
+    else game.scene.remove(ring);
+  };
+  animate();
+}
+
+function flashMesh(group, color) {
+  if (!group) return;
+  const originals = [];
+  group.traverse((child) => {
+    if (!child.isMesh || !child.material?.emissive) return;
+    originals.push([child.material, child.material.emissive.clone(), child.material.emissiveIntensity || 0]);
+    child.material.emissive = new THREE.Color(color);
+    child.material.emissiveIntensity = 0.8;
+  });
+  setTimeout(() => {
+    for (const [material, emissive, intensity] of originals) {
+      material.emissive = emissive;
+      material.emissiveIntensity = intensity;
+    }
+  }, 140);
+}
+
+function screenShake(intensity = 0.12) {
+  if (!game.save.settings.screenShake || !gameRoot.animate) return;
+  const px = Math.round(intensity * 16);
+  gameRoot.animate([
+    { transform: "translate(0, 0)" },
+    { transform: `translate(${px}px, ${-px}px)` },
+    { transform: `translate(${-px}px, ${px * 0.6}px)` },
+    { transform: "translate(0, 0)" }
+  ], { duration: 180, easing: "ease-out" });
+}
+
+function startEnemyDeath(enemyId, def, position) {
+  const mesh = game.enemyMeshes.get(enemyId);
+  game.enemies.delete(enemyId);
+  if (game.targetId === enemyId) selectTarget(null);
+  deathEffect(def, position);
+  if (!mesh) return;
+  mesh.userData.dying = true;
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 720;
+    mesh.position.y += 0.012;
+    mesh.rotation.y += 0.07;
+    mesh.scale.setScalar(Math.max(0.05, 1 - t * 0.45));
+    mesh.traverse((child) => {
+      if (child.isMesh && child.material) {
+        child.material.transparent = true;
+        child.material.opacity = Math.max(0, 1 - t);
+      }
+    });
+    if (t < 1) requestAnimationFrame(animate);
+    else {
+      game.scene.remove(mesh);
+      game.enemyMeshes.delete(enemyId);
+    }
+  };
+  animate();
+}
+
+function deathEffect(def, position) {
+  const family = def.family;
+  const count = family === "golem" ? 13 : family === "wisp" ? 15 : family === "slime" ? 10 : 8;
+  const color = family === "wisp" ? 0x95fff2 : family === "golem" ? 0x77736b : family === "slime" ? def.color : 0xffd089;
+  for (let i = 0; i < count; i += 1) {
+    const geo = family === "golem" ? new THREE.BoxGeometry(0.22, 0.18, 0.2) : new THREE.SphereGeometry(0.08, 8, 6);

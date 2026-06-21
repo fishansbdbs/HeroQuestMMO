@@ -1,0 +1,227 @@
+  game.loot.delete(lootId);
+  const mesh = game.lootMeshes.get(lootId);
+  if (mesh) {
+    game.scene.remove(mesh);
+    game.lootMeshes.delete(lootId);
+  }
+  toast("Loot collected.");
+}
+
+function applyLootBag(bag) {
+  game.save.coins += bag.coins || 0;
+  for (const item of bag.items || []) {
+    game.save.inventory = addInventoryItem(game.save.inventory, item.itemId, item.quantity || 1);
+    toast(`Found ${getItem(item.itemId)?.name || item.itemId}.`);
+  }
+  playUiSound("pickup");
+  saveGame();
+}
+
+function hitBoss(damage, kind = "auto") {
+  if (!game.boss || game.boss.defeated) return;
+  game.boss.health = Math.max(0, game.boss.health - damage);
+  game.boss.phase = game.boss.health <= game.boss.maxHealth * 0.5 ? 2 : 1;
+  floatingText(`-${damage}`, { x: 0, y: 4, z: -1 }, "#ff8d76");
+  hitSpark({ x: 0, y: 3.4, z: -2.2 }, kind);
+  flashMesh(game.bossGroup, 0xff6b57);
+  logCombat(`${kind === "slash" ? "Slash" : kind === "pulse" ? "Hero Pulse" : "Hit"} ${BOSS.name} for ${damage}.`);
+  if (game.boss.health <= 0) defeatBoss();
+}
+
+function defeatBoss() {
+  game.boss.defeated = true;
+  clearTelegraphs();
+  const beforeLevel = game.save.level;
+  game.save = addProgressRewards(game.save, { xp: BOSS.xp, coins: BOSS.coins });
+  game.save.title = "Wyrm-Touched";
+  const questUpdate = applyQuestKill(game.save.questProgress, { id: BOSS.id, family: BOSS.family });
+  game.save.questProgress = questUpdate.progress;
+  const drop = rollLoot(BOSS);
+  const lootId = `boss_loot_${game.localLootId++}`;
+  game.loot.set(lootId, { id: lootId, zone: ZONES.BOSS, position: { x: 0, y: 0.25, z: 0 }, coins: 0, items: drop.items });
+  toast("Shadow Wyrm defeated!");
+  if (game.save.level > beforeLevel) {
+    toast(`Level ${game.save.level}!`);
+    levelUpEffect();
+  }
+  playUiSound("boss");
+  saveGame();
+}
+
+function handleCombatAck(result) {
+  if (!result?.ok) return;
+  if (result.damage) {
+    const target = result.result?.enemy || getCurrentTarget();
+    if (target?.position) {
+      floatingText(`-${result.damage}`, target.position, result.kind === "slash" ? "#ffe38b" : "#ffdd9a");
+      hitSpark(target.position, result.kind);
+      flashMesh(target.id === "shadow_wyrm" ? game.bossGroup : game.enemyMeshes.get(target.id), 0xfff0a0);
+      logCombat(`${result.kind === "slash" ? "Slash" : "Hit"} ${targetDisplayName(target)} for ${result.damage}.`);
+    }
+  }
+  if (result.result?.defeated) {
+    awardEnemy(result.result.enemyDef);
+    if (result.result.lootBag) game.loot.set(result.result.lootBag.id, result.result.lootBag);
+    if (result.result.enemy?.id) startEnemyDeath(result.result.enemy.id, result.result.enemyDef, result.result.enemy.position);
+  }
+  const bossResult = result.boss || result.result?.boss;
+  if (bossResult?.boss) {
+    game.boss = { ...game.boss, ...bossResult.boss };
+  }
+  if (result.boss && result.damage) {
+    floatingText(`-${result.damage}`, { x: 0, y: 4, z: -1 }, "#ff8d76");
+    hitSpark({ x: 0, y: 3.4, z: -2.2 }, result.kind);
+    flashMesh(game.bossGroup, 0xff6b57);
+  }
+  if (bossResult?.defeated) {
+    game.save.title = "Wyrm-Touched";
+    if (bossResult.lootBag) game.loot.set(bossResult.lootBag.id, bossResult.lootBag);
+    toast("Shadow Wyrm defeated!");
+  }
+}
+
+function damagePlayer(amount) {
+  const guarded = performance.now() < game.guardUntil;
+  const finalAmount = guarded ? Math.max(1, Math.round(amount * (1 - ABILITIES.guard.damageReduction))) : amount;
+  game.save.health = Math.max(0, game.save.health - finalAmount);
+  floatingText(guarded ? `Guard -${finalAmount}` : `-${finalAmount}`, groupPosition(game.playerGroup), guarded ? "#9ad5ff" : "#ff8080");
+  flashMesh(game.playerGroup, guarded ? 0x9ad5ff : 0xff6b57);
+  logCombat(guarded ? `Guard reduced ${amount} to ${finalAmount}.` : `Took ${finalAmount} damage.`);
+  if (!guarded) screenShake(0.18);
+  playUiSound("hurt");
+  if (game.save.health <= 0) {
+    toast("You were knocked back to Dawnrest.");
+    game.save.health = game.save.maxHealth;
+    loadZone(ZONES.HUB, true);
+  }
+  saveGame();
+}
+
+function spawnLocalEnemies() {
+  game.enemies.clear();
+  for (const spawn of FIELD_SPAWNS) {
+    for (let i = 0; i < spawn.count; i += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.random() * spawn.radius;
+      const def = getEnemy(spawn.enemyId);
+      const id = `local_enemy_${game.localEnemyId++}`;
+      game.enemies.set(id, {
+        id,
+        enemyId: spawn.enemyId,
+        health: def.maxHealth,
+        maxHealth: def.maxHealth,
+        position: {
+          x: spawn.center[0] + Math.cos(angle) * radius,
+          y: 0,
+          z: spawn.center[2] + Math.sin(angle) * radius
+        }
+      });
+    }
+  }
+}
+
+function startCombatDemo() {
+  if (game.zone !== ZONES.FIELD) return;
+  const target = [...game.enemies.values()].sort((a, b) => b.maxHealth - a.maxHealth)[0];
+  if (!target) return;
+  game.playerGroup.position.set(target.position.x - 2.2, 0, target.position.z + 0.4);
+  game.playerGroup.rotation.y = Math.atan2(2.2, -0.4);
+  if (game.online) game.socket.emit(NET.PLAYER_MOVE, { position: groupPosition(game.playerGroup) });
+  selectTarget(target);
+  game.cooldowns.attack = 0;
+  game.cooldowns.slash = 0;
+  game.cooldowns.pulse = 0;
+  game.cooldowns.guard = 0;
+  game.cooldowns.dash = 0;
+  game.cooldowns.potion = 0;
+  logCombat("Combat demo engaged.");
+  setTimeout(() => handleHotbarAction("auto"), 150);
+  setTimeout(() => handleHotbarAction("slash"), 800);
+  setTimeout(() => handleHotbarAction("pulse"), 1450);
+  setTimeout(() => handleHotbarAction("guard"), 2050);
+  setTimeout(() => handleHotbarAction("potion"), 2600);
+  setTimeout(() => handleHotbarAction("dash"), 3200);
+}
+
+function startLocalBoss() {
+  game.boss = {
+    id: BOSS.id,
+    name: BOSS.name,
+    health: BOSS.maxHealth,
+    maxHealth: BOSS.maxHealth,
+    phase: 1,
+    active: true,
+    defeated: false,
+    attack: null,
+    nextAttackAt: performance.now() + 3000
+  };
+}
+
+function resolveBossAttack(type) {
+  if (type === "shadow_summon") {
+    for (let i = 0; i < 3; i += 1) {
+      const def = ENEMIES.shadow_slime;
+      const id = `shadow_${game.localEnemyId++}`;
+      const a = Math.random() * Math.PI * 2;
+      game.enemies.set(id, {
+        id,
+        enemyId: def.id,
+        health: def.maxHealth,
+        maxHealth: def.maxHealth,
+        position: { x: Math.cos(a) * 8, y: 0, z: Math.sin(a) * 8 }
+      });
+    }
+    toast("The Shadow Wyrm summons slimes.");
+    return;
+  }
+  const pos = groupPosition(game.playerGroup);
+  const dist = distance2d(pos, { x: 0, z: 0 });
+  const hit = type === "fire_cone" ? pos.z > -7 && Math.abs(pos.x) < 10 && dist < 20 : dist < 12;
+  if (hit) damagePlayer(calculateIncomingDamage(BOSS.damage, game.save));
+  if (type === "wing_gust") {
+    const push = new THREE.Vector3(pos.x, 0, pos.z).normalize().multiplyScalar(4);
+    game.playerGroup.position.add(push);
+  }
+}
+
+function showTelegraph(type) {
+  clearTelegraphs();
+  let mesh;
+  if (type === "fire_cone") {
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(-8, 17);
+    shape.lineTo(8, 17);
+    shape.lineTo(0, 0);
+    mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), mat(0xff5533, 0.33, true));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(0, 0.12, -4);
+  } else {
+    mesh = new THREE.Mesh(new THREE.RingGeometry(type === "tail_sweep" ? 7 : 11, type === "tail_sweep" ? 12 : 15, 48), mat(type === "tail_sweep" ? 0xff8b3d : 0x9ad5ff, 0.3, true));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = 0.13;
+  }
+  game.scene.add(mesh);
+  game.telegraphs.push(mesh);
+}
+
+function clearTelegraphs() {
+  game.telegraphs.forEach((mesh) => game.scene.remove(mesh));
+  game.telegraphs = [];
+}
+
+function applySnapshot(snapshot) {
+  if (!snapshot || snapshot.zone !== game.zone) return;
+  if (snapshot.serverTime) game.lastPingMs = Math.max(0, Math.round(Date.now() - snapshot.serverTime));
+  if (snapshot.enemies) {
+    game.enemies.clear();
+    snapshot.enemies.forEach((enemy) => game.enemies.set(enemy.id, enemy));
+  }
+  if (game.targetId && game.targetId !== "shadow_wyrm" && !game.enemies.has(game.targetId)) selectTarget(null);
+  if (snapshot.loot) {
+    game.loot.clear();
+    snapshot.loot.forEach((bag) => game.loot.set(bag.id, bag));
+  }
+  if (snapshot.boss) {
+    game.boss = { ...game.boss, ...snapshot.boss };
+  }

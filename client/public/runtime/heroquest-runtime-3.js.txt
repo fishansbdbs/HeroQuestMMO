@@ -1,7 +1,4 @@
-  const weapon = getItem(game.save.equippedWeapon);
-  const cooldown = pulse.cooldownMs * (weapon?.pulseCooldownBonus || 1);
-  const left = Math.max(0, cooldown - (now - game.cooldowns.ability));
-  ui.abilityText.textContent = left > 0 ? `${Math.ceil(left / 1000)}s` : "Pulse";
+﻿  updateCombatLog(now);
   updatePrompt();
   updateQuestTracker();
   updateBossHud();
@@ -10,9 +7,13 @@
 }
 
 function updateQuestTracker() {
+  if (game.questCollapsed) {
+    ui.questTracker.innerHTML = "";
+    return;
+  }
   ui.questTracker.innerHTML = getQuestList().slice(0, 5).map((quest) => {
     const progress = game.save.questProgress[quest.id] || { current: 0, complete: false };
-    return `<div class="quest-item ${progress.complete ? "complete" : ""}">${quest.name}: ${progress.current}/${quest.required}</div>`;
+    return `<div class="quest-item ${progress.complete ? "complete" : ""}"><strong>${quest.name}</strong><span>${progress.current}/${quest.required}</span></div>`;
   }).join("");
 }
 
@@ -29,6 +30,130 @@ function updateNetworkStatus() {
   if (!ui.networkStatus) return;
   ui.networkStatus.textContent = game.online ? "Online" : "Solo local";
   ui.networkStatus.className = game.online ? "online" : "offline";
+  if (ui.pingText) ui.pingText.textContent = game.online && game.lastPingMs != null ? `${game.lastPingMs} ms` : "-- ms";
+}
+
+function updateTargetFrame() {
+  const target = getCurrentTarget();
+  ui.targetFrame.classList.toggle("hidden", !target);
+  if (!target) return;
+  const pct = Math.max(0, Math.min(100, (target.health / Math.max(1, target.maxHealth)) * 100));
+  ui.targetName.textContent = targetDisplayName(target);
+  ui.targetMeta.textContent = `Lv. ${target.level || "?"}`;
+  ui.targetBar.style.width = `${pct}%`;
+  ui.targetHealth.textContent = `${Math.ceil(target.health)} / ${target.maxHealth} HP`;
+  ui.targetMode.textContent = game.autoAttack ? "Auto attacking" : "Target locked";
+}
+
+function updateHotbar(now) {
+  ui.hotbar?.querySelectorAll("[data-hotbar-action]").forEach((button) => {
+    const slot = HOTBAR_DEFS.find((entry) => entry.action === button.dataset.hotbarAction);
+    const cooldown = cooldownLeft(slot, now);
+    const overlay = button.querySelector(".slot-cooldown");
+    const count = button.querySelector(".slot-count");
+    button.classList.toggle("cooling", cooldown > 0);
+    button.classList.toggle("active", slot.action === "auto" && game.autoAttack);
+    button.classList.toggle("pressed", game.hotbarPressed === slot.action);
+    button.disabled = Boolean(slot.locked) || (slot.action !== "auto" && cooldown > 0) || (slot.action === "potion" && countItem("small_health_potion") <= 0);
+    if (overlay) overlay.style.height = cooldown > 0 ? `${Math.min(100, (cooldown / Math.max(1, slot.cooldownMs)) * 100)}%` : "0%";
+    if (count) {
+      if (slot.action === "potion") count.textContent = `x${countItem("small_health_potion")}`;
+      else if (cooldown > 0) count.textContent = `${Math.ceil(cooldown / 1000)}`;
+      else count.textContent = "";
+    }
+  });
+}
+
+function cooldownLeft(slot, now) {
+  if (!slot || slot.locked || !slot.cooldownMs) return 0;
+  const key = slot.action === "auto" ? "attack" : slot.action;
+  if (slot.action === "pulse") {
+    const weapon = getItem(game.save.equippedWeapon);
+    return game.cooldowns.pulse ? Math.max(0, ABILITIES.hero_pulse.cooldownMs * (weapon?.pulseCooldownBonus || 1) - (now - game.cooldowns.pulse)) : 0;
+  }
+  return game.cooldowns[key] ? Math.max(0, slot.cooldownMs - (now - game.cooldowns[key])) : 0;
+}
+
+function updateCombatLog(now) {
+  game.combatLog = game.combatLog.filter((entry) => now - entry.at < 5200).slice(-5);
+  if (!ui.combatLog) return;
+  ui.combatLog.innerHTML = game.combatLog.map((entry) => `<div>${escapeHtml(entry.text)}</div>`).join("");
+}
+
+function logCombat(text) {
+  game.combatLog.push({ text, at: performance.now() });
+  if (game.combatLog.length > 8) game.combatLog.shift();
+}
+
+function selectTarget(target) {
+  game.targetId = typeof target === "string" ? target : target?.id || null;
+  if (!game.targetId) game.autoAttack = false;
+  updateTargetFrame();
+  updateTargetRing();
+}
+
+function getCurrentTarget() {
+  if (game.targetId === "shadow_wyrm" && game.zone === ZONES.BOSS && game.boss && !game.boss.defeated) {
+    return { id: "shadow_wyrm", name: BOSS.name, level: BOSS.level, health: game.boss.health, maxHealth: game.boss.maxHealth, position: { x: 0, y: 0, z: 0 } };
+  }
+  const enemy = game.targetId ? game.enemies.get(game.targetId) : null;
+  if (!enemy || enemy.health <= 0) {
+    game.targetId = null;
+    game.autoAttack = false;
+    return null;
+  }
+  const def = getEnemy(enemy.enemyId);
+  return { ...enemy, name: def.name, level: def.level, position: enemy.position };
+}
+
+function targetDisplayName(target) {
+  if (!target) return "No target";
+  if (target.id === "shadow_wyrm") return BOSS.name;
+  return target.name || getEnemy(target.enemyId)?.name || "Enemy";
+}
+
+function updateTargetRing() {
+  const target = getCurrentTarget();
+  if (!target) {
+    if (game.targetRing) game.targetRing.visible = false;
+    return;
+  }
+  if (!game.targetRing) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.1, 48), mat(0xffe38b, 0.72, true));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.08;
+    game.scene.add(ring);
+    game.targetRing = ring;
+  }
+  game.targetRing.visible = true;
+  game.targetRing.position.set(target.position.x, 0.08, target.position.z);
+  const scale = target.id === "shadow_wyrm" ? 3.2 : 1;
+  game.targetRing.scale.setScalar(scale + Math.sin(performance.now() * 0.006) * 0.05);
+}
+
+function pickEnemyFromPointer(event) {
+  if (!game.camera) return null;
+  const pointer = new THREE.Vector2((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(pointer, game.camera);
+  const pickables = [];
+  for (const mesh of game.enemyMeshes.values()) mesh.traverse((child) => { if (child.isMesh) pickables.push(child); });
+  if (game.bossGroup && game.zone === ZONES.BOSS && game.boss && !game.boss.defeated) {
+    game.bossGroup.traverse((child) => {
+      if (child.isMesh) {
+        child.userData.enemyInstanceId = "shadow_wyrm";
+        pickables.push(child);
+      }
+    });
+  }
+  const hit = raycaster.intersectObjects(pickables, true)[0];
+  let object = hit?.object || null;
+  while (object) {
+    if (object.userData.enemyInstanceId === "shadow_wyrm") return "shadow_wyrm";
+    if (object.userData.enemyInstanceId) return object.userData.enemyInstanceId;
+    object = object.parent;
+  }
+  return null;
 }
 
 function updateFps(now) {
@@ -84,377 +209,4 @@ function updatePrompt() {
 }
 
 function interact() {
-  if (game.promptAction) {
-    playUiSound("tick");
-    game.promptAction();
-  }
-}
-
-function basicAttack() {
-  const now = performance.now();
-  if (now - game.cooldowns.attack < PLAYER_LIMITS.attackCooldownMs) return;
-  game.cooldowns.attack = now;
-  playUiSound("swing");
-  swingWeapon();
-  if (game.zone === ZONES.BOSS && game.boss && !game.boss.defeated && distance2d(groupPosition(game.playerGroup), { x: 0, z: 0 }) < 8) {
-    hitBoss(calculatePlayerDamage(game.save));
-    if (game.online) game.socket.emit(NET.COMBAT_ATTACK, { targetId: "shadow_wyrm" }, handleCombatAck);
-    return;
-  }
-  const target = findNearestEnemy(PLAYER_LIMITS.meleeRange);
-  if (!target) return;
-  if (game.online) {
-    game.socket.emit(NET.COMBAT_ATTACK, { targetId: target.id }, handleCombatAck);
-  } else {
-    damageLocalEnemy(target.id, calculatePlayerDamage(game.save));
-  }
-}
-
-function useHeroPulse() {
-  const now = performance.now();
-  const weapon = getItem(game.save.equippedWeapon);
-  const cooldown = ABILITIES.hero_pulse.cooldownMs * (weapon?.pulseCooldownBonus || 1);
-  if (now - game.cooldowns.ability < cooldown) return;
-  game.cooldowns.ability = now;
-  playUiSound("pulse");
-  pulseEffect();
-  if (game.online) {
-    game.socket.emit(NET.COMBAT_ABILITY, {}, handleCombatAck);
-    return;
-  }
-  for (const enemy of game.enemies.values()) {
-    if (distance2d(enemy.position, groupPosition(game.playerGroup)) <= ABILITIES.hero_pulse.radius) {
-      damageLocalEnemy(enemy.id, Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale));
-    }
-  }
-  if (game.zone === ZONES.BOSS && game.boss && distance2d(groupPosition(game.playerGroup), { x: 0, z: 0 }) <= 8) {
-    hitBoss(Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale));
-  }
-}
-
-function dash() {
-  const now = performance.now();
-  if (now - game.cooldowns.dash < PLAYER_LIMITS.dashCooldownMs) return;
-  game.cooldowns.dash = now;
-  const forward = new THREE.Vector3(Math.sin(game.playerGroup.rotation.y), 0, Math.cos(game.playerGroup.rotation.y));
-  game.playerGroup.position.addScaledVector(forward, 4);
-  clampToZone(game.playerGroup.position);
-  playUiSound("dash");
-}
-
-function usePotion() {
-  const result = consumeInventoryItem(game.save.inventory, "small_health_potion", 1);
-  if (!result.consumed) {
-    toast("No health potion available.");
-    return;
-  }
-  game.save.inventory = result.inventory;
-  game.save.health = Math.min(game.save.maxHealth, game.save.health + ITEMS.small_health_potion.heal);
-  playUiSound("pickup");
-  toast("Health potion used.");
-  saveGame();
-}
-
-function damageLocalEnemy(enemyId, damage) {
-  const enemy = game.enemies.get(enemyId);
-  if (!enemy) return;
-  enemy.health = Math.max(0, enemy.health - damage);
-  floatingText(`-${damage}`, enemy.position, "#ffdd9a");
-  playUiSound("hit");
-  if (enemy.health <= 0) {
-    const def = getEnemy(enemy.enemyId);
-    awardEnemy(def);
-    spawnLocalLoot(def, enemy.position);
-    game.enemies.delete(enemyId);
-    const mesh = game.enemyMeshes.get(enemyId);
-    if (mesh) {
-      game.scene.remove(mesh);
-      game.enemyMeshes.delete(enemyId);
-    }
-  }
-}
-
-function awardEnemy(enemyDef) {
-  const loot = rollLoot(enemyDef);
-  const beforeLevel = game.save.level;
-  game.save = addProgressRewards(game.save, { xp: loot.xp, coins: loot.coins });
-  const questUpdate = applyQuestKill(game.save.questProgress, enemyDef);
-  game.save.questProgress = questUpdate.progress;
-  if (game.save.level > beforeLevel) {
-    toast(`Level ${game.save.level}!`);
-    playUiSound("level");
-  }
-  for (const quest of questUpdate.completed) {
-    toast(`Quest complete: ${quest.name}`);
-    game.save = addProgressRewards(game.save, quest.reward);
-    if (quest.reward.itemId) game.save.inventory = addInventoryItem(game.save.inventory, quest.reward.itemId, 1);
-    if (quest.reward.title) game.save.title = quest.reward.title;
-  }
-  saveGame();
-}
-
-function spawnLocalLoot(enemyDef, position) {
-  const drop = rollLoot(enemyDef);
-  const id = `local_loot_${game.localLootId++}`;
-  game.loot.set(id, {
-    id,
-    zone: game.zone,
-    position: { ...position, y: 0.25 },
-    coins: 0,
-    items: drop.items
-  });
-}
-
-function claimLoot(lootId) {
-  if (game.online) {
-    game.socket.emit(NET.LOOT_CLAIM, { lootId }, (ack) => {
-      if (ack?.ok) {
-        applyLootBag(ack.bag);
-        game.loot.delete(lootId);
-        toast("Loot collected.");
-      }
-    });
-    return;
-  }
-  const bag = game.loot.get(lootId);
-  if (!bag) return;
-  applyLootBag(bag);
-  game.loot.delete(lootId);
-  const mesh = game.lootMeshes.get(lootId);
-  if (mesh) {
-    game.scene.remove(mesh);
-    game.lootMeshes.delete(lootId);
-  }
-  toast("Loot collected.");
-}
-
-function applyLootBag(bag) {
-  game.save.coins += bag.coins || 0;
-  for (const item of bag.items || []) {
-    game.save.inventory = addInventoryItem(game.save.inventory, item.itemId, item.quantity || 1);
-    toast(`Found ${getItem(item.itemId)?.name || item.itemId}.`);
-  }
-  playUiSound("pickup");
-  saveGame();
-}
-
-function hitBoss(damage) {
-  if (!game.boss || game.boss.defeated) return;
-  game.boss.health = Math.max(0, game.boss.health - damage);
-  game.boss.phase = game.boss.health <= game.boss.maxHealth * 0.5 ? 2 : 1;
-  floatingText(`-${damage}`, { x: 0, y: 4, z: -1 }, "#ff8d76");
-  if (game.boss.health <= 0) defeatBoss();
-}
-
-function defeatBoss() {
-  game.boss.defeated = true;
-  clearTelegraphs();
-  const beforeLevel = game.save.level;
-  game.save = addProgressRewards(game.save, { xp: BOSS.xp, coins: BOSS.coins });
-  game.save.title = "Wyrm-Touched";
-  const questUpdate = applyQuestKill(game.save.questProgress, { id: BOSS.id, family: BOSS.family });
-  game.save.questProgress = questUpdate.progress;
-  const drop = rollLoot(BOSS);
-  const lootId = `boss_loot_${game.localLootId++}`;
-  game.loot.set(lootId, { id: lootId, zone: ZONES.BOSS, position: { x: 0, y: 0.25, z: 0 }, coins: 0, items: drop.items });
-  toast("Shadow Wyrm defeated!");
-  if (game.save.level > beforeLevel) toast(`Level ${game.save.level}!`);
-  playUiSound("boss");
-  saveGame();
-}
-
-function handleCombatAck(result) {
-  if (!result?.ok) return;
-  if (result.result?.defeated) {
-    awardEnemy(result.result.enemyDef);
-    if (result.result.lootBag) game.loot.set(result.result.lootBag.id, result.result.lootBag);
-  }
-  const bossResult = result.boss || result.result?.boss;
-  if (bossResult?.boss) {
-    game.boss = { ...game.boss, ...bossResult.boss };
-  }
-  if (bossResult?.defeated) {
-    game.save.title = "Wyrm-Touched";
-    if (bossResult.lootBag) game.loot.set(bossResult.lootBag.id, bossResult.lootBag);
-    toast("Shadow Wyrm defeated!");
-  }
-}
-
-function damagePlayer(amount) {
-  game.save.health = Math.max(0, game.save.health - amount);
-  floatingText(`-${amount}`, groupPosition(game.playerGroup), "#ff8080");
-  playUiSound("hurt");
-  if (game.save.health <= 0) {
-    toast("You were knocked back to Dawnrest.");
-    game.save.health = game.save.maxHealth;
-    loadZone(ZONES.HUB, true);
-  }
-  saveGame();
-}
-
-function spawnLocalEnemies() {
-  game.enemies.clear();
-  for (const spawn of FIELD_SPAWNS) {
-    for (let i = 0; i < spawn.count; i += 1) {
-      const angle = Math.random() * Math.PI * 2;
-      const radius = Math.random() * spawn.radius;
-      const def = getEnemy(spawn.enemyId);
-      const id = `local_enemy_${game.localEnemyId++}`;
-      game.enemies.set(id, {
-        id,
-        enemyId: spawn.enemyId,
-        health: def.maxHealth,
-        maxHealth: def.maxHealth,
-        position: {
-          x: spawn.center[0] + Math.cos(angle) * radius,
-          y: 0,
-          z: spawn.center[2] + Math.sin(angle) * radius
-        }
-      });
-    }
-  }
-}
-
-function startLocalBoss() {
-  game.boss = {
-    id: BOSS.id,
-    name: BOSS.name,
-    health: BOSS.maxHealth,
-    maxHealth: BOSS.maxHealth,
-    phase: 1,
-    active: true,
-    defeated: false,
-    attack: null,
-    nextAttackAt: performance.now() + 3000
-  };
-}
-
-function resolveBossAttack(type) {
-  if (type === "shadow_summon") {
-    for (let i = 0; i < 3; i += 1) {
-      const def = ENEMIES.shadow_slime;
-      const id = `shadow_${game.localEnemyId++}`;
-      const a = Math.random() * Math.PI * 2;
-      game.enemies.set(id, {
-        id,
-        enemyId: def.id,
-        health: def.maxHealth,
-        maxHealth: def.maxHealth,
-        position: { x: Math.cos(a) * 8, y: 0, z: Math.sin(a) * 8 }
-      });
-    }
-    toast("The Shadow Wyrm summons slimes.");
-    return;
-  }
-  const pos = groupPosition(game.playerGroup);
-  const dist = distance2d(pos, { x: 0, z: 0 });
-  const hit = type === "fire_cone" ? pos.z > -7 && Math.abs(pos.x) < 10 && dist < 20 : dist < 12;
-  if (hit) damagePlayer(calculateIncomingDamage(BOSS.damage, game.save));
-  if (type === "wing_gust") {
-    const push = new THREE.Vector3(pos.x, 0, pos.z).normalize().multiplyScalar(4);
-    game.playerGroup.position.add(push);
-  }
-}
-
-function showTelegraph(type) {
-  clearTelegraphs();
-  let mesh;
-  if (type === "fire_cone") {
-    const shape = new THREE.Shape();
-    shape.moveTo(0, 0);
-    shape.lineTo(-8, 17);
-    shape.lineTo(8, 17);
-    shape.lineTo(0, 0);
-    mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), mat(0xff5533, 0.33, true));
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(0, 0.12, -4);
-  } else {
-    mesh = new THREE.Mesh(new THREE.RingGeometry(type === "tail_sweep" ? 7 : 11, type === "tail_sweep" ? 12 : 15, 48), mat(type === "tail_sweep" ? 0xff8b3d : 0x9ad5ff, 0.3, true));
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.y = 0.13;
-  }
-  game.scene.add(mesh);
-  game.telegraphs.push(mesh);
-}
-
-function clearTelegraphs() {
-  game.telegraphs.forEach((mesh) => game.scene.remove(mesh));
-  game.telegraphs = [];
-}
-
-function applySnapshot(snapshot) {
-  if (!snapshot || snapshot.zone !== game.zone) return;
-  if (snapshot.enemies) {
-    game.enemies.clear();
-    snapshot.enemies.forEach((enemy) => game.enemies.set(enemy.id, enemy));
-  }
-  if (snapshot.loot) {
-    game.loot.clear();
-    snapshot.loot.forEach((bag) => game.loot.set(bag.id, bag));
-  }
-  if (snapshot.boss) {
-    game.boss = { ...game.boss, ...snapshot.boss };
-  }
-  syncRemotePlayers(snapshot.players || []);
-  updatePartyList(snapshot.parties || [], snapshot.players || []);
-}
-
-function syncRemotePlayers(players) {
-  const seen = new Set();
-  for (const player of players) {
-    if (player.id === game.socket?.id) {
-      game.save.health = player.health ?? game.save.health;
-      continue;
-    }
-    seen.add(player.id);
-    let remote = game.remotePlayers.get(player.id);
-    if (!remote) {
-      const mesh = createPlayerMesh(player.name, player.color, false);
-      game.scene.add(mesh);
-      remote = { mesh, target: null };
-      game.remotePlayers.set(player.id, remote);
-    }
-    remote.target = new THREE.Vector3(player.position.x, 0, player.position.z);
-    remote.mesh.visible = player.zone === game.zone;
-  }
-  for (const [id, remote] of game.remotePlayers.entries()) {
-    if (!seen.has(id)) {
-      game.scene.remove(remote.mesh);
-      game.remotePlayers.delete(id);
-    }
-  }
-}
-
-function updatePartyList(parties, players) {
-  const myParty = parties.find((party) => party.members.includes(game.socket?.id));
-  if (!myParty) {
-    ui.partyList.textContent = "No party";
-    return;
-  }
-  const names = myParty.members.map((id) => players.find((player) => player.id === id)?.name || "Hero");
-  ui.partyList.innerHTML = `<strong>Party ${myParty.code}</strong><br>${names.join("<br>")}`;
-}
-
-function syncEnemyMeshes() {
-  for (const [id, enemy] of game.enemies.entries()) {
-    if (!game.enemyMeshes.has(id)) {
-      const mesh = createEnemyMesh(enemy);
-      game.scene.add(mesh);
-      game.enemyMeshes.set(id, mesh);
-    }
-  }
-  for (const [id, mesh] of game.enemyMeshes.entries()) {
-    if (!game.enemies.has(id)) {
-      game.scene.remove(mesh);
-      game.enemyMeshes.delete(id);
-    }
-  }
-}
-
-function syncLootMeshes() {
-  for (const [id, bag] of game.loot.entries()) {
-    if (!game.lootMeshes.has(id)) {
-      const mesh = createLootMesh(bag);
-      game.scene.add(mesh);
-      game.lootMeshes.set(id, mesh);
-    }
+  if (game.promptAction) {

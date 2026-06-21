@@ -1,6 +1,16 @@
-const SERVER_URL = env.VITE_SERVER_URL || "http://localhost:3000";
+﻿const SERVER_URL = env.VITE_SERVER_URL || "http://localhost:3000";
 const STORAGE_KEY = "heroquest-mmo-v1-save";
 const COLORS = [0x4da7ff, 0x55d07a, 0xf2c867, 0xe86e58, 0xb38cff, 0x70e4d2];
+const HOTBAR_DEFS = [
+  { slot: 1, action: "auto", name: "Auto Attack", key: "1", icon: "A", cooldownMs: ABILITIES.auto_attack.cooldownMs, tooltip: "Toggle auto attacks against your selected target." },
+  { slot: 2, action: "slash", name: "Slash", key: "2", icon: "/", cooldownMs: ABILITIES.slash.cooldownMs, tooltip: "150% melee damage. Requires a nearby target." },
+  { slot: 3, action: "pulse", name: "Hero Pulse", key: "3", icon: "O", cooldownMs: ABILITIES.hero_pulse.cooldownMs, tooltip: "Shockwave nearby enemies and the boss." },
+  { slot: 4, action: "guard", name: "Guard", key: "4", icon: "[]", cooldownMs: ABILITIES.guard.cooldownMs, tooltip: "Reduce incoming damage by half for 3 seconds." },
+  { slot: 5, action: "potion", name: "Potion", key: "5", icon: "+", cooldownMs: ABILITIES.potion.cooldownMs, tooltip: "Use a health potion if one is available." },
+  { slot: 6, action: "dash", name: "Dash", key: "6", icon: ">>", cooldownMs: ABILITIES.dash.cooldownMs, tooltip: "Burst forward with a short movement trail." },
+  { slot: 7, action: "future7", name: "Future Slot", key: "7", icon: "--", cooldownMs: 0, locked: true, tooltip: "Future ability slot." },
+  { slot: 8, action: "future8", name: "Future Slot", key: "8", icon: "--", cooldownMs: 0, locked: true, tooltip: "Future ability slot." }
+];
 
 const gameRoot = document.querySelector("#game-root");
 const uiRoot = document.querySelector("#ui-root");
@@ -38,9 +48,22 @@ const game = {
   },
   cooldowns: {
     attack: 0,
-    dash: 0,
-    ability: 0
+    slash: 0,
+    pulse: 0,
+    guard: 0,
+    potion: 0,
+    dash: 0
   },
+  targetId: null,
+  autoAttack: false,
+  lastAutoAttackAt: 0,
+  guardUntil: 0,
+  combatLog: [],
+  lastPingMs: null,
+  questCollapsed: false,
+  hotbarPressed: null,
+  targetRing: null,
+  debugDemo: null,
   promptAction: null,
   lastMoveSent: 0,
   fps: { frames: 0, last: performance.now(), value: 0 },
@@ -53,7 +76,9 @@ const game = {
 bootstrap();
 
 function bootstrap() {
-  const smoke = new URLSearchParams(window.location.search).get("smoke");
+  const params = new URLSearchParams(window.location.search);
+  const smoke = params.get("smoke");
+  game.debugDemo = params.get("demo");
   if (smoke) {
     const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : ZONES.HUB;
     game.save = applyEquipment({
@@ -139,7 +164,7 @@ function renderMainMenu() {
             <div class="kicker">Version ${GAME_VERSION}</div>
             <h1>HeroQuest MMO</h1>
           </div>
-          <div class="status-pill">First Adventure</div>
+          <div class="status-pill">Combat & UI Overhaul</div>
         </div>
         <p class="intro">
           The old kingdoms fell when shadow rifts opened across the world. From those rifts came slimes, goblins, wolves, wisps, golems, and greater beasts of darkness. Now new heroes gather in the town of Dawnrest, taking up simple weapons to push back the shadows one quest at a time.
@@ -185,7 +210,7 @@ function renderMainMenu() {
   });
 
   uiRoot.querySelector("#patch-notes-menu").addEventListener("click", () => {
-    alert(`${PATCH_NOTES.title}\n\n${PATCH_NOTES.items.map((item) => `- ${item}`).join("\n")}`);
+    alert(formatPatchNotesPlainText());
   });
 
   uiRoot.querySelector("#reset-save").addEventListener("click", () => {
@@ -210,32 +235,42 @@ function startGame() {
   game.clock.start();
   requestAnimationFrame(loop);
   toast("Welcome to Dawnrest.");
+  if (game.debugDemo === "combat") setTimeout(startCombatDemo, 650);
 }
 
 function buildHud() {
   uiRoot.innerHTML = `
     <div class="hud">
       <div class="top-left">
-        <div class="hud-card">
-          <div class="stat-line"><strong id="hero-label">Hero</strong><span id="zone-label">Dawnrest</span></div>
+        <div class="hud-card player-frame">
+          <div class="frame-title"><strong id="hero-label">Hero</strong><span id="zone-label">Dawnrest</span></div>
           <div class="bar health"><i id="health-bar"></i></div>
-          <div class="stat-line"><span id="health-text">100 / 100 HP</span><span id="coins-text">50 coins</span></div>
+          <div class="stat-line"><span id="health-text">100 / 100 HP</span><span id="guard-text">Guard ready</span></div>
           <div class="bar xp"><i id="xp-bar"></i></div>
-          <div class="stat-line"><span id="level-text">Level 1</span><span id="xp-text">0 XP</span></div>
+          <div class="stat-line"><span id="level-text">Level 1</span><span id="xp-text">0 XP</span><span id="coins-text">50 coins</span></div>
         </div>
-        <div class="hud-card">
+        <div class="hud-card quest-card" id="quest-card">
+          <div class="frame-title"><strong>Quest Tracker</strong><button class="mini-button" id="quest-toggle" title="Collapse quest tracker">-</button></div>
           <div class="quest-list" id="quest-tracker"></div>
         </div>
       </div>
       <div class="top-right">
-        <div class="hud-card">
+        <div class="hud-card network-card">
           <div class="stat-line"><span>Network</span><strong id="network-status" class="offline">Solo local</strong></div>
+          <div class="stat-line"><span>Ping</span><strong id="ping-text">-- ms</strong></div>
           <div class="party-list" id="party-list">No party</div>
+        </div>
+      </div>
+      <div class="target-frame hidden" id="target-frame">
+        <div class="hud-card">
+          <div class="frame-title"><strong id="target-name">No target</strong><span id="target-meta">Lv. --</span></div>
+          <div class="bar health enemy"><i id="target-bar"></i></div>
+          <div class="stat-line"><span id="target-health">-- / -- HP</span><span id="target-mode">Click enemies to target</span></div>
         </div>
       </div>
       <div class="boss-frame" id="boss-frame">
         <div class="hud-card">
-          <div class="stat-line"><strong id="boss-name">Shadow Wyrm</strong><span id="boss-phase">Phase 1</span></div>
+          <div class="frame-title"><strong id="boss-name">Shadow Wyrm</strong><span id="boss-phase">Phase 1</span></div>
           <div class="bar health"><i id="boss-bar"></i></div>
           <div class="stat-line danger-text" id="boss-warning">The arena is quiet.</div>
         </div>
@@ -249,10 +284,20 @@ function buildHud() {
         <button class="icon" data-panel="patch" title="Patch Notes">?</button>
       </div>
       <div class="bottom-center">
-        <div class="ability-chip hud-card"><strong>Q</strong><span id="ability-text">Pulse</span></div>
-        <div class="ability-chip hud-card"><strong>1</strong><span id="potion-text">Potion x2</span></div>
+        <div class="hotbar" id="hotbar">
+          ${HOTBAR_DEFS.map((slot) => `
+            <button class="hotbar-slot ${slot.locked ? "locked" : ""}" data-hotbar-action="${slot.action}" title="${escapeHtml(slot.tooltip)}" ${slot.locked ? "disabled" : ""}>
+              <span class="slot-key">${slot.key}</span>
+              <span class="slot-icon">${slot.icon}</span>
+              <span class="slot-name">${slot.name}</span>
+              <span class="slot-cooldown"></span>
+              <span class="slot-count"></span>
+            </button>
+          `).join("")}
+        </div>
         <div class="prompt hidden" id="prompt"></div>
       </div>
+      <div class="combat-log" id="combat-log"></div>
     </div>
     <div class="toast-stack" id="toast-stack"></div>
     <section class="panel hidden" id="panel">
@@ -265,16 +310,26 @@ function buildHud() {
   ui.zoneLabel = uiRoot.querySelector("#zone-label");
   ui.healthBar = uiRoot.querySelector("#health-bar");
   ui.healthText = uiRoot.querySelector("#health-text");
+  ui.guardText = uiRoot.querySelector("#guard-text");
   ui.coinsText = uiRoot.querySelector("#coins-text");
   ui.xpBar = uiRoot.querySelector("#xp-bar");
   ui.levelText = uiRoot.querySelector("#level-text");
   ui.xpText = uiRoot.querySelector("#xp-text");
   ui.questTracker = uiRoot.querySelector("#quest-tracker");
+  ui.questCard = uiRoot.querySelector("#quest-card");
+  ui.questToggle = uiRoot.querySelector("#quest-toggle");
   ui.networkStatus = uiRoot.querySelector("#network-status");
+  ui.pingText = uiRoot.querySelector("#ping-text");
   ui.partyList = uiRoot.querySelector("#party-list");
-  ui.abilityText = uiRoot.querySelector("#ability-text");
-  ui.potionText = uiRoot.querySelector("#potion-text");
   ui.prompt = uiRoot.querySelector("#prompt");
+  ui.hotbar = uiRoot.querySelector("#hotbar");
+  ui.combatLog = uiRoot.querySelector("#combat-log");
+  ui.targetFrame = uiRoot.querySelector("#target-frame");
+  ui.targetName = uiRoot.querySelector("#target-name");
+  ui.targetMeta = uiRoot.querySelector("#target-meta");
+  ui.targetBar = uiRoot.querySelector("#target-bar");
+  ui.targetHealth = uiRoot.querySelector("#target-health");
+  ui.targetMode = uiRoot.querySelector("#target-mode");
   ui.panel = uiRoot.querySelector("#panel");
   ui.panelTitle = uiRoot.querySelector("#panel-title");
   ui.panelContent = uiRoot.querySelector("#panel-content");
@@ -285,6 +340,15 @@ function buildHud() {
   ui.bossWarning = uiRoot.querySelector("#boss-warning");
 
   uiRoot.querySelector("#close-panel").addEventListener("click", closePanel);
+  ui.questToggle.addEventListener("click", () => {
+    game.questCollapsed = !game.questCollapsed;
+    ui.questCard.classList.toggle("collapsed", game.questCollapsed);
+    ui.questToggle.textContent = game.questCollapsed ? "+" : "-";
+    playUiSound("tick");
+  });
+  uiRoot.querySelectorAll("[data-hotbar-action]").forEach((button) => {
+    button.addEventListener("click", () => handleHotbarAction(button.dataset.hotbarAction));
+  });
   uiRoot.querySelectorAll("[data-panel]").forEach((button) => {
     button.addEventListener("click", () => openPanel(button.dataset.panel));
   });
@@ -333,17 +397,30 @@ function setupInput() {
     if (key === "p") openPanel("party");
     if (key === "m") openPanel("quests");
     if (key === "escape") togglePanel("settings");
-    if (key === "q") useHeroPulse();
-    if (key === "1") usePotion();
+    if (key === "1") handleHotbarAction("auto");
+    if (key === "2") handleHotbarAction("slash");
+    if (key === "3") handleHotbarAction("pulse");
+    if (key === "4") handleHotbarAction("guard");
+    if (key === "5") handleHotbarAction("potion");
+    if (key === "6") handleHotbarAction("dash");
+    if (key === "q") handleHotbarAction("pulse");
     if (key === "e") interact();
-    if (key === " ") dash();
+    if (key === " ") handleHotbarAction("dash");
   });
   window.addEventListener("keyup", (event) => game.input.keys.delete(event.key.toLowerCase()));
   window.addEventListener("pointerdown", (event) => {
     if (!game.started || event.target.closest("button,input,select,.panel")) return;
     game.input.dragging = event.button === 2 || event.buttons === 2;
     game.input.lastPointer = { x: event.clientX, y: event.clientY };
-    if (event.button === 0) basicAttack();
+    if (event.button === 0) {
+      const picked = pickEnemyFromPointer(event);
+      if (picked) {
+        selectTarget(picked);
+        logCombat(`Targeted ${targetDisplayName(picked)}.`);
+      } else {
+        basicAttack();
+      }
+    }
   });
   window.addEventListener("pointerup", () => {
     game.input.dragging = false;
@@ -411,6 +488,12 @@ function loadZone(zoneId, moveToSpawn = false) {
   game.blockers = [];
   game.enemies.clear();
   game.loot.clear();
+  game.targetId = null;
+  game.autoAttack = false;
+  if (game.targetRing) {
+    game.scene.remove(game.targetRing);
+    game.targetRing = null;
+  }
   clearMeshes(game.enemyMeshes);
   clearMeshes(game.lootMeshes);
   game.telegraphs.forEach((mesh) => game.scene.remove(mesh));

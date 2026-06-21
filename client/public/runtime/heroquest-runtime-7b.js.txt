@@ -1,0 +1,109 @@
+      const profiles = {
+        tick: [420, 0.05],
+        low: [120, 0.12],
+        swing: [260, 0.08],
+        hit: [90, 0.12],
+        hurt: [70, 0.18],
+        pickup: [620, 0.12],
+        level: [880, 0.3],
+        pulse: [180, 0.25],
+        slash: [340, 0.13],
+        guard: [210, 0.18],
+        dash: [320, 0.08],
+        danger: [55, 0.24],
+        equip: [540, 0.1],
+        boss: [110, 0.5]
+      };
+      const [freq, duration] = profiles[type] || profiles.tick;
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.8, now + duration);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.18 * game.save.settings.master * game.save.settings.sfx, now + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+      osc.connect(gain).connect(context.destination);
+      osc.start(now);
+      osc.stop(now + duration + 0.02);
+    },
+    ensureMusic() {
+      if (!context || musicOsc || game.save.settings.music <= 0) return;
+      musicOsc = context.createOscillator();
+      const gain = context.createGain();
+      musicOsc.type = "sine";
+      musicOsc.frequency.value = game.zone === ZONES.BOSS ? 74 : 110;
+      gain.gain.value = 0.018 * game.save.settings.master * game.save.settings.music;
+      musicOsc.connect(gain).connect(context.destination);
+      musicOsc.start();
+    }
+  };
+  return manager;
+}
+
+function playUiSound(type) {
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+  if (game.audio) {
+    if (game.audio.context?.state === "suspended") game.audio.context.resume();
+    game.audio.play(type);
+    game.audio.ensureMusic();
+  }
+}
+
+function pulseEffect() {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.35, 32), mat(0x77d8ff, 0.65, true));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.copy(game.playerGroup.position);
+  ring.position.y = 0.08;
+  game.scene.add(ring);
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 360;
+    ring.scale.setScalar(1 + t * 14);
+    ring.material.opacity = Math.max(0, 0.65 - t * 0.65);
+    if (t < 1) requestAnimationFrame(animate);
+    else game.scene.remove(ring);
+  };
+  animate();
+}
+
+function swingWeapon(kind = "auto") {
+  game.playerGroup.userData.swingUntil = performance.now() + (kind === "slash" ? 320 : 240);
+}
+
+function slashTrail(kind = "auto") {
+  const color = kind === "slash" ? 0xffe38b : 0xd7d6ce;
+  const trail = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.035, 8, 38, Math.PI * 1.2), mat(color, 0.62, true));
+  const forward = new THREE.Vector3(Math.sin(game.playerGroup.rotation.y), 0, Math.cos(game.playerGroup.rotation.y));
+  trail.position.copy(game.playerGroup.position).addScaledVector(forward, 1.08);
+  trail.position.y = 1.25;
+  trail.rotation.set(Math.PI / 2, 0, game.playerGroup.rotation.y - Math.PI * 0.72);
+  game.scene.add(trail);
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 260;
+    trail.scale.setScalar(1 + t * 0.35);
+    trail.material.opacity = Math.max(0, 0.62 - t * 0.62);
+    if (t < 1) requestAnimationFrame(animate);
+    else game.scene.remove(trail);
+  };
+  animate();
+}
+
+function hitSpark(position, kind = "auto") {
+  const color = kind === "pulse" ? 0x77d8ff : kind === "slash" ? 0xffe38b : 0xfff0a0;
+  const sparks = [];
+  for (let i = 0; i < 7; i += 1) {
+    const spark = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), mat(color, 0.9, true));
+    spark.position.set(position.x, (position.y || 0) + 1.2, position.z);
+    spark.userData.velocity = new THREE.Vector3(randomRange(-1.8, 1.8), randomRange(0.8, 2.6), randomRange(-1.8, 1.8));
+    game.scene.add(spark);
+    sparks.push(spark);
+  }
+  const started = performance.now();
+  const animate = () => {
+    const dt = 0.016;
+    const t = (performance.now() - started) / 420;
+    for (const spark of sparks) {
+      spark.position.addScaledVector(spark.userData.velocity, dt);
+      spark.material.opacity = Math.max(0, 0.9 - t * 0.9);
+    }
+    if (t < 1) requestAnimationFrame(animate);
+    else sparks.forEach((spark) => game.scene.remove(spark));

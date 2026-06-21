@@ -1,4 +1,4 @@
-  addPortal(0, -31, "Greenvale Outskirts", ZONES.FIELD, 0x75ff99);
+﻿  addPortal(0, -31, "Greenvale Outskirts", ZONES.FIELD, 0x75ff99);
   addPortal(28, 25, "Shadow Peak", ZONES.BOSS, 0xff6b57, 3);
 }
 
@@ -186,23 +186,102 @@ function addCrack() {
 }
 
 function createPlayerMesh(name, color, local) {
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 1.1, 4, 8), mat(color));
-  body.position.y = 1.25;
-  body.castShadow = true;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), mat(0xf1c798));
-  head.position.y = 2.35;
-  head.castShadow = true;
-  const cape = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.4, 0.08), mat(0x2b3246));
-  cape.position.set(0, 1.35, 0.47);
-  const sword = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.65, 0.12), mat(0xd7d6ce));
-  sword.position.set(0.72, 1.34, -0.22);
-  sword.rotation.z = -0.35;
-  group.add(body, head, cape, sword);
-  const label = makeLabel(name || "Hero", local ? "#fff2bf" : "#d9edf8");
-  label.position.set(0, 3.15, 0);
-  group.add(label);
+  const group = createHumanoidMesh({
+    name: name || "Hero",
+    color,
+    local,
+    skin: 0xf1c798,
+    accent: local ? 0x2b3246 : 0x445160,
+    labelColor: local ? "#fff2bf" : "#d9edf8"
+  });
+  if (!local) group.scale.setScalar(0.86);
   return group;
+}
+
+function createHumanoidMesh({ name, color, local = false, skin = 0xf1c798, accent = 0x2b3246, labelColor = "#ffffff" }) {
+  const group = new THREE.Group();
+  const parts = {};
+  const addPart = (key, size, position, partColor, rotation = null) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), mat(partColor));
+    mesh.position.set(position[0], position[1], position[2]);
+    if (rotation) mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.baseRotation = mesh.rotation.clone();
+    group.add(mesh);
+    parts[key] = mesh;
+    return mesh;
+  };
+
+  addPart("torso", [0.78, 1.02, 0.46], [0, 1.43, 0], color);
+  addPart("belt", [0.86, 0.2, 0.5], [0, 0.88, 0], accent);
+  addPart("head", [0.66, 0.62, 0.58], [0, 2.34, -0.02], skin);
+  addPart("hair", [0.7, 0.18, 0.62], [0, 2.73, 0.01], accent);
+  addPart("face", [0.12, 0.08, 0.04], [-0.16, 2.34, -0.32], 0x111111);
+  addPart("faceB", [0.12, 0.08, 0.04], [0.16, 2.34, -0.32], 0x111111);
+  addPart("leftUpperArm", [0.28, 0.62, 0.3], [-0.68, 1.63, 0], color);
+  addPart("leftLowerArm", [0.25, 0.58, 0.27], [-0.69, 1.03, -0.02], skin);
+  addPart("rightUpperArm", [0.28, 0.62, 0.3], [0.68, 1.63, 0], color);
+  addPart("rightLowerArm", [0.25, 0.58, 0.27], [0.69, 1.03, -0.02], skin);
+  addPart("leftUpperLeg", [0.3, 0.64, 0.34], [-0.25, 0.55, 0], color);
+  addPart("rightUpperLeg", [0.3, 0.64, 0.34], [0.25, 0.55, 0], color);
+  addPart("leftFoot", [0.36, 0.18, 0.52], [-0.25, 0.12, -0.12], accent);
+  addPart("rightFoot", [0.36, 0.18, 0.52], [0.25, 0.12, -0.12], accent);
+  addPart("cape", [0.9, 1.34, 0.08], [0, 1.38, 0.31], accent);
+
+  const sword = new THREE.Group();
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.52, 0.12), mat(0xd7d6ce));
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.1, 0.14), mat(0xd1a64f));
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.34, 0.12), mat(0x4d3425));
+  blade.position.y = 0.56;
+  guard.position.y = -0.18;
+  handle.position.y = -0.42;
+  sword.add(blade, guard, handle);
+  sword.position.set(0.89, 1.08, -0.32);
+  sword.rotation.set(0.22, 0.1, -0.42);
+  sword.userData.baseRotation = sword.rotation.clone();
+  group.add(sword);
+  parts.sword = sword;
+
+  const label = makeLabel(name, labelColor);
+  label.position.set(0, 3.18, 0);
+  group.add(label);
+  group.userData.parts = parts;
+  group.userData.local = local;
+  group.userData.kind = local ? "hero" : "npc";
+  return group;
+}
+
+function populateGoblinMesh(group, def) {
+  const parts = {};
+  const addPart = (key, size, position, color, rotation = null) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), mat(color));
+    mesh.position.set(position[0], position[1], position[2]);
+    if (rotation) mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.baseRotation = mesh.rotation.clone();
+    group.add(mesh);
+    parts[key] = mesh;
+    return mesh;
+  };
+  addPart("torso", [0.62, 0.72, 0.44], [0, 1.05, 0], def.color);
+  addPart("head", [0.58, 0.46, 0.5], [0, 1.65, -0.08], 0x8cc36a);
+  addPart("nose", [0.12, 0.12, 0.18], [0, 1.62, -0.38], 0x6f9e4d);
+  addPart("leftEar", [0.44, 0.13, 0.12], [-0.48, 1.69, -0.02], 0x8cc36a, [0, 0, 0.18]);
+  addPart("rightEar", [0.44, 0.13, 0.12], [0.48, 1.69, -0.02], 0x8cc36a, [0, 0, -0.18]);
+  addPart("leftArm", [0.2, 0.58, 0.22], [-0.48, 0.98, -0.04], 0x7aaa53, [0.2, 0, 0.15]);
+  addPart("rightArm", [0.2, 0.58, 0.22], [0.48, 0.98, -0.04], 0x7aaa53, [0.55, 0, -0.25]);
+  addPart("leftLeg", [0.22, 0.56, 0.26], [-0.19, 0.42, 0.02], 0x4d4a2a);
+  addPart("rightLeg", [0.22, 0.56, 0.26], [0.19, 0.42, 0.02], 0x4d4a2a);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.95, 0.1), mat(0xc9c7bc));
+  blade.position.set(0.66, 0.97, -0.25);
+  blade.rotation.set(0.1, 0, -0.75);
+  blade.castShadow = true;
+  group.add(blade);
+  parts.sword = blade;
+  group.userData.parts = parts;
+  group.userData.kind = "goblin";
 }
 
 function createEnemyMesh(enemy) {
@@ -218,20 +297,7 @@ function createEnemyMesh(enemy) {
     eyeB.position.set(0.25, 0.92, -0.72);
     group.add(body, eyeA, eyeB);
   } else if (def.family === "goblin") {
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.9, 4, 8), mat(def.color));
-    body.position.y = 1.0;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), mat(0x8cc36a));
-    head.position.y = 1.82;
-    const earA = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.45, 5), mat(0x8cc36a));
-    const earB = earA.clone();
-    earA.position.set(-0.44, 1.86, 0);
-    earA.rotation.z = Math.PI / 2;
-    earB.position.set(0.44, 1.86, 0);
-    earB.rotation.z = -Math.PI / 2;
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 0.12), mat(0xc9c7bc));
-    blade.position.set(0.58, 1.1, -0.12);
-    blade.rotation.z = -0.7;
-    group.add(body, head, earA, earB, blade);
+    populateGoblinMesh(group, def);
   } else if (def.family === "wolf") {
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 0.58), mat(def.color));
     body.position.y = 0.72;
@@ -267,14 +333,61 @@ function createEnemyMesh(enemy) {
     glow.position.set(0, 1.55, -0.55);
     group.add(core, head, armA, armB, glow);
   }
-  const label = makeLabel(`${def.name} Lv.${def.level}`, "#ffe6ab");
-  label.position.set(0, def.family === "golem" ? 3.4 : 2.25, 0);
+  const label = makeEnemyHealthLabel(enemy, def);
+  label.position.set(0, def.family === "golem" ? 3.45 : def.family === "wisp" ? 2.7 : 2.35, 0);
+  group.userData.healthLabel = label;
   group.add(label);
   group.position.set(enemy.position.x, 0, enemy.position.z);
+  group.userData.enemyInstanceId = enemy.id;
   group.traverse((obj) => {
-    if (obj.isMesh) obj.castShadow = true;
+    if (obj.isMesh) {
+      obj.castShadow = true;
+      obj.userData.enemyInstanceId = enemy.id;
+    }
   });
   return group;
+}
+
+function makeEnemyHealthLabel(enemy, def) {
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: enemyHealthTexture(enemy, def), transparent: true, depthTest: false }));
+  sprite.scale.set(2.2, 0.62, 1);
+  sprite.userData.enemyHealth = enemy.health;
+  sprite.userData.enemyMaxHealth = enemy.maxHealth;
+  return sprite;
+}
+
+function updateEnemyHealthLabel(sprite, enemy, def) {
+  if (!sprite || (sprite.userData.enemyHealth === enemy.health && sprite.userData.enemyMaxHealth === enemy.maxHealth)) return;
+  sprite.material.map?.dispose?.();
+  sprite.material.map = enemyHealthTexture(enemy, def);
+  sprite.material.needsUpdate = true;
+  sprite.userData.enemyHealth = enemy.health;
+  sprite.userData.enemyMaxHealth = enemy.maxHealth;
+}
+
+function enemyHealthTexture(enemy, def) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 150;
+  const ctx = canvas.getContext("2d");
+  const pct = Math.max(0, Math.min(1, enemy.health / Math.max(1, enemy.maxHealth)));
+  ctx.fillStyle = "rgba(7, 10, 14, 0.72)";
+  ctx.roundRect(20, 18, 472, 112, 18);
+  ctx.fill();
+  ctx.fillStyle = "#ffe6ab";
+  ctx.font = "800 30px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText(`${def.name} Lv.${def.level}`, 256, 57);
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  ctx.roundRect(58, 78, 396, 24, 10);
+  ctx.fill();
+  ctx.fillStyle = pct > 0.55 ? "#62de82" : pct > 0.25 ? "#f0c867" : "#e35c55";
+  ctx.roundRect(58, 78, 396 * pct, 24, 10);
+  ctx.fill();
+  ctx.fillStyle = "#f8f1df";
+  ctx.font = "700 18px system-ui";
+  ctx.fillText(`${Math.ceil(enemy.health)} / ${enemy.maxHealth}`, 256, 99);
+  return new THREE.CanvasTexture(canvas);
 }
 
 function createBossMesh() {
@@ -314,12 +427,50 @@ function createBossMesh() {
   return group;
 }
 
+function animateHumanoid(group, now, movement = 0) {
+  const parts = group?.userData?.parts;
+  if (!parts) return;
+  const walk = Math.min(1, movement / 5);
+  const stride = Math.sin(now * 0.009) * walk;
+  const reset = (part) => {
+    if (part?.userData?.baseRotation) part.rotation.copy(part.userData.baseRotation);
+  };
+  Object.values(parts).forEach(reset);
+
+  if (parts.leftUpperLeg) parts.leftUpperLeg.rotation.x += stride * 0.46;
+  if (parts.rightUpperLeg) parts.rightUpperLeg.rotation.x -= stride * 0.46;
+  if (parts.leftArm) parts.leftArm.rotation.x -= stride * 0.24;
+  if (parts.rightArm) parts.rightArm.rotation.x += stride * 0.24;
+  if (parts.leftUpperArm) parts.leftUpperArm.rotation.x -= stride * 0.28;
+  if (parts.rightUpperArm) parts.rightUpperArm.rotation.x += stride * 0.28;
+  if (parts.torso) {
+    parts.torso.rotation.y += Math.sin(now * 0.004) * 0.025 * walk;
+    if (group.userData.kind === "goblin") parts.torso.rotation.x += 0.18;
+  }
+
+  const swingLeft = Math.max(0, (group.userData.swingUntil || 0) - now);
+  if (swingLeft > 0) {
+    const t = 1 - swingLeft / 260;
+    const arc = Math.sin(t * Math.PI);
+    if (parts.rightUpperArm) parts.rightUpperArm.rotation.x = -1.15 - arc * 0.72;
+    if (parts.rightLowerArm) parts.rightLowerArm.rotation.x = -0.35 - arc * 0.5;
+    if (parts.torso) parts.torso.rotation.z = -0.08 * arc;
+    if (parts.sword) parts.sword.rotation.z = -1.02 + arc * 1.65;
+  } else if (group === game.playerGroup && game.guardUntil > now) {
+    if (parts.rightUpperArm) parts.rightUpperArm.rotation.x = -0.95;
+    if (parts.leftUpperArm) parts.leftUpperArm.rotation.x = -0.55;
+    if (parts.sword) parts.sword.rotation.set(-0.32, 0.45, -1.32);
+    if (parts.torso) parts.torso.rotation.x = 0.08;
+  }
+}
+
 function loop(now) {
   if (!game.started) return;
   const dt = Math.min(game.clock.getDelta(), 0.05);
   updateMovement(dt);
   updateLocalEnemies(dt);
   updateBoss(dt, now);
+  updateAutoAttack(now);
   updateMeshes(now);
   updateCamera();
   updateHud(now);
@@ -404,6 +555,7 @@ function updateBoss(dt, now) {
 function updateMeshes(now) {
   syncEnemyMeshes();
   syncLootMeshes();
+  animateHumanoid(game.playerGroup, now, game.playerVelocity.length());
   for (const [id, mesh] of game.enemyMeshes.entries()) {
     const enemy = game.enemies.get(id);
     if (!enemy) continue;
@@ -411,20 +563,24 @@ function updateMeshes(now) {
     mesh.rotation.y += 0.01;
     fitLabels(mesh);
     const def = getEnemy(enemy.enemyId);
+    updateEnemyHealthLabel(mesh.userData.healthLabel, enemy, def);
+    if (def.family === "goblin") animateHumanoid(mesh, now, 1.5);
     if (def.family === "slime") mesh.scale.y = 1 + Math.sin(now * 0.007 + id.length) * 0.08;
     if (def.family === "wisp") mesh.position.y = Math.sin(now * 0.004 + id.length) * 0.35;
   }
   for (const mesh of game.lootMeshes.values()) {
     mesh.rotation.y += 0.025;
-    mesh.position.y = 0.25 + Math.sin(now * 0.004 + mesh.id.length) * 0.12;
+    mesh.position.y = 0.25 + Math.sin(now * 0.004 + (mesh.userData.lootId || "").length) * 0.12;
   }
   for (const player of game.remotePlayers.values()) {
     if (player.target) {
       player.mesh.position.lerp(player.target, 0.22);
     }
+    animateHumanoid(player.mesh, now, player.target ? 1 : 0);
     fitLabels(player.mesh);
   }
   fitLabels(game.playerGroup);
+  updateTargetRing();
 }
 
 function updateCamera() {
@@ -456,5 +612,8 @@ function updateHud(now = performance.now()) {
   ui.xpBar.style.width = `${THREE.MathUtils.clamp(xpPct, 0, 100)}%`;
   ui.levelText.textContent = `Level ${game.save.level}`;
   ui.xpText.textContent = `${game.save.xp} XP`;
-  ui.potionText.textContent = `Potion x${countItem("small_health_potion")}`;
-  const pulse = ABILITIES.hero_pulse;
+  const guardLeft = Math.max(0, game.guardUntil - now);
+  ui.guardText.textContent = guardLeft > 0 ? `Guard ${Math.ceil(guardLeft / 1000)}s` : "Guard ready";
+  ui.guardText.className = guardLeft > 0 ? "active-guard" : "";
+  updateTargetFrame();
+  updateHotbar(now);
