@@ -115,6 +115,92 @@ test("player weapon is parented to a right hand anchor for held sword animation"
   assert.match(runtimeSource, /parts\.weaponGroup/);
 });
 
+test("IceZero save migration preserves legacy progress and grants retroactive points once", async () => {
+  const { ICEZERO_MIGRATION_ID, migrateIceZeroSave } = await import("../../shared/saveMigration.js");
+  const legacySave = {
+    name: "Legacy Hero",
+    color: 0x55d07a,
+    level: 4,
+    xp: 260,
+    coins: 50,
+    health: 0,
+    maxHealth: 142,
+    inventory: [
+      { itemId: "small_health_potion", quantity: 2 },
+      { itemId: "slime_gel", quantity: 3 }
+    ],
+    equippedWeapon: "stone_club",
+    equippedArmor: "leather_vest",
+    openedChests: ["hub_weapon_cache"],
+    questProgress: createQuestProgress(),
+    title: "Wyrm Slayer",
+    settings: { master: 0.5, sensitivity: 1.1 },
+    learnedAbilities: ["hero_pulse"],
+    hotbar: ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null]
+  };
+
+  const result = migrateIceZeroSave(legacySave);
+
+  assert.equal(result.migrated, true);
+  assert.deepEqual(result.backup.save, legacySave);
+  assert.ok(result.save.migrations.includes(ICEZERO_MIGRATION_ID));
+  assert.equal(result.save.name, legacySave.name);
+  assert.equal(result.save.color, legacySave.color);
+  assert.equal(result.save.level, legacySave.level);
+  assert.equal(result.save.xp, legacySave.xp);
+  assert.equal(result.save.coins, 150);
+  assert.deepEqual(result.save.inventory, legacySave.inventory);
+  assert.deepEqual(result.save.openedChests, legacySave.openedChests);
+  assert.equal(result.save.title, legacySave.title);
+  assert.equal(result.save.settings.sensitivity, 1.1);
+  assert.equal(result.save.health > 0, true);
+  assert.equal(result.save.availableAttributePoints, 9);
+  assert.equal(result.save.availableSkillPoints, 3);
+  assert.deepEqual(result.save.spentAttributes, { health: 0, strength: 0, magic: 0, defense: 0 });
+  assert.equal(result.save.maxMana, 50);
+  assert.equal(result.save.mana, 50);
+  assert.deepEqual(result.save.learnedAbilities, []);
+  assert.equal(result.save.hotbar.includes("hero_pulse"), false);
+  assert.ok(result.messages.some((message) => message.includes("Combat training has changed")));
+});
+
+test("IceZero save migration does not duplicate retroactive grants on repeated loads", async () => {
+  const { ICEZERO_MIGRATION_ID, migrateIceZeroSave } = await import("../../shared/saveMigration.js");
+  const first = migrateIceZeroSave({
+    name: "Repeat Hero",
+    level: 5,
+    xp: 420,
+    coins: 10,
+    inventory: [{ itemId: "small_health_potion", quantity: 2 }],
+    learnedAbilities: ["hero_pulse"],
+    hotbar: ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null]
+  }).save;
+
+  const second = migrateIceZeroSave(first).save;
+
+  assert.equal(second.availableAttributePoints, 12);
+  assert.equal(second.availableSkillPoints, 4);
+  assert.equal(second.coins, 110);
+  assert.equal(second.migrations.filter((id) => id === ICEZERO_MIGRATION_ID).length, 1);
+  assert.deepEqual(second.inventory, [{ itemId: "small_health_potion", quantity: 2 }]);
+});
+
+test("IceZero save migration keeps a backup and falls back safely for corrupted saves", async () => {
+  const { migrateIceZeroSave } = await import("../../shared/saveMigration.js");
+  const result = migrateIceZeroSave("{ not valid json");
+
+  assert.equal(result.migrated, true);
+  assert.equal(result.backup.raw, "{ not valid json");
+  assert.equal(result.errors.length > 0, true);
+  assert.equal(result.save.name, "");
+  assert.equal(result.save.health > 0, true);
+  assert.equal(result.save.availableAttributePoints >= 0, true);
+  assert.equal(result.save.availableSkillPoints >= 0, true);
+  assert.equal(Number.isNaN(result.save.maxMana), false);
+  assert.equal(Number.isNaN(result.save.mana), false);
+  assert.deepEqual(result.save.inventory, [{ itemId: "small_health_potion", quantity: 2 }]);
+});
+
 test("equipment and XP rewards update player stats", () => {
   const player = applyEquipment({
     ...STARTING_PLAYER,
