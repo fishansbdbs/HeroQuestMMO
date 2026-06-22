@@ -81,6 +81,22 @@ export const QUESTS = {
     targetEnemyId: "ice_golem",
     required: 1,
     reward: { coins: 180, xp: 220 }
+  },
+  palace_of_zero: {
+    id: "palace_of_zero",
+    name: "Palace of Zero",
+    description: "Enter the Palace of Zero.",
+    targetEventId: "enter_palace",
+    required: 1,
+    reward: { coins: 220, xp: 260 }
+  },
+  icezero: {
+    id: "icezero",
+    name: "IceZero",
+    description: "Defeat Zero, the Ice Mage.",
+    targetEnemyId: "zero_ice_mage",
+    required: 1,
+    reward: { coins: 420, xp: 520, title: "Icebreaker" }
   }
 };
 

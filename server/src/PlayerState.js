@@ -71,6 +71,8 @@ export function sanitizePlayer(player) {
     inventory: player.inventory,
     waypoints: player.waypoints,
     zoneCompletion: player.zoneCompletion,
+    achievements: player.achievements,
+    firstClearRewards: player.firstClearRewards,
     learnedAbilities: player.learnedAbilities,
     hotbar: player.hotbar,
     skillTreeNodes: player.skillTreeNodes,

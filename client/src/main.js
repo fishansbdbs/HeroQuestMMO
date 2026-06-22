@@ -2,7 +2,7 @@ import "./styles/main.css";
 import * as THREE from "three";
 import { io } from "socket.io-client";
 import { ABILITIES } from "../../shared/abilities.js";
-import { BOSS, ENEMIES, FIELD_SPAWNS, FROSTVEIL_SPAWNS, getEnemy } from "../../shared/enemies.js";
+import { BOSS, ICE_MAGE_BOSS, ENEMIES, FIELD_SPAWNS, FROSTVEIL_SPAWNS, getEnemy } from "../../shared/enemies.js";
 import { GAME_VERSION, PATCH_NOTES, PLAYER_LIMITS, STARTING_PLAYER, XP_TABLE, ZONES } from "../../shared/constants.js";
 import { getItem, ITEMS, STARTER_INVENTORY } from "../../shared/items.js";
 import { NET } from "../../shared/netMessages.js";
@@ -58,6 +58,7 @@ const bootRuntime = new Function(
   "io",
   "ABILITIES",
   "BOSS",
+  "ICE_MAGE_BOSS",
   "ENEMIES",
   "FIELD_SPAWNS",
   "FROSTVEIL_SPAWNS",
@@ -123,6 +124,7 @@ bootRuntime(
   io,
   ABILITIES,
   BOSS,
+  ICE_MAGE_BOSS,
   ENEMIES,
   FIELD_SPAWNS,
   FROSTVEIL_SPAWNS,

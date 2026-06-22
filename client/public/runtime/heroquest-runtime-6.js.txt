@@ -34,6 +34,35 @@ function handleWorldEvent(event) {
     clearTelegraphs();
     toast("Shadow Wyrm defeated!");
   }
+  if (event.type === "ice_mage_telegraph" && game.zone === ZONES.PALACE) {
+    game.iceMage = { ...game.iceMage, attack: event.attack };
+    showTelegraph(event.attack);
+    playUiSound("danger");
+    logCombat(`${event.attack?.name || bossAttackText(event.attack?.type)} incoming.`);
+  }
+  if (event.type === "ice_mage_impact" && game.zone === ZONES.PALACE) {
+    bossImpactEffect(event.attack);
+    const hit = event.hits?.find((entry) => entry.playerId === game.socket?.id);
+    if (hit) {
+      game.save.health = hit.health;
+      floatingText(`-${hit.damage}`, groupPosition(game.playerGroup), "#9eefff");
+      if (hit.health <= 0) beginDefeat();
+    }
+  }
+  if (event.type === "ice_mage_summon" && game.zone === ZONES.PALACE) {
+    bossImpactEffect(event.attack);
+    toast("Frozen servants answer Zero's call.");
+  }
+  if (event.type === "ice_mage_reset" && game.zone === ZONES.PALACE) {
+    game.iceMage = { ...game.iceMage, active: false, attack: null };
+    clearTelegraphs();
+    toast("The Palace of Zero grows quiet.");
+  }
+  if (event.type === "ice_mage_defeated") {
+    if (!event.playerIds || event.playerIds.includes(game.socket?.id)) completeIceMageQuestLocal(event.reward || { xp: ICE_MAGE_BOSS.xp, coins: ICE_MAGE_BOSS.coins });
+    clearTelegraphs();
+    toast("Zero, the Ice Mage defeated!");
+  }
   if (event.type === "player_defeated" && event.playerId === game.socket?.id) {
     beginDefeat(event.respawnAt || Date.now() + 5000);
   }
@@ -807,7 +836,10 @@ function applyServerPlayerUpdate(player) {
     savedBuilds: player.savedBuilds || game.save.savedBuilds,
     activeLoadout: player.activeLoadout || game.save.activeLoadout,
     waypoints: player.waypoints || game.save.waypoints,
-    zoneCompletion: player.zoneCompletion || game.save.zoneCompletion
+    zoneCompletion: player.zoneCompletion || game.save.zoneCompletion,
+    achievements: player.achievements || game.save.achievements,
+    firstClearRewards: player.firstClearRewards || game.save.firstClearRewards,
+    title: player.title || game.save.title
   });
   game.save = applyEquipment(game.save);
   if (game.playerGroup) applyVisualEquipment(game.playerGroup, game.save);

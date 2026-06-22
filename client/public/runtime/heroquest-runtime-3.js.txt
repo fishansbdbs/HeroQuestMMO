@@ -11,9 +11,12 @@ function updateQuestTracker() {
     ui.questTracker.innerHTML = "";
     return;
   }
-  const frostQuestIds = new Set(["frozen_road", "cold_blooded", "howling_white", "shattered_ward", "heart_of_the_blizzard"]);
-  const quests = game.zone === ZONES.FROSTVEIL
-    ? getQuestList().filter((quest) => frostQuestIds.has(quest.id))
+  const frostQuestIds = new Set(["frozen_road", "cold_blooded", "howling_white", "shattered_ward", "heart_of_the_blizzard", "palace_of_zero"]);
+  const palaceQuestIds = new Set(["palace_of_zero", "icezero"]);
+  const quests = game.zone === ZONES.PALACE
+    ? getQuestList().filter((quest) => palaceQuestIds.has(quest.id))
+    : game.zone === ZONES.FROSTVEIL
+      ? getQuestList().filter((quest) => frostQuestIds.has(quest.id))
     : getQuestList().slice(0, 5);
   ui.questTracker.innerHTML = quests.map((quest) => {
     const progress = game.save.questProgress[quest.id] || { current: 0, complete: false };
@@ -22,12 +25,16 @@ function updateQuestTracker() {
 }
 
 function updateBossHud() {
-  const active = game.zone === ZONES.BOSS && game.boss && !game.boss.defeated;
+  const activeShadow = game.zone === ZONES.BOSS && game.boss && !game.boss.defeated;
+  const activeIceMage = game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated;
+  const active = activeShadow || activeIceMage;
   ui.bossFrame.classList.toggle("active", active);
   if (!active) return;
-  ui.bossBar.style.width = `${(game.boss.health / game.boss.maxHealth) * 100}%`;
-  ui.bossPhase.textContent = `Phase ${game.boss.phase}`;
-  ui.bossWarning.textContent = game.boss.attack ? bossAttackText(game.boss.attack.type) : "Watch the wings and tail.";
+  const bossState = activeIceMage ? game.iceMage : game.boss;
+  if (ui.bossName) ui.bossName.textContent = activeIceMage ? ICE_MAGE_BOSS.name : BOSS.name;
+  ui.bossBar.style.width = `${(bossState.health / bossState.maxHealth) * 100}%`;
+  ui.bossPhase.textContent = `Phase ${bossState.phase}`;
+  ui.bossWarning.textContent = bossState.attack ? bossAttackText(bossState.attack.type) : activeIceMage ? "Watch the ice floor." : "Watch the wings and tail.";
 }
 
 function updateNetworkStatus() {
@@ -39,7 +46,7 @@ function updateNetworkStatus() {
 
 function updateTargetFrame() {
   const target = getCurrentTarget();
-  if (target?.id === "shadow_wyrm") {
+  if (target?.id === "shadow_wyrm" || target?.id === ICE_MAGE_BOSS.id) {
     ui.targetFrame.classList.add("hidden");
     return;
   }
@@ -117,6 +124,9 @@ function getCurrentTarget() {
   if (game.targetId === "shadow_wyrm" && game.zone === ZONES.BOSS && game.boss && !game.boss.defeated) {
     return { id: "shadow_wyrm", name: BOSS.name, level: BOSS.level, health: game.boss.health, maxHealth: game.boss.maxHealth, position: { x: 0, y: 0, z: 0 } };
   }
+  if (game.targetId === ICE_MAGE_BOSS.id && game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated) {
+    return { id: ICE_MAGE_BOSS.id, name: ICE_MAGE_BOSS.name, level: ICE_MAGE_BOSS.level, health: game.iceMage.health, maxHealth: game.iceMage.maxHealth, position: { x: 0, y: 0, z: 0 } };
+  }
   const enemy = game.targetId ? game.enemies.get(game.targetId) : null;
   if (!enemy || enemy.health <= 0) {
     game.targetId = null;
@@ -130,6 +140,7 @@ function getCurrentTarget() {
 function targetDisplayName(target) {
   if (!target) return "No target";
   if (target.id === "shadow_wyrm") return BOSS.name;
+  if (target.id === ICE_MAGE_BOSS.id) return ICE_MAGE_BOSS.name;
   return target.name || getEnemy(target.enemyId)?.name || "Enemy";
 }
 
@@ -148,7 +159,7 @@ function updateTargetRing() {
   }
   game.targetRing.visible = true;
   game.targetRing.position.set(target.position.x, 0.08, target.position.z);
-  const scale = target.id === "shadow_wyrm" ? 3.2 : 1;
+  const scale = target.id === "shadow_wyrm" ? 3.2 : target.id === ICE_MAGE_BOSS.id ? 2.15 : 1;
   game.targetRing.scale.setScalar(scale + Math.sin(performance.now() * 0.006) * 0.05);
 }
 
@@ -167,10 +178,19 @@ function pickEnemyFromPointer(event) {
       }
     });
   }
+  if (game.iceMageGroup && game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated) {
+    game.iceMageGroup.traverse((child) => {
+      if (child.isMesh) {
+        child.userData.enemyInstanceId = ICE_MAGE_BOSS.id;
+        pickables.push(child);
+      }
+    });
+  }
   const hit = raycaster.intersectObjects(pickables, true)[0];
   let object = hit?.object || null;
   while (object) {
     if (object.userData.enemyInstanceId === "shadow_wyrm") return "shadow_wyrm";
+    if (object.userData.enemyInstanceId === ICE_MAGE_BOSS.id) return ICE_MAGE_BOSS.id;
     if (object.userData.enemyInstanceId) return object.userData.enemyInstanceId;
     object = object.parent;
   }

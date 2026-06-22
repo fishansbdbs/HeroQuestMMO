@@ -318,6 +318,28 @@ export const BOSS = {
   ]
 };
 
+export const ICE_MAGE_BOSS = {
+  id: "zero_ice_mage",
+  name: "Zero, the Ice Mage",
+  family: "ice_mage",
+  zone: ZONES.PALACE,
+  level: 10,
+  maxHealth: 2500,
+  damage: 32,
+  xp: 520,
+  coins: 420,
+  loot: [
+    { itemId: "scepter_of_zero", chance: 0.16 },
+    { itemId: "frostspire_staff", chance: 0.24 },
+    { itemId: "frozen_crown", chance: 0.18 },
+    { itemId: "glacier_robe", chance: 0.22 },
+    { itemId: "icebound_gloves", chance: 0.28 },
+    { itemId: "frostwalker_boots", chance: 0.26 },
+    { itemId: "ice_shard", chance: 0.9, quantity: 3 },
+    { itemId: "small_health_potion", chance: 0.5, quantity: 2 }
+  ]
+};
+
 export const FIELD_SPAWNS = [
   { enemyId: "green_slime", count: 6, center: [-16, 0, -8], radius: 10 },
   { enemyId: "blue_slime", count: 4, center: [-24, 0, 14], radius: 8 },

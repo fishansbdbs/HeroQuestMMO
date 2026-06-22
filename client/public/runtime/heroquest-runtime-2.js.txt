@@ -46,7 +46,51 @@ function buildFrostveil() {
   addWardCrystal(24, 10, "East Ward");
   addChest(-10, -12, "frostveil_snow_cache");
   addPortal(0, 32, "Greenvale Outskirts", ZONES.FIELD, 0x75ff99);
+  addPortal(34, -34, "Palace of Zero", ZONES.PALACE, 0x9ae8ff, 8, "The palace gate is sealed. Reach Level 8 to enter.");
   addWorldLabel("Frostveil Camp", 2, 3.1, 22);
+}
+
+function buildPalace() {
+  game.scene.background = new THREE.Color(0x071421);
+  game.scene.fog = new THREE.Fog(0x86badc, 22, 78);
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(31, 31, 1, 64), mat(0xbde8f4, 0.95));
+  floor.receiveShadow = true;
+  floor.position.y = -0.55;
+  game.world.add(floor);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(22, 0.22, 8, 96), mat(0x79d9ff, 0.75, true));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.08;
+  game.world.add(ring);
+  addPath([{ x: 0, z: 24 }, { x: 0, z: 6 }, { x: 0, z: -18 }], 4.8, 0x8ecae0);
+  for (let i = 0; i < 10; i += 1) {
+    const angle = (i / 10) * Math.PI * 2;
+    const x = Math.cos(angle) * 24;
+    const z = Math.sin(angle) * 24;
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.05, 7.5, 8), mat(0xdaf8ff));
+    pillar.position.set(x, 3.55, z);
+    pillar.castShadow = true;
+    pillar.receiveShadow = true;
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.4, 2.2), mat(0x8ed8ff));
+    cap.position.set(x, 7.45, z);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.38, 1.1, 7), mat(0x66d9ff, 0.78, true));
+    flame.position.set(x, 8.15, z);
+    const light = new THREE.PointLight(0x80e2ff, 1.7, 12);
+    light.position.set(x, 6.4, z);
+    game.world.add(pillar, cap, flame, light);
+    game.blockers.push({ x, z, halfX: 1.1, halfZ: 1.1 });
+  }
+  for (let i = 0; i < 14; i += 1) addCrystal(randomRange(-25, 25), randomRange(-25, 18), i % 2 ? 0x9ae8ff : 0xd8fbff);
+  const throne = new THREE.Mesh(new THREE.BoxGeometry(5.2, 4.4, 2.2), mat(0x77bed8, 0.95));
+  throne.position.set(0, 2.2, -24);
+  throne.castShadow = true;
+  const crown = new THREE.Mesh(new THREE.ConeGeometry(2.8, 2.6, 4), mat(0xd8fbff, 0.82, true));
+  crown.position.set(0, 5.5, -24);
+  crown.rotation.y = Math.PI / 4;
+  game.world.add(throne, crown);
+  addPortal(0, 24, "Frostveil Reach", ZONES.FROSTVEIL, 0x75ff99);
+  addWorldLabel("Palace of Zero", 0, 6.9, -24);
+  game.iceMageGroup = createIceMageMesh();
+  game.world.add(game.iceMageGroup);
 }
 
 function buildBossArena() {
@@ -632,6 +676,41 @@ function createBossMesh() {
   return group;
 }
 
+function createIceMageMesh() {
+  const group = new THREE.Group();
+  const robe = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.2, 0.9), mat(0x5ba9d6));
+  robe.position.y = 2.15;
+  const mantle = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.58, 1.02), mat(0xd9fbff, 0.9));
+  mantle.position.y = 3.55;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.78, 0.72), mat(0xd8f8ff));
+  head.position.y = 4.22;
+  const crown = new THREE.Mesh(new THREE.ConeGeometry(0.68, 0.78, 5), mat(0x9ae8ff, 0.86, true));
+  crown.position.y = 4.98;
+  const eyeA = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), mat(0x59f4ff, 1, true));
+  const eyeB = eyeA.clone();
+  eyeA.position.set(-0.18, 4.25, -0.39);
+  eyeB.position.set(0.18, 4.25, -0.39);
+  const staff = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 4.8, 8), mat(0x4d6d82));
+  shaft.position.y = 2.4;
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), mat(0x92f7ff, 0.82, true));
+  gem.position.y = 5.05;
+  const staffLight = new THREE.PointLight(0x8df2ff, 2.6, 10);
+  staffLight.position.y = 5.1;
+  staff.add(shaft, gem, staffLight);
+  staff.position.set(1.25, 0, -0.2);
+  staff.rotation.z = -0.1;
+  const aura = new THREE.Mesh(new THREE.TorusGeometry(2.15, 0.06, 8, 64), mat(0x7ee7ff, 0.5, true));
+  aura.rotation.x = Math.PI / 2;
+  aura.position.y = 0.08;
+  group.add(robe, mantle, head, crown, eyeA, eyeB, staff, aura);
+  group.traverse((obj) => {
+    if (obj.isMesh) obj.castShadow = true;
+    if (obj.isMesh) obj.userData.enemyInstanceId = ICE_MAGE_BOSS.id;
+  });
+  return group;
+}
+
 function animateHumanoid(group, now, movement = 0) {
   const parts = group?.userData?.parts;
   if (!parts) return;
@@ -676,6 +755,7 @@ function loop(now) {
   updateMovement(dt);
   updateLocalEnemies(dt);
   updateBoss(dt, now);
+  updateIceMage(dt, now);
   updateAutoAttack(now);
   updateMana(dt);
   updateMeshes(now);
@@ -798,6 +878,34 @@ function updateMeshes(now) {
   }
   fitLabels(game.playerGroup);
   updateTargetRing();
+}
+
+function updateIceMage(dt, now) {
+  if (isLocallyDead() || game.zone !== ZONES.PALACE || !game.iceMage || game.iceMage.defeated) return;
+  if (game.iceMageGroup) {
+    game.iceMageGroup.rotation.y = Math.sin(now * 0.0006) * 0.2;
+    game.iceMageGroup.position.y = Math.sin(now * 0.0014) * 0.12;
+  }
+  if (!game.online && !game.iceMage.attack && now >= game.iceMage.nextAttackAt) {
+    const attackTypes = game.iceMage.phase === 1
+      ? ["ice_lance", "frozen_circle", "frost_bolt"]
+      : game.iceMage.phase === 2
+        ? ["ice_lance", "frozen_circle", "frost_bolt", "ice_wall", "blizzard_ring", "frozen_servants"]
+        : ["ice_lance", "frozen_circle", "frost_bolt", "ice_wall", "blizzard_ring", "frozen_servants", "zero_hour", "shatter"];
+    const type = attackTypes[Math.floor(Math.random() * attackTypes.length)];
+    game.iceMage.attack = createClientIceMageAttack(type, now);
+    game.iceMage.nextAttackAt = now + game.iceMage.attack.recastMs;
+    showTelegraph(game.iceMage.attack);
+    playUiSound("danger");
+  }
+  if (!game.online && game.iceMage.attack && now >= game.iceMage.attack.resolvesAt && !game.iceMage.attack.resolved) {
+    game.iceMage.attack.resolved = true;
+    resolveIceMageAttack(game.iceMage.attack);
+  }
+  if (game.iceMage.attack && now - game.iceMage.attack.startedAt > (game.iceMage.attack.durationMs || 2400)) {
+    clearTelegraphs();
+    game.iceMage.attack = null;
+  }
 }
 
 function updateCamera() {

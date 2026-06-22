@@ -4,6 +4,7 @@ export const ZONES = {
   HUB: "hub",
   FIELD: "field",
   FROSTVEIL: "frostveil",
+  PALACE: "palace",
   BOSS: "boss"
 };
 

@@ -42,7 +42,28 @@ export const ZONE_DEFS = {
     minLevel: 5,
     waypointId: "frostveil_camp",
     portals: [
-      { id: "to_field", label: "Greenvale Outskirts", targetZone: ZONES.FIELD, x: 0, z: 32, radius: 3 }
+      { id: "to_field", label: "Greenvale Outskirts", targetZone: ZONES.FIELD, x: 0, z: 32, radius: 3 },
+      {
+        id: "to_palace",
+        label: "Palace of Zero",
+        targetZone: ZONES.PALACE,
+        x: 34,
+        z: -34,
+        radius: 3,
+        minLevel: 8,
+        lockMessage: "The palace gate is sealed. Reach Level 8 to enter."
+      }
+    ]
+  },
+  [ZONES.PALACE]: {
+    id: ZONES.PALACE,
+    name: "Palace of Zero",
+    subtitle: "Ice Mage Boss Chamber",
+    spawn: { x: 0, y: 0, z: 18 },
+    bounds: 32,
+    minLevel: 8,
+    portals: [
+      { id: "to_frostveil", label: "Frostveil Reach", targetZone: ZONES.FROSTVEIL, x: 0, z: 24, radius: 3 }
     ]
   },
   [ZONES.BOSS]: {
@@ -76,7 +97,9 @@ export function canEnterZone(player, zoneId) {
       reason: "level",
       minLevel,
       message: zoneId === ZONES.FROSTVEIL
-        ? "The frozen passage rejects you. Reach Level 5 to enter."
+      ? "The frozen passage rejects you. Reach Level 5 to enter."
+      : zoneId === ZONES.PALACE
+        ? "The palace gate is sealed. Reach Level 8 to enter."
         : `Reach Level ${minLevel} to enter ${zone.name}.`
     };
   }

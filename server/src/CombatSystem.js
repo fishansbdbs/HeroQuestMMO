@@ -1,12 +1,14 @@
 import { ABILITIES } from "../../shared/abilities.js";
 import { PLAYER_LIMITS, ZONES } from "../../shared/constants.js";
+import { ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { calculatePlayerDamage, distance2d, isPlayerDead } from "../../shared/combat.js";
 import { spendMana } from "../../shared/progression.js";
 
 export class CombatSystem {
-  constructor({ enemySystem, bossSystem, rng = Math.random }) {
+  constructor({ enemySystem, bossSystem, iceMageSystem = null, rng = Math.random }) {
     this.enemySystem = enemySystem;
     this.bossSystem = bossSystem;
+    this.iceMageSystem = iceMageSystem;
     this.rng = rng;
   }
 
@@ -27,6 +29,13 @@ export class CombatSystem {
       if (player.zone !== ZONES.BOSS || dist > 8) return { ok: false, reason: "range" };
       const damage = Math.max(1, Math.round(calculatePlayerDamage(player, this.rng) * damageScale));
       return { ok: true, kind, damage, boss: this.bossSystem.damage(damage, player.id) };
+    }
+
+    if (targetId === ICE_MAGE_BOSS.id) {
+      const dist = distance2d(player.position, { x: 0, z: 0 });
+      if (!this.iceMageSystem || player.zone !== ZONES.PALACE || dist > 8) return { ok: false, reason: "range" };
+      const damage = Math.max(1, Math.round(calculatePlayerDamage(player, this.rng) * damageScale));
+      return { ok: true, kind, damage, iceMage: this.iceMageSystem.damage(damage, player.id) };
     }
 
     const enemy = this.enemySystem.enemies.get(targetId);
@@ -62,6 +71,9 @@ export class CombatSystem {
     }
     if (player.zone === "boss" && distance2d(player.position, { x: 0, z: 0 }) <= ability.radius + 3) {
       hits.push({ boss: this.bossSystem.damage(damage, player.id) });
+    }
+    if (player.zone === ZONES.PALACE && this.iceMageSystem && distance2d(player.position, { x: 0, z: 0 }) <= ability.radius + 3) {
+      hits.push({ iceMage: this.iceMageSystem.damage(damage, player.id) });
     }
     return { ok: true, damage, hits };
   }

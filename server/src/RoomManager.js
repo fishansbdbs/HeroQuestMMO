@@ -1,4 +1,5 @@
 import { PLAYER_STATES, RESPAWN_DELAY_MS, SNAPSHOT_MS, SERVER_TICK_MS, ZONES } from "../../shared/constants.js";
+import { ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { NET } from "../../shared/netMessages.js";
 import { addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
 import { equipItemToSlot } from "../../shared/equipment.js";
@@ -12,6 +13,7 @@ import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
 import { LootSystem } from "./LootSystem.js";
 import { EnemySystem } from "./EnemySystem.js";
 import { BossSystem } from "./BossSystem.js";
+import { IceMageSystem } from "./IceMageSystem.js";
 import { CombatSystem } from "./CombatSystem.js";
 import { PartySystem } from "./PartySystem.js";
 import { PublicEventSystem } from "./PublicEventSystem.js";
@@ -23,7 +25,8 @@ export class RoomManager {
     this.loot = new LootSystem();
     this.enemies = new EnemySystem({ lootSystem: this.loot });
     this.boss = new BossSystem({ lootSystem: this.loot });
-    this.combat = new CombatSystem({ enemySystem: this.enemies, bossSystem: this.boss });
+    this.iceMage = new IceMageSystem({ lootSystem: this.loot });
+    this.combat = new CombatSystem({ enemySystem: this.enemies, bossSystem: this.boss, iceMageSystem: this.iceMage });
     this.parties = new PartySystem();
     this.publicEvents = new PublicEventSystem({ enemySystem: this.enemies });
     this.chests = createChests();
@@ -37,6 +40,8 @@ export class RoomManager {
       const player = createPlayerState(socket.id, profile);
       this.players.set(socket.id, player);
       socket.join(player.zone);
+      if (player.zone === ZONES.BOSS) this.boss.start();
+      if (player.zone === ZONES.PALACE) this.iceMage.start();
       ack?.({ ok: true, player: sanitizePlayer(player), snapshot: this.snapshotForZone(player.zone) });
       this.broadcastSnapshots();
     });
@@ -65,6 +70,7 @@ export class RoomManager {
       socket.leave(oldZone);
       socket.join(player.zone);
       if (player.zone === ZONES.BOSS) this.boss.start();
+      if (player.zone === ZONES.PALACE) this.iceMage.start();
       ack?.({ ok: true, player: sanitizePlayer(player), snapshot: this.snapshotForZone(player.zone) });
       this.broadcastSnapshots();
     });
@@ -156,7 +162,7 @@ export class RoomManager {
       const player = this.players.get(socket.id);
       if (!player) return;
       const result = this.combat.ability(player);
-      for (const hit of result.hits || []) this.applyCombatRewards(player, { result: hit, boss: hit.boss });
+      for (const hit of result.hits || []) this.applyCombatRewards(player, { result: hit, boss: hit.boss, iceMage: hit.iceMage });
       ack?.(result);
       this.broadcastSnapshots();
     });
@@ -234,6 +240,10 @@ export class RoomManager {
     if (boss?.defeated || boss?.boss?.defeated) {
       this.awardBossDefeat(boss, player);
     }
+    const iceMage = result?.iceMage || result?.result?.iceMage;
+    if (iceMage?.defeated || iceMage?.boss?.defeated || iceMage?.iceMage?.defeated) {
+      this.awardIceMageDefeat(iceMage, player);
+    }
   }
 
   allocateAttribute(player, attributeId, count = 1) {
@@ -305,6 +315,11 @@ export class RoomManager {
       const questUpdate = applyQuestEvent(player.questProgress, "enter_frostveil");
       player.questProgress = questUpdate.progress;
     }
+    if (zone === ZONES.PALACE) {
+      const questUpdate = applyQuestEvent(player.questProgress, "enter_palace");
+      player.questProgress = questUpdate.progress;
+      this.iceMage.start();
+    }
     return { ok: true };
   }
 
@@ -369,6 +384,49 @@ export class RoomManager {
     });
   }
 
+  awardIceMageDefeat(bossResult, triggeringPlayer) {
+    const eligibleIds = new Set(this.iceMage.state.participants);
+    if (triggeringPlayer?.id) eligibleIds.add(triggeringPlayer.id);
+    for (const player of this.players.values()) {
+      if (player.zone === ZONES.PALACE) eligibleIds.add(player.id);
+    }
+    for (const id of [...eligibleIds]) {
+      const party = this.parties.getPartyForPlayer(id);
+      if (party) {
+        for (const memberId of party.members) {
+          const member = this.players.get(memberId);
+          if (member?.zone === ZONES.PALACE) eligibleIds.add(memberId);
+        }
+      }
+    }
+
+    const reward = bossResult.reward || { xp: ICE_MAGE_BOSS.xp, coins: ICE_MAGE_BOSS.coins };
+    for (const id of eligibleIds) {
+      const player = this.players.get(id);
+      if (!player || isPlayerDead(player)) continue;
+      Object.assign(player, addProgressRewards(player, reward));
+      const questUpdate = applyQuestKill(player.questProgress, ICE_MAGE_BOSS);
+      player.questProgress = questUpdate.progress;
+      player.title = "Icebreaker";
+      player.firstClearRewards = player.firstClearRewards || {};
+      player.achievements = Array.isArray(player.achievements) ? player.achievements : [];
+      if (!player.firstClearRewards[ICE_MAGE_BOSS.id]) {
+        player.firstClearRewards[ICE_MAGE_BOSS.id] = true;
+        if (!player.achievements.includes("icebreaker")) player.achievements.push("icebreaker");
+        Object.assign(player, addProgressRewards(player, { xp: 300, coins: 180 }));
+        const rare = addInventoryStack(player.inventory || [], "frostspire_staff", 1);
+        if (rare.ok) player.inventory = rare.inventory;
+      }
+    }
+
+    this.io.to(ZONES.PALACE).emit(NET.WORLD_EVENT, {
+      type: "ice_mage_defeated",
+      playerIds: [...eligibleIds],
+      reward,
+      lootBag: bossResult.lootBag || null
+    });
+  }
+
   syncPartyIds() {
     for (const player of this.players.values()) {
       const party = this.parties.getPartyForPlayer(player.id);
@@ -384,6 +442,8 @@ export class RoomManager {
     this.processDeaths();
     const bossEvents = this.boss.update(this.players);
     this.handleBossEvents(bossEvents);
+    const iceMageEvents = this.iceMage.update(this.players);
+    this.handleIceMageEvents(iceMageEvents);
     this.handlePublicEvents(this.publicEvents.update(this.players, dt));
     this.processDeaths();
     this.processRespawns();
@@ -397,11 +457,26 @@ export class RoomManager {
     }
   }
 
+  handleIceMageEvents(events) {
+    for (const event of events || []) {
+      if (event.type === "ice_mage_summon") this.spawnIceMageServants(event.attack?.shape?.points);
+      this.io.to(ZONES.PALACE).emit(NET.WORLD_EVENT, event);
+    }
+  }
+
   spawnShadowSlimes(points = []) {
     const spawnPoints = points.length ? points : [{ x: 7, z: 0 }, { x: -6, z: 4 }, { x: 2, z: -8 }];
     for (const point of spawnPoints.slice(0, 3)) {
       this.enemies.spawnEnemy("shadow_slime", { x: point.x, y: 0, z: point.z }, ZONES.BOSS);
     }
+  }
+
+  spawnIceMageServants(points = []) {
+    const spawnPoints = points.length ? points : [{ x: -10, z: -6 }, { x: 10, z: -6 }];
+    const enemyIds = ["frost_wisp", "frozen_knight"];
+    spawnPoints.slice(0, 2).forEach((point, index) => {
+      this.enemies.spawnEnemy(enemyIds[index % enemyIds.length], { x: point.x, y: 0, z: point.z }, ZONES.PALACE);
+    });
   }
 
   processDeaths() {
@@ -500,6 +575,7 @@ export class RoomManager {
       loot: this.loot.snapshot(zone),
       chests: this.snapshotChests(zone),
       boss: this.boss.snapshot(),
+      iceMage: this.iceMage.snapshot(),
       publicEvent: this.publicEvents.snapshot(zone),
       parties: this.parties.snapshot(),
       serverTime: Date.now()
@@ -529,7 +605,7 @@ function applyRewardItems(inventory, items = []) {
 }
 
 function clampPosition(position, zone) {
-  const bounds = zone === ZONES.FIELD ? 54 : zone === ZONES.FROSTVEIL ? 58 : zone === ZONES.BOSS ? 30 : 42;
+  const bounds = zone === ZONES.FIELD ? 54 : zone === ZONES.FROSTVEIL ? 58 : zone === ZONES.PALACE ? 32 : zone === ZONES.BOSS ? 30 : 42;
   return {
     x: Math.max(-bounds, Math.min(bounds, Number(position.x) || 0)),
     y: 0,
@@ -541,6 +617,7 @@ function clampPosition(position, zone) {
 function defaultZonePosition(zone) {
   if (zone === ZONES.FIELD) return { x: 0, y: 0, z: 31, rot: Math.PI };
   if (zone === ZONES.FROSTVEIL) return { x: 0, y: 0, z: 24, rot: Math.PI };
+  if (zone === ZONES.PALACE) return { x: 0, y: 0, z: 18, rot: Math.PI };
   if (zone === ZONES.BOSS) return { x: 0, y: 0, z: 22, rot: Math.PI };
   return { x: 0, y: 0, z: 6, rot: 0 };
 }

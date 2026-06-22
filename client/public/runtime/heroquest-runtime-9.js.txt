@@ -13,6 +13,14 @@ function bossAttackText(type) {
   if (type === "wing_gust") return "Wing gust. Hold position.";
   if (type === "shadow_slam") return "Shadow slam on target.";
   if (type === "shadow_summon") return "Shadow summon.";
+  if (type === "ice_lance") return "Ice lance. Sidestep the line.";
+  if (type === "frozen_circle") return "Frozen circle. Move out.";
+  if (type === "frost_bolt") return "Frost bolt on target.";
+  if (type === "ice_wall") return "Ice walls forming.";
+  if (type === "blizzard_ring") return "Blizzard ring. Find the safe band.";
+  if (type === "frozen_servants") return "Frozen servants incoming.";
+  if (type === "zero_hour") return "Zero Hour. Watch the lanes.";
+  if (type === "shatter") return "Shatter marks the floor.";
   return "The wyrm gathers power.";
 }
 

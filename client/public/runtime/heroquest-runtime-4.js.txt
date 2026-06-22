@@ -51,6 +51,7 @@ function toggleAutoAttack() {
     const nearest = findNearestEnemy(PLAYER_LIMITS.meleeRange + 1.2);
     if (nearest) selectTarget(nearest);
     else if (game.zone === ZONES.BOSS && game.boss && !game.boss.defeated) selectTarget("shadow_wyrm");
+    else if (game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated) selectTarget(ICE_MAGE_BOSS.id);
   }
   if (!getCurrentTarget()) {
     toast("Select a target first.");
@@ -74,7 +75,7 @@ function updateAutoAttack(now) {
     game.autoAttack = false;
     return;
   }
-  const maxRange = target.id === "shadow_wyrm" ? 8 : PLAYER_LIMITS.meleeRange;
+  const maxRange = target.id === "shadow_wyrm" || target.id === ICE_MAGE_BOSS.id ? 8 : PLAYER_LIMITS.meleeRange;
   if (distance2d(groupPosition(game.playerGroup), target.position) > maxRange + 0.25) {
     game.autoAttack = false;
     logCombat("Auto attack stopped: target out of range.");
@@ -104,11 +105,15 @@ function performAttack({ kind = "auto", source = "manual" } = {}) {
     target = { id: "shadow_wyrm", name: BOSS.name, position: { x: 0, y: 0, z: 0 }, health: game.boss.health, maxHealth: game.boss.maxHealth, level: BOSS.level };
     selectTarget("shadow_wyrm");
   }
+  if (!target && game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated) {
+    target = { id: ICE_MAGE_BOSS.id, name: ICE_MAGE_BOSS.name, position: { x: 0, y: 0, z: 0 }, health: game.iceMage.health, maxHealth: game.iceMage.maxHealth, level: ICE_MAGE_BOSS.level };
+    selectTarget(ICE_MAGE_BOSS.id);
+  }
   if (!target) {
     if (source !== "auto") logCombat("No target selected.");
     return false;
   }
-  const maxRange = target.id === "shadow_wyrm" ? 8 : PLAYER_LIMITS.meleeRange;
+  const maxRange = target.id === "shadow_wyrm" || target.id === ICE_MAGE_BOSS.id ? 8 : PLAYER_LIMITS.meleeRange;
   if (distance2d(groupPosition(game.playerGroup), target.position) > maxRange) {
     if (source !== "auto") logCombat(`${targetDisplayName(target)} is out of range.`);
     return false;
@@ -132,6 +137,7 @@ function performAttack({ kind = "auto", source = "manual" } = {}) {
     return true;
   }
   if (target.id === "shadow_wyrm") hitBoss(damage, kind);
+  else if (target.id === ICE_MAGE_BOSS.id) hitIceMage(damage, kind);
   else damageLocalEnemy(target.id, damage, { kind });
   return true;
 }
@@ -181,6 +187,9 @@ function useHeroPulse() {
   }
   if (game.zone === ZONES.BOSS && game.boss && distance2d(groupPosition(game.playerGroup), { x: 0, z: 0 }) <= 8) {
     hitBoss(Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale), "pulse");
+  }
+  if (game.zone === ZONES.PALACE && game.iceMage && distance2d(groupPosition(game.playerGroup), { x: 0, z: 0 }) <= 8) {
+    hitIceMage(Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale), "pulse");
   }
   saveGame();
 }

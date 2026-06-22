@@ -5,7 +5,7 @@ import path from "node:path";
 import { STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment, addProgressRewards, calculateIncomingDamage } from "../../shared/combat.js";
 import { ENEMIES, FROSTVEIL_SPAWNS, ELITE_MODIFIERS } from "../../shared/enemies.js";
-import { canEnterZone, unlockWaypoint } from "../../shared/zones.js";
+import { canEnterZone, getZone, unlockWaypoint } from "../../shared/zones.js";
 import {
   calculateDamageReduction,
   regenerateMana,
@@ -44,6 +44,7 @@ test("client runtime chunks compile after concatenation", () => {
       "io",
       "ABILITIES",
       "BOSS",
+      "ICE_MAGE_BOSS",
       "ENEMIES",
       "FIELD_SPAWNS",
       "FROSTVEIL_SPAWNS",
@@ -989,6 +990,137 @@ test("boss defeat rewards quest credit to participants and party members in the 
     assert.equal(ally.questProgress.shadow_at_the_peak.current, 1);
     assert.equal(ally.questProgress.shadow_at_the_peak.complete, true);
     assert.equal(away.questProgress.shadow_at_the_peak.current, 0);
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("Palace of Zero is registered as a level 8 gated zone from Frostveil", () => {
+  assert.equal(ZONES.PALACE, "palace");
+
+  const frostveil = getZone(ZONES.FROSTVEIL);
+  const palacePortal = frostveil.portals.find((portal) => portal.targetZone === ZONES.PALACE);
+  assert.equal(palacePortal.label, "Palace of Zero");
+  assert.equal(palacePortal.minLevel, 8);
+
+  const palace = getZone(ZONES.PALACE);
+  assert.equal(palace.name, "Palace of Zero");
+  assert.equal(palace.minLevel, 8);
+  assert.equal(palace.spawn.z, 18);
+
+  const level7 = applyEquipment({ ...STARTING_PLAYER, xp: 940 });
+  const blocked = canEnterZone(level7, ZONES.PALACE);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.reason, "level");
+  assert.match(blocked.message, /Reach Level 8/);
+
+  const level8 = applyEquipment({ ...STARTING_PLAYER, xp: 1300 });
+  const allowed = canEnterZone(level8, ZONES.PALACE);
+  assert.equal(allowed.ok, true);
+});
+
+test("Ice Mage quest chain supports palace entry and boss defeat", async () => {
+  const { ICE_MAGE_BOSS } = await import("../../shared/enemies.js");
+  let progress = createQuestProgress();
+
+  const entered = applyQuestEvent(progress, "enter_palace");
+  assert.equal(entered.progress.palace_of_zero.complete, true);
+  assert.equal(entered.completed[0].id, "palace_of_zero");
+  progress = entered.progress;
+
+  const defeated = applyQuestKill(progress, ICE_MAGE_BOSS);
+  assert.equal(defeated.progress.icezero.complete, true);
+  assert.equal(defeated.completed[0].id, "icezero");
+});
+
+test("Ice Mage telegraphs repeated phase attacks and resets when the palace empties", async () => {
+  const { IceMageSystem } = await import("../src/IceMageSystem.js");
+  const realNow = Date.now;
+  let now = 1000;
+  Date.now = () => now;
+  try {
+    const boss = new IceMageSystem({ rng: () => 0 });
+    boss.start();
+    boss.state.nextAttackAt = now;
+    const players = new Map([
+      [
+        "p1",
+        {
+          id: "p1",
+          zone: ZONES.PALACE,
+          health: 160,
+          maxHealth: 160,
+          defense: 0,
+          position: { x: 0, y: 0, z: 4 }
+        }
+      ]
+    ]);
+
+    const telegraph = boss.update(players).find((event) => event.type === "ice_mage_telegraph");
+    assert.equal(telegraph.attack.type, "ice_lance");
+    assert.ok(telegraph.attack.resolvesAt - telegraph.attack.startedAt >= 1200);
+    assert.equal(players.get("p1").health, 160);
+
+    now = telegraph.attack.resolvesAt;
+    const resolved = boss.update(players);
+    assert.ok(resolved.some((event) => event.type === "ice_mage_impact"));
+    assert.ok(players.get("p1").health < 160);
+
+    boss.damage(1050, "p1");
+    assert.equal(boss.state.phase, 2);
+    boss.damage(750, "p1");
+    assert.equal(boss.state.phase, 3);
+
+    now = boss.state.nextAttackAt + 1;
+    boss.state.attack = null;
+    const next = boss.update(players);
+    assert.ok(next.some((event) => event.type === "ice_mage_telegraph"));
+
+    players.get("p1").zone = ZONES.FROSTVEIL;
+    const reset = boss.update(players);
+    assert.ok(reset.some((event) => event.type === "ice_mage_reset"));
+    assert.equal(boss.state.active, false);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("server grants Ice Mage quest and first-clear rewards once to eligible palace players", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const attacker = createPlayerState("p1", { name: "Attacker", xp: 1300, zone: ZONES.FROSTVEIL });
+    const ally = createPlayerState("p2", { name: "Ally", xp: 1300, zone: ZONES.PALACE });
+    const away = createPlayerState("p3", { name: "Away", xp: 1300, zone: ZONES.FROSTVEIL });
+    room.players.set(attacker.id, attacker);
+    room.players.set(ally.id, ally);
+    room.players.set(away.id, away);
+    const party = room.parties.createParty(attacker.id);
+    room.parties.joinParty(ally.id, party.code);
+    room.syncPartyIds();
+
+    const entry = room.changePlayerZone(attacker, ZONES.PALACE, { x: 0, y: 0, z: 18 });
+    assert.equal(entry.ok, true);
+    assert.equal(attacker.questProgress.palace_of_zero.complete, true);
+    assert.equal(room.snapshotForZone(ZONES.PALACE).iceMage.active, true);
+
+    room.iceMage.state.participants.add(attacker.id);
+    room.awardIceMageDefeat({ reward: { xp: 520, coins: 420 }, lootBag: null }, attacker);
+
+    assert.equal(attacker.questProgress.icezero.complete, true);
+    assert.equal(ally.questProgress.icezero.complete, true);
+    assert.equal(away.questProgress.icezero.current, 0);
+    assert.equal(attacker.title, "Icebreaker");
+    assert.equal(attacker.firstClearRewards.zero_ice_mage, true);
+    assert.ok(attacker.achievements.includes("icebreaker"));
+
+    const xpAfterFirstClear = attacker.xp;
+    room.awardIceMageDefeat({ reward: { xp: 520, coins: 420 }, lootBag: null }, attacker);
+    assert.equal(attacker.firstClearRewards.zero_ice_mage, true);
+    assert.equal(attacker.xp, xpAfterFirstClear + 520);
   } finally {
     clearInterval(room.tickTimer);
     clearInterval(room.snapshotTimer);

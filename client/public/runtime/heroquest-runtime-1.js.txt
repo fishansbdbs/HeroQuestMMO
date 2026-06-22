@@ -99,6 +99,8 @@ const game = {
   blockers: [],
   boss: null,
   bossGroup: null,
+  iceMage: null,
+  iceMageGroup: null,
   publicEvent: null,
   telegraphs: [],
   input: {
@@ -206,6 +208,8 @@ function installDebugHooks() {
         },
         waypoints: game.save.waypoints || [],
         publicEvent: game.publicEvent,
+        iceMage: game.iceMage,
+        telegraphCount: game.telegraphs.length,
         enemyCount: game.enemies.size
       };
     },
@@ -244,11 +248,12 @@ function bootstrap() {
   const smoke = params.get("smoke");
   game.debugDemo = params.get("demo");
   if (smoke) {
-    const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : smoke === "frostveil" ? ZONES.FROSTVEIL : ZONES.HUB;
+    const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : smoke === "frostveil" ? ZONES.FROSTVEIL : smoke === "palace" ? ZONES.PALACE : ZONES.HUB;
     const phase2Smoke = params.get("phase2") === "progression";
     const phase4Smoke = params.get("phase4") === "trees";
     const phase5Smoke = params.get("phase5") === "equipment";
     const phase6Smoke = params.get("phase6") === "frostveil" || smoke === "frostveil";
+    const phase7Smoke = params.get("phase7") === "ice_mage" || smoke === "palace";
     const smokeInventory = phase5Smoke
       ? [
           { itemId: "apprentice_staff", quantity: 1 },
@@ -261,12 +266,12 @@ function bootstrap() {
       ...game.save,
       name: "SmokeTester",
       color: COLORS[1],
-      xp: phase6Smoke ? 420 : phase2Smoke || phase5Smoke ? 260 : game.save.xp,
-      coins: phase2Smoke || phase5Smoke || phase6Smoke ? 150 : game.save.coins,
+      xp: phase7Smoke ? 1300 : phase6Smoke ? 420 : phase2Smoke || phase5Smoke ? 260 : game.save.xp,
+      coins: phase7Smoke ? 450 : phase2Smoke || phase5Smoke || phase6Smoke ? 150 : game.save.coins,
       inventory: phase2Smoke ? addInventoryItem(game.save.inventory || [], "rest_stone", 1) : smokeInventory,
       equipment: phase5Smoke ? createEquipmentState() : game.save.equipment,
-      learnedAbilities: phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
-      hotbar: phase4Smoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null] : phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
+      learnedAbilities: phase7Smoke || phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
+      hotbar: phase7Smoke || phase4Smoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null] : phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
       skillTreeNodes: phase4Smoke ? {} : game.save.skillTreeNodes,
       savedBuilds: phase4Smoke ? {} : game.save.savedBuilds,
       activeLoadout: phase4Smoke ? null : game.save.activeLoadout,
@@ -597,6 +602,7 @@ function buildHud() {
   ui.defeatTimer = uiRoot.querySelector("#defeat-timer");
   ui.respawnButton = uiRoot.querySelector("#respawn-button");
   ui.bossFrame = uiRoot.querySelector("#boss-frame");
+  ui.bossName = uiRoot.querySelector("#boss-name");
   ui.bossBar = uiRoot.querySelector("#boss-bar");
   ui.bossPhase = uiRoot.querySelector("#boss-phase");
   ui.bossWarning = uiRoot.querySelector("#boss-warning");
@@ -789,12 +795,17 @@ function loadZone(zoneId, moveToSpawn = false) {
   game.telegraphs.forEach((mesh) => game.scene.remove(mesh));
   game.telegraphs = [];
   if (game.world) game.scene.remove(game.world);
+  game.boss = null;
+  game.bossGroup = null;
+  game.iceMage = null;
+  game.iceMageGroup = null;
   game.world = new THREE.Group();
   game.scene.add(game.world);
 
   if (zoneId === ZONES.HUB) buildHub();
   if (zoneId === ZONES.FIELD) buildField();
   if (zoneId === ZONES.FROSTVEIL) buildFrostveil();
+  if (zoneId === ZONES.PALACE) buildPalace();
   if (zoneId === ZONES.BOSS) buildBossArena();
 
   const zone = getZone(zoneId);
@@ -802,8 +813,10 @@ function loadZone(zoneId, moveToSpawn = false) {
     game.playerGroup.position.set(zone.spawn.x, 0, zone.spawn.z);
   }
   if (zoneId === ZONES.FROSTVEIL) applyZoneEntryProgress("enter_frostveil", "frostveil_camp");
+  if (zoneId === ZONES.PALACE) applyZoneEntryProgress("enter_palace");
   if ((zoneId === ZONES.FIELD || zoneId === ZONES.FROSTVEIL) && !game.online) spawnLocalEnemies();
   if (zoneId === ZONES.BOSS) startLocalBoss();
+  if (zoneId === ZONES.PALACE) startLocalIceMage();
   saveGame();
   updateHud();
   if (game.online) {
