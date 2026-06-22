@@ -119,6 +119,20 @@ test("client runtime chunks compile after concatenation", () => {
   });
 });
 
+test("client runtime animates Fireball projectile acknowledgements", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
+  const runtimeSource = runtimeParts
+    .map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8"))
+    .join("\n");
+  const combatAckSource = runtimeSource.match(/function handleCombatAck\([\s\S]*?\n}\r?\n\r?\nfunction damagePlayer/)?.[0] || "";
+
+  assert.ok(combatAckSource, "handleCombatAck runtime source should exist");
+  assert.match(combatAckSource, /projectileEffect\(result\.projectile\)/);
+  assert.match(runtimeSource, /function projectileEffect\(projectile\)/);
+  assert.match(runtimeSource, /projectile\.type === "fireball"/);
+});
+
 test("IceZero v2 title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
@@ -1504,6 +1518,59 @@ test("server validates Hero Pulse ownership and mana before casting", () => {
   const result = combat.ability(player);
   assert.equal(result.ok, true);
   assert.equal(player.mana, 25);
+});
+
+test("Fireball resolves as a server-authoritative projectile against one hostile target", () => {
+  const target = {
+    id: "enemy_fireball",
+    enemyId: "goblin_scout",
+    zone: ZONES.FIELD,
+    position: { x: 8, y: 0, z: 1 },
+    health: 45,
+    maxHealth: 45
+  };
+  const damageEvents = [];
+  const enemySystem = {
+    enemies: new Map([[target.id, target]]),
+    getZoneEnemies: () => [target],
+    damageEnemy(payload) {
+      damageEvents.push(payload);
+      target.health = Math.max(0, target.health - payload.damage);
+      return { hit: true, defeated: target.health <= 0, enemy: target };
+    }
+  };
+  const combat = new CombatSystem({ enemySystem, bossSystem: { damage: () => ({ defeated: false }) }, rng: () => 0.5 });
+  const player = applyEquipment({
+    ...STARTING_PLAYER,
+    id: "caster",
+    zone: ZONES.FIELD,
+    position: { x: 0, y: 0, z: 0 },
+    health: 100,
+    level: 4,
+    mana: 70,
+    learnedAbilities: ["fireball"],
+    spentAttributes: { health: 0, strength: 0, magic: 5, defense: 0 },
+    lastAbilityAt: 0
+  });
+  const beforeMana = player.mana;
+
+  const result = combat.ability(player, { abilityId: "fireball", targetId: target.id });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.abilityId, "fireball");
+  assert.equal(damageEvents.length, 1);
+  assert.equal(damageEvents[0].enemyInstanceId, target.id);
+  assert.ok(damageEvents[0].damage > 0);
+  assert.equal(player.mana, beforeMana - ABILITIES.fireball.manaCost);
+  assert.ok(target.health < target.maxHealth);
+  assert.deepEqual(result.projectile, {
+    type: "fireball",
+    targetId: target.id,
+    from: { x: 0, y: 1.2, z: 0 },
+    to: { x: 8, y: 1, z: 1 },
+    travelMs: 420,
+    impactEffect: "burn"
+  });
 });
 
 test("loot claims validate alive state and range before deleting the bag", () => {

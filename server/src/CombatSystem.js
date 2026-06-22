@@ -1,7 +1,7 @@
 import { ABILITIES } from "../../shared/abilities.js";
 import { PLAYER_LIMITS, ZONES } from "../../shared/constants.js";
 import { ICE_MAGE_BOSS } from "../../shared/enemies.js";
-import { calculatePlayerDamage, distance2d, isPlayerDead } from "../../shared/combat.js";
+import { applyEquipment, calculatePlayerDamage, distance2d, isPlayerDead } from "../../shared/combat.js";
 import { spendMana } from "../../shared/progression.js";
 
 export class CombatSystem {
@@ -72,6 +72,28 @@ export class CombatSystem {
       player.lastAbilityAt = now;
       return applyFriendlyHeal(player, target.player, ability);
     }
+    if (ability.id === "fireball") {
+      const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.abilityRange);
+      if (!target.ok) return target;
+      const manaSpend = spendMana(player, ability.manaCost || 0);
+      if (!manaSpend.ok) return { ok: false, reason: "mana" };
+      Object.assign(player, manaSpend.player);
+      player.lastAbilityAt = now;
+      const damage = calculateAbilityDamage(player, ability, this.rng);
+      const result = this.enemySystem.damageEnemy({
+        zone: player.zone,
+        enemyInstanceId: target.enemy.id,
+        damage,
+        attackerId: player.id
+      });
+      return {
+        ok: true,
+        abilityId: ability.id,
+        damage,
+        result,
+        projectile: createProjectilePayload(ability.id, player.position, target.enemy.position, target.enemy.id)
+      };
+    }
     if (ability.id !== "hero_pulse") {
       return { ok: false, reason: "unsupported" };
     }
@@ -94,6 +116,32 @@ export class CombatSystem {
     }
     return { ok: true, abilityId: ability.id, damage, hits };
   }
+}
+
+function resolveHostileEnemy(enemySystem, player, targetId, range) {
+  if (!targetId) return { ok: false, reason: "target" };
+  const enemy = enemySystem?.enemies?.get(targetId);
+  if (!enemy || enemy.health <= 0 || enemy.zone !== player.zone) return { ok: false, reason: "target" };
+  if (distance2d(player.position, enemy.position) > range) return { ok: false, reason: "range" };
+  return { ok: true, enemy };
+}
+
+function calculateAbilityDamage(player, ability, rng = Math.random) {
+  const stats = applyEquipment(player);
+  const base = calculatePlayerDamage(stats, rng);
+  const scalingBonus = ability.scalingStat === "magic" ? stats.spellPower || 0 : stats.physicalPower || 0;
+  return Math.max(1, Math.round((base + scalingBonus) * (ability.damageScale || 1)));
+}
+
+function createProjectilePayload(type, from, to, targetId) {
+  return {
+    type,
+    targetId,
+    from: { x: from?.x || 0, y: (from?.y || 0) + 1.2, z: from?.z || 0 },
+    to: { x: to?.x || 0, y: (to?.y || 0) + 1, z: to?.z || 0 },
+    travelMs: 420,
+    impactEffect: type === "fireball" ? "burn" : "impact"
+  };
 }
 
 function resolveFriendlyTarget(player, targetId, players, range) {
