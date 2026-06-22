@@ -31,6 +31,7 @@ export class RoomManager {
     this.parties = new PartySystem();
     this.publicEvents = new PublicEventSystem({ enemySystem: this.enemies });
     this.chests = createChests();
+    this.rng = Math.random;
     this.lastTick = Date.now();
     this.tickTimer = setInterval(() => this.tick(), SERVER_TICK_MS);
     this.snapshotTimer = setInterval(() => this.broadcastSnapshots(), SNAPSHOT_MS);
@@ -163,11 +164,12 @@ export class RoomManager {
       this.broadcastSnapshots();
     });
 
-    socket.on(NET.COMBAT_ABILITY, (_payload, ack) => {
+    socket.on(NET.COMBAT_ABILITY, (payload, ack) => {
       const player = this.players.get(socket.id);
       if (!player) return;
-      const result = this.combat.ability(player);
+      const result = this.combat.ability(player, payload, this.players);
       for (const hit of result.hits || []) this.applyCombatRewards(player, { result: hit, boss: hit.boss, iceMage: hit.iceMage });
+      if (result.ok && result.heals?.length) this.refreshMetaProgress(player);
       ack?.(result);
       this.broadcastSnapshots();
     });
@@ -394,6 +396,11 @@ export class RoomManager {
       player.questProgress = questUpdate.progress;
       player.firstClearRewards = player.firstClearRewards || {};
       if (!player.firstClearRewards[BOSS.id]) player.firstClearRewards[BOSS.id] = true;
+      const restStoneRoll = this.rng();
+      if (restStoneRoll < 0.5) {
+        const restStone = addInventoryStack(player.inventory || [], "rest_stone", 1);
+        if (restStone.ok) player.inventory = restStone.inventory;
+      }
       player.title = "Wyrm-Touched";
       this.refreshMetaProgress(player);
     }

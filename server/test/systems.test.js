@@ -31,6 +31,9 @@ const nearlyEqual = (actual, expected, epsilon = 0.000001) => {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be within ${epsilon} of ${expected}`);
 };
 
+const inventoryQuantity = (inventory, itemId) =>
+  (inventory || []).filter((entry) => entry?.itemId === itemId).reduce((total, entry) => total + (entry.quantity || 0), 0);
+
 test("client runtime chunks compile after concatenation", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
@@ -1016,6 +1019,63 @@ test("boss defeat rewards quest credit to participants and party members in the 
     clearInterval(room.tickTimer);
     clearInterval(room.snapshotTimer);
   }
+});
+
+test("Shadow Wyrm defeat rolls personal Rest Stone rewards independently", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const attacker = createPlayerState("p1", { name: "Attacker", zone: ZONES.BOSS });
+    const ally = createPlayerState("p2", { name: "Ally", zone: ZONES.BOSS });
+    room.players.set(attacker.id, attacker);
+    room.players.set(ally.id, ally);
+    room.boss.state.participants.add(attacker.id);
+    room.boss.state.participants.add(ally.id);
+    const rolls = [0.49, 0.51];
+    room.rng = () => rolls.shift() ?? 0.99;
+
+    room.awardBossDefeat({ reward: { xp: 400, coins: 300 }, lootBag: null }, attacker);
+
+    assert.equal(inventoryQuantity(attacker.inventory, "rest_stone"), 1);
+    assert.equal(inventoryQuantity(ally.inventory, "rest_stone"), 0);
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("server Mend Ally heals a friendly player and spends mana", () => {
+  const lootSystem = new LootSystem(() => 0.5);
+  const enemySystem = new EnemySystem({ lootSystem, rng: () => 0.5 });
+  const bossSystem = new BossSystem({ lootSystem, rng: () => 0.5 });
+  const combat = new CombatSystem({ enemySystem, bossSystem, rng: () => 0.5 });
+  const healer = createPlayerState("p1", {
+    name: "Healer",
+    level: 6,
+    zone: ZONES.HUB,
+    learnedAbilities: ["mend_ally"],
+    spentAttributes: { health: 0, strength: 0, magic: 10, defense: 0 }
+  });
+  healer.mana = 80;
+  healer.maxMana = 100;
+  healer.healingPower = 24;
+  healer.position = { x: 0, y: 0, z: 0 };
+  const ally = createPlayerState("p2", { name: "Ally", zone: ZONES.HUB });
+  ally.maxHealth = 140;
+  ally.health = 45;
+  ally.position = { x: 4, y: 0, z: 0 };
+  const players = new Map([[healer.id, healer], [ally.id, ally]]);
+
+  const result = combat.ability(healer, { abilityId: "mend_ally", targetId: ally.id }, players);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.abilityId, "mend_ally");
+  assert.ok(result.heals[0].amount > 0);
+  assert.ok(ally.health > 45);
+  assert.ok(healer.mana < 80);
+  assert.ok(healer.healingDone >= result.heals[0].amount);
 });
 
 test("Palace of Zero is registered as a level 8 gated zone from Frostveil", () => {
