@@ -134,13 +134,13 @@ test("client runtime keeps v1.2.3 chest declarations split after duplicate scan"
   assert.match(addChestSource, /\bconst\s+chestState\s*=/);
 });
 
-test("IceZero v2 title presentation and patch notes are registered", () => {
+test("v1.2.3 hotfix version and IceZero patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
 
-  assert.equal(GAME_VERSION, "2.0.0");
-  assert.equal(PATCH_NOTES.versions[0].version, "2.0.0");
-  assert.equal(PATCH_NOTES.versions[0].title, "ICEZERO");
+  assert.equal(GAME_VERSION, "1.2.3");
+  assert.ok(PATCH_NOTES.versions.some((version) => version.version === "1.2.3" && version.title === "Black Screen Hotfix"));
+  assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.0.0" && version.title === "ICEZERO"));
   assert.match(menuSource, /HeroQuest MMO[\s\S]*ICEZERO/);
   assert.match(menuSource, /Continue Game/);
   assert.match(menuSource, /Character/);

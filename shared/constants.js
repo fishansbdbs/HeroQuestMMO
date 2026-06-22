@@ -1,4 +1,4 @@
-export const GAME_VERSION = "2.0.0";
+export const GAME_VERSION = "1.2.3";
 
 export const ZONES = {
   HUB: "hub",
