@@ -194,7 +194,8 @@ function completeBossQuestLocal(reward = { xp: BOSS.xp, coins: BOSS.coins }) {
 
 function spawnLocalEnemies() {
   game.enemies.clear();
-  for (const spawn of FIELD_SPAWNS) {
+  const spawns = game.zone === ZONES.FROSTVEIL ? FROSTVEIL_SPAWNS : FIELD_SPAWNS;
+  for (const spawn of spawns) {
     for (let i = 0; i < spawn.count; i += 1) {
       const angle = Math.random() * Math.PI * 2;
       const radius = Math.random() * spawn.radius;
@@ -419,4 +420,7 @@ function applySnapshot(snapshot) {
   }
   if (snapshot.boss) {
     game.boss = { ...game.boss, ...snapshot.boss };
+  }
+  if (snapshot.publicEvent) {
+    game.publicEvent = snapshot.publicEvent;
   }

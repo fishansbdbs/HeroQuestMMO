@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment, addProgressRewards, calculateIncomingDamage } from "../../shared/combat.js";
+import { ENEMIES, FROSTVEIL_SPAWNS, ELITE_MODIFIERS } from "../../shared/enemies.js";
+import { canEnterZone, unlockWaypoint } from "../../shared/zones.js";
 import {
   calculateDamageReduction,
   regenerateMana,
@@ -15,12 +17,13 @@ import { assignHotbarAbility, purchaseTrainerAbility, validateAbilityTarget } fr
 import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
 import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot } from "../../shared/equipment.js";
 import { INVENTORY_SLOT_COUNT, addInventoryStack } from "../../shared/inventory.js";
-import { applyQuestKill, createQuestProgress } from "../../shared/quests.js";
+import { applyQuestEvent, applyQuestKill, createQuestProgress } from "../../shared/quests.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
 import { PartySystem } from "../src/PartySystem.js";
 import { CombatSystem } from "../src/CombatSystem.js";
 import { BossSystem } from "../src/BossSystem.js";
+import { PublicEventSystem } from "../src/PublicEventSystem.js";
 import { createPlayerState } from "../src/PlayerState.js";
 import { RoomManager } from "../src/RoomManager.js";
 
@@ -43,6 +46,7 @@ test("client runtime chunks compile after concatenation", () => {
       "BOSS",
       "ENEMIES",
       "FIELD_SPAWNS",
+      "FROSTVEIL_SPAWNS",
       "getEnemy",
       "GAME_VERSION",
       "PATCH_NOTES",
@@ -61,11 +65,14 @@ test("client runtime chunks compile after concatenation", () => {
       "INVENTORY_SLOT_COUNT",
       "addInventoryStack",
       "normalizeInventory",
+      "applyQuestEvent",
       "applyQuestKill",
       "createQuestProgress",
       "getQuestList",
       "getZone",
       "ZONE_DEFS",
+      "canEnterZone",
+      "unlockWaypoint",
       "addInventoryItem",
       "addProgressRewards",
       "applyEquipment",
@@ -597,6 +604,108 @@ test("server equipment changes validate slots and update authoritative player st
     clearInterval(room.tickTimer);
     clearInterval(room.snapshotTimer);
   }
+});
+
+test("Frostveil Reach is registered as a level 5 gated zone with a discoverable waypoint", () => {
+  assert.equal(ZONES.FROSTVEIL, "frostveil");
+
+  const level4 = applyEquipment({ ...STARTING_PLAYER, xp: 260 });
+  const blocked = canEnterZone(level4, ZONES.FROSTVEIL);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.reason, "level");
+  assert.equal(blocked.minLevel, 5);
+  assert.match(blocked.message, /Reach Level 5/);
+
+  const level5 = applyEquipment({ ...STARTING_PLAYER, xp: 420, waypoints: ["dawnrest"] });
+  const allowed = canEnterZone(level5, ZONES.FROSTVEIL);
+  assert.equal(allowed.ok, true);
+
+  const unlocked = unlockWaypoint(level5, "frostveil_camp");
+  assert.equal(unlocked.ok, true);
+  assert.deepEqual(unlocked.player.waypoints, ["dawnrest", "frostveil_camp"]);
+  assert.deepEqual(unlockWaypoint(unlocked.player, "frostveil_camp").player.waypoints, ["dawnrest", "frostveil_camp"]);
+});
+
+test("Frostveil enemies, elite modifiers, and spawn table are data driven", () => {
+  const frostIds = FROSTVEIL_SPAWNS.map((spawn) => spawn.enemyId);
+  assert.deepEqual(frostIds, ["frost_slime", "ice_goblin", "snow_wolf", "frost_wisp", "ice_golem", "frozen_knight"]);
+
+  for (const enemyId of frostIds) {
+    const enemy = ENEMIES[enemyId];
+    assert.equal(enemy.zone, ZONES.FROSTVEIL);
+    assert.equal(enemy.level >= 5, true);
+    assert.equal(enemy.loot.some((drop) => drop.itemId === "ice_shard" || drop.itemId === "small_health_potion"), true);
+  }
+
+  assert.equal(ENEMIES.ice_golem.elite, true);
+  assert.equal(ENEMIES.frozen_knight.family, "knight");
+  assert.deepEqual(Object.keys(ELITE_MODIFIERS), ["armored", "swift", "chilling", "regenerating"]);
+});
+
+test("Ice quest chain supports zone events, multi-target kills, and elite kill progress", () => {
+  let progress = createQuestProgress();
+  const entered = applyQuestEvent(progress, "enter_frostveil");
+  assert.equal(entered.progress.frozen_road.complete, true);
+  assert.equal(entered.completed[0].id, "frozen_road");
+  progress = entered.progress;
+
+  for (let i = 0; i < 5; i += 1) {
+    progress = applyQuestKill(progress, ENEMIES.frost_slime).progress;
+  }
+  assert.equal(progress.cold_blooded.complete, false);
+  assert.equal(progress.cold_blooded.targets.frost_slime.current, 5);
+
+  for (let i = 0; i < 3; i += 1) {
+    progress = applyQuestKill(progress, ENEMIES.ice_goblin).progress;
+  }
+  assert.equal(progress.cold_blooded.complete, true);
+  assert.equal(progress.cold_blooded.current, 8);
+
+  for (let i = 0; i < 3; i += 1) {
+    progress = applyQuestKill(progress, ENEMIES.snow_wolf).progress;
+  }
+  assert.equal(progress.howling_white.complete, true);
+
+  progress = applyQuestKill(progress, ENEMIES.ice_golem).progress;
+  assert.equal(progress.heart_of_the_blizzard.complete, true);
+});
+
+test("server rejects underleveled Frostveil travel and unlocks the camp waypoint on entry", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const underleveled = createPlayerState("p1", { xp: 260, zone: ZONES.FIELD, waypoints: ["dawnrest"] });
+    const blocked = room.changePlayerZone(underleveled, ZONES.FROSTVEIL, { x: 0, y: 0, z: 0 });
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.reason, "level");
+    assert.equal(underleveled.zone, ZONES.FIELD);
+
+    const ready = createPlayerState("p2", { xp: 420, zone: ZONES.FIELD, waypoints: ["dawnrest"] });
+    const allowed = room.changePlayerZone(ready, ZONES.FROSTVEIL, { x: 0, y: 0, z: 24 });
+    assert.equal(allowed.ok, true);
+    assert.equal(ready.zone, ZONES.FROSTVEIL);
+    assert.ok(ready.waypoints.includes("frostveil_camp"));
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("Frost Ward public event starts for Frostveil players and spawns event enemies", () => {
+  const enemies = new EnemySystem({ rng: () => 0 });
+  const eventSystem = new PublicEventSystem({ enemySystem: enemies, rng: () => 0 });
+  const player = createPlayerState("p1", {
+    xp: 420,
+    zone: ZONES.FROSTVEIL,
+    position: { x: 8, y: 0, z: -8 }
+  });
+
+  const events = eventSystem.update(new Map([[player.id, player]]), 1000);
+  assert.ok(events.some((event) => event.type === "public_event_started" && event.eventId === "defend_frost_ward"));
+  assert.equal(eventSystem.snapshot(ZONES.FROSTVEIL).active, true);
+  assert.ok(enemies.getZoneEnemies(ZONES.FROSTVEIL).some((enemy) => enemy.eventId === "defend_frost_ward"));
 });
 
 test("enemy defeat produces rewards and marks quest progress", () => {

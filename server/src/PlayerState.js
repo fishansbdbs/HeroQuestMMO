@@ -69,6 +69,8 @@ export function sanitizePlayer(player) {
     equippedArmor: player.equippedArmor,
     magicPower: player.magicPower,
     inventory: player.inventory,
+    waypoints: player.waypoints,
+    zoneCompletion: player.zoneCompletion,
     learnedAbilities: player.learnedAbilities,
     hotbar: player.hotbar,
     skillTreeNodes: player.skillTreeNodes,

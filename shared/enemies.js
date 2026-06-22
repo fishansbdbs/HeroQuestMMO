@@ -140,6 +140,129 @@ export const ENEMIES = {
       { itemId: "small_health_potion", chance: 0.2 }
     ]
   },
+  frost_slime: {
+    id: "frost_slime",
+    name: "Frost Slime",
+    family: "slime",
+    zone: ZONES.FROSTVEIL,
+    level: 5,
+    maxHealth: 72,
+    damage: 15,
+    xp: 42,
+    coins: [18, 32],
+    speed: 1.55,
+    attackRange: 1.45,
+    attackCooldownMs: 1120,
+    color: 0x9fe7ff,
+    loot: [
+      { itemId: "ice_shard", chance: 0.55 },
+      { itemId: "small_health_potion", chance: 0.13 }
+    ]
+  },
+  ice_goblin: {
+    id: "ice_goblin",
+    name: "Ice Goblin",
+    family: "goblin",
+    zone: ZONES.FROSTVEIL,
+    level: 6,
+    maxHealth: 92,
+    damage: 18,
+    xp: 58,
+    coins: [24, 42],
+    speed: 2.2,
+    attackRange: 1.8,
+    attackCooldownMs: 1050,
+    color: 0x6aa6c8,
+    loot: [
+      { itemId: "ice_shard", chance: 0.45 },
+      { itemId: "ice_goblin_shiv", chance: 0.12 },
+      { itemId: "small_health_potion", chance: 0.1 }
+    ]
+  },
+  snow_wolf: {
+    id: "snow_wolf",
+    name: "Snow Wolf",
+    family: "wolf",
+    zone: ZONES.FROSTVEIL,
+    level: 6,
+    maxHealth: 86,
+    damage: 19,
+    xp: 62,
+    coins: [22, 38],
+    speed: 3.15,
+    attackRange: 1.95,
+    attackCooldownMs: 1150,
+    color: 0xd8e5ec,
+    loot: [
+      { itemId: "ice_shard", chance: 0.35 },
+      { itemId: "snowhide_helmet", chance: 0.08 },
+      { itemId: "small_health_potion", chance: 0.1 }
+    ]
+  },
+  frost_wisp: {
+    id: "frost_wisp",
+    name: "Frost Wisp",
+    family: "wisp",
+    zone: ZONES.FROSTVEIL,
+    level: 7,
+    maxHealth: 82,
+    damage: 17,
+    ranged: true,
+    xp: 72,
+    coins: [30, 48],
+    speed: 1.95,
+    attackRange: 5.8,
+    attackCooldownMs: 1450,
+    color: 0xb8fbff,
+    loot: [
+      { itemId: "ice_shard", chance: 0.42 },
+      { itemId: "wispwood_staff", chance: 0.08 },
+      { itemId: "small_health_potion", chance: 0.1 }
+    ]
+  },
+  ice_golem: {
+    id: "ice_golem",
+    name: "Ice Golem",
+    family: "golem",
+    zone: ZONES.FROSTVEIL,
+    level: 8,
+    elite: true,
+    maxHealth: 320,
+    damage: 27,
+    xp: 150,
+    coins: [80, 130],
+    speed: 0.85,
+    attackRange: 2.55,
+    attackCooldownMs: 2050,
+    color: 0x8ed8ff,
+    loot: [
+      { itemId: "ice_shard", chance: 0.8, quantity: 2 },
+      { itemId: "frostguard_chestplate", chance: 0.14 },
+      { itemId: "frostbite_sword", chance: 0.1 },
+      { itemId: "small_health_potion", chance: 0.18 }
+    ]
+  },
+  frozen_knight: {
+    id: "frozen_knight",
+    name: "Frozen Knight",
+    family: "knight",
+    zone: ZONES.FROSTVEIL,
+    level: 8,
+    maxHealth: 185,
+    damage: 24,
+    xp: 118,
+    coins: [58, 96],
+    speed: 1.55,
+    attackRange: 2,
+    attackCooldownMs: 1350,
+    color: 0xa8cad9,
+    loot: [
+      { itemId: "ice_shard", chance: 0.5 },
+      { itemId: "frozen_knight_blade", chance: 0.12 },
+      { itemId: "frozen_knight_shield", chance: 0.1 },
+      { itemId: "small_health_potion", chance: 0.12 }
+    ]
+  },
   shadow_slime: {
     id: "shadow_slime",
     name: "Shadow Slime",
@@ -204,6 +327,22 @@ export const FIELD_SPAWNS = [
   { enemyId: "forest_wisp", count: 3, center: [-30, 0, 28], radius: 7 },
   { enemyId: "stone_golem", count: 1, center: [30, 0, 24], radius: 3 }
 ];
+
+export const FROSTVEIL_SPAWNS = [
+  { enemyId: "frost_slime", count: 6, center: [-18, 0, 4], radius: 10, eliteChance: 0.08 },
+  { enemyId: "ice_goblin", count: 4, center: [17, 0, 0], radius: 9, eliteChance: 0.1 },
+  { enemyId: "snow_wolf", count: 4, center: [-8, 0, -20], radius: 10, eliteChance: 0.1 },
+  { enemyId: "frost_wisp", count: 3, center: [24, 0, -22], radius: 8, eliteChance: 0.12 },
+  { enemyId: "ice_golem", count: 1, center: [-28, 0, -28], radius: 4, eliteChance: 1 },
+  { enemyId: "frozen_knight", count: 2, center: [32, 0, 18], radius: 7, eliteChance: 0.16 }
+];
+
+export const ELITE_MODIFIERS = {
+  armored: { id: "armored", label: "Armored", healthMultiplier: 1.45, damageMultiplier: 1.08, speedMultiplier: 0.92, rewardMultiplier: 1.25 },
+  swift: { id: "swift", label: "Swift", healthMultiplier: 1.18, damageMultiplier: 1.05, speedMultiplier: 1.28, rewardMultiplier: 1.18 },
+  chilling: { id: "chilling", label: "Chilling", healthMultiplier: 1.25, damageMultiplier: 1.16, speedMultiplier: 1, rewardMultiplier: 1.22 },
+  regenerating: { id: "regenerating", label: "Regenerating", healthMultiplier: 1.35, damageMultiplier: 1.02, speedMultiplier: 0.96, rewardMultiplier: 1.24 }
+};
 
 export function getEnemy(enemyId) {
   return ENEMIES[enemyId] || null;

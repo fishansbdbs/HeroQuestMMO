@@ -99,6 +99,7 @@ const game = {
   blockers: [],
   boss: null,
   bossGroup: null,
+  publicEvent: null,
   telegraphs: [],
   input: {
     keys: new Set(),
@@ -202,7 +203,10 @@ function installDebugHooks() {
         inventory: {
           slotsUsed: normalizeInventory(game.save.inventory || []).length,
           slotCount: INVENTORY_SLOT_COUNT
-        }
+        },
+        waypoints: game.save.waypoints || [],
+        publicEvent: game.publicEvent,
+        enemyCount: game.enemies.size
       };
     },
     setKey(key, down = true) {
@@ -240,10 +244,11 @@ function bootstrap() {
   const smoke = params.get("smoke");
   game.debugDemo = params.get("demo");
   if (smoke) {
-    const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : ZONES.HUB;
+    const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : smoke === "frostveil" ? ZONES.FROSTVEIL : ZONES.HUB;
     const phase2Smoke = params.get("phase2") === "progression";
     const phase4Smoke = params.get("phase4") === "trees";
     const phase5Smoke = params.get("phase5") === "equipment";
+    const phase6Smoke = params.get("phase6") === "frostveil" || smoke === "frostveil";
     const smokeInventory = phase5Smoke
       ? [
           { itemId: "apprentice_staff", quantity: 1 },
@@ -256,8 +261,8 @@ function bootstrap() {
       ...game.save,
       name: "SmokeTester",
       color: COLORS[1],
-      xp: phase2Smoke || phase5Smoke ? 260 : game.save.xp,
-      coins: phase2Smoke || phase5Smoke ? 150 : game.save.coins,
+      xp: phase6Smoke ? 420 : phase2Smoke || phase5Smoke ? 260 : game.save.xp,
+      coins: phase2Smoke || phase5Smoke || phase6Smoke ? 150 : game.save.coins,
       inventory: phase2Smoke ? addInventoryItem(game.save.inventory || [], "rest_stone", 1) : smokeInventory,
       equipment: phase5Smoke ? createEquipmentState() : game.save.equipment,
       learnedAbilities: phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
@@ -463,6 +468,9 @@ function startGame() {
   game.input.distance = game.save.settings.cameraDistance;
   game.zone = game.save.zone || ZONES.HUB;
   loadZone(game.zone, true);
+  if (game.debugDemo === "frostward" && game.zone === ZONES.FROSTVEIL) {
+    game.playerGroup.position.set(8, 0, -8);
+  }
   setupNetwork();
   game.started = true;
   game.clock.start();
@@ -786,21 +794,38 @@ function loadZone(zoneId, moveToSpawn = false) {
 
   if (zoneId === ZONES.HUB) buildHub();
   if (zoneId === ZONES.FIELD) buildField();
+  if (zoneId === ZONES.FROSTVEIL) buildFrostveil();
   if (zoneId === ZONES.BOSS) buildBossArena();
 
   const zone = getZone(zoneId);
   if (moveToSpawn) {
     game.playerGroup.position.set(zone.spawn.x, 0, zone.spawn.z);
   }
-  if (zoneId === ZONES.FIELD && !game.online) spawnLocalEnemies();
+  if (zoneId === ZONES.FROSTVEIL) applyZoneEntryProgress("enter_frostveil", "frostveil_camp");
+  if ((zoneId === ZONES.FIELD || zoneId === ZONES.FROSTVEIL) && !game.online) spawnLocalEnemies();
   if (zoneId === ZONES.BOSS) startLocalBoss();
   saveGame();
   updateHud();
   if (game.online) {
     game.socket.emit(NET.PLAYER_ZONE, { zone: zoneId, position: groupPosition(game.playerGroup) }, (ack) => {
+      if (!ack?.ok) {
+        toast(ack?.message || "That zone is locked.");
+        return;
+      }
+      if (ack?.player) applyServerPlayerUpdate(ack.player);
       if (ack?.snapshot) applySnapshot(ack.snapshot);
     });
   }
+}
+
+function applyZoneEntryProgress(eventId, waypointId = null) {
+  if (waypointId) {
+    const waypoint = unlockWaypoint(game.save, waypointId);
+    if (waypoint.ok) game.save = waypoint.player;
+  }
+  const questUpdate = applyQuestEvent(game.save.questProgress, eventId);
+  game.save.questProgress = questUpdate.progress;
+  for (const quest of questUpdate.completed) toast(`Quest complete: ${quest.name}`);
 }
 
 function buildHub() {

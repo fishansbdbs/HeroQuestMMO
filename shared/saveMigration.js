@@ -174,7 +174,7 @@ export function migrateIceZeroSave(input) {
     equippedWeapon: equipment.weapon || base.equippedWeapon,
     equippedArmor: equipment.chest || base.equippedArmor,
     openedChests: uniqueStrings(source.openedChests),
-    questProgress: asObject(source.questProgress || base.questProgress),
+    questProgress: { ...base.questProgress, ...asObject(source.questProgress) },
     title: typeof source.title === "string" ? source.title : base.title,
     settings: asObject(source.settings),
     migrations,

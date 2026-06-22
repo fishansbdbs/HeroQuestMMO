@@ -11,7 +11,11 @@ function updateQuestTracker() {
     ui.questTracker.innerHTML = "";
     return;
   }
-  ui.questTracker.innerHTML = getQuestList().slice(0, 5).map((quest) => {
+  const frostQuestIds = new Set(["frozen_road", "cold_blooded", "howling_white", "shattered_ward", "heart_of_the_blizzard"]);
+  const quests = game.zone === ZONES.FROSTVEIL
+    ? getQuestList().filter((quest) => frostQuestIds.has(quest.id))
+    : getQuestList().slice(0, 5);
+  ui.questTracker.innerHTML = quests.map((quest) => {
     const progress = game.save.questProgress[quest.id] || { current: 0, complete: false };
     return `<div class="quest-item ${progress.complete ? "complete" : ""}"><strong>${quest.name}</strong><span>${progress.current}/${quest.required}</span></div>`;
   }).join("");
@@ -201,10 +205,11 @@ function updatePrompt() {
   }
   for (const portal of game.portals) {
     if (distance2d(player, portal) <= portal.radius) {
-      const locked = game.save.level < portal.minLevel;
+      const gate = canEnterZone(game.save, portal.targetZone);
+      const locked = !gate.ok || game.save.level < portal.minLevel;
       game.promptAction = () => {
         if (locked) {
-          toast(`Reach level ${portal.minLevel} to enter ${portal.label}.`);
+          toast(portal.lockMessage || gate.message || `Reach level ${portal.minLevel} to enter ${portal.label}.`);
           return;
         }
         loadZone(portal.targetZone, true);

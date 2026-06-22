@@ -21,6 +21,32 @@ function buildField() {
   addChest(20, -22, "field_south_cache");
   addPortal(0, 37, "Dawnrest", ZONES.HUB, 0x84bdff);
   addPortal(36, -34, "Shadow Peak", ZONES.BOSS, 0xff6b57, 3);
+  addPortal(-40, -36, "Frostveil Reach", ZONES.FROSTVEIL, 0xa9f3ff, 5, "The frozen passage rejects you. Reach Level 5 to enter.");
+}
+
+function buildFrostveil() {
+  game.scene.background = new THREE.Color(0x162638);
+  game.scene.fog = new THREE.Fog(0x9fc8e8, 32, 112);
+  addGround(116, 0xd9edf3, 0xb8d5e5);
+  addPath([{ x: 0, z: 34 }, { x: 0, z: 8 }, { x: 12, z: -12 }, { x: 34, z: -34 }], 4, 0x9bb6c4);
+  addPath([{ x: -34, z: -30 }, { x: -10, z: -14 }, { x: 8, z: -8 }], 3, 0x86a7ba);
+  for (let i = 0; i < 34; i += 1) {
+    const x = randomRange(-53, 53);
+    const z = randomRange(-53, 53);
+    if (Math.abs(x) < 7 && z > 10) continue;
+    addFrozenTree(x, z, 0.8 + Math.random() * 0.7);
+  }
+  for (let i = 0; i < 24; i += 1) addRock(randomRange(-50, 50), randomRange(-50, 50), 0.6 + Math.random() * 1.1, 0x9bb3c0);
+  addCrystal(-26, -24, 0xb8fbff);
+  addCrystal(22, -24, 0x87d9ff);
+  addCrystal(32, 16, 0xd9fbff);
+  addCampfire(2, 22);
+  addWardCrystal(8, -8, "Frost Ward");
+  addWardCrystal(-18, -22, "North Ward");
+  addWardCrystal(24, 10, "East Ward");
+  addChest(-10, -12, "frostveil_snow_cache");
+  addPortal(0, 32, "Greenvale Outskirts", ZONES.FIELD, 0x75ff99);
+  addWorldLabel("Frostveil Camp", 2, 3.1, 22);
 }
 
 function buildBossArena() {
@@ -179,7 +205,47 @@ function addChest(x, z, id = `chest_${game.chests.size + 1}`) {
   addWorldLabel("Treasure", x, 2.2, z);
 }
 
-function addPortal(x, z, label, targetZone, color, minLevel = 1) {
+function addFrozenTree(x, z, scale = 1) {
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22 * scale, 0.32 * scale, 2.1 * scale, 7), mat(0x6d7482));
+  trunk.position.set(x, 1.05 * scale, z);
+  const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.15 * scale, 3 * scale, 7), mat(0xb9ddec));
+  leaves.position.set(x, 3 * scale, z);
+  const snowCap = new THREE.Mesh(new THREE.ConeGeometry(1.24 * scale, 1.2 * scale, 7), mat(0xf1fbff));
+  snowCap.position.set(x, 3.8 * scale, z);
+  trunk.castShadow = leaves.castShadow = snowCap.castShadow = true;
+  game.world.add(trunk, leaves, snowCap);
+  game.blockers.push({ x, z, halfX: 0.55 * scale, halfZ: 0.55 * scale });
+}
+
+function addCampfire(x, z) {
+  const stones = new THREE.Group();
+  for (let i = 0; i < 8; i += 1) {
+    const angle = (i / 8) * Math.PI * 2;
+    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22, 0), mat(0x7d8790));
+    stone.position.set(Math.cos(angle) * 0.72, 0.16, Math.sin(angle) * 0.72);
+    stones.add(stone);
+  }
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.38, 1.1, 7), mat(0x70e4ff, 0.78, true));
+  flame.position.y = 0.75;
+  const light = new THREE.PointLight(0x9be8ff, 2.2, 11);
+  light.position.y = 1.4;
+  stones.add(flame, light);
+  stones.position.set(x, 0, z);
+  game.world.add(stones);
+}
+
+function addWardCrystal(x, z, label) {
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 0.45, 6), mat(0x6a8390));
+  base.position.set(x, 0.25, z);
+  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(1.25, 0), mat(0x8feaff, 0.82, true));
+  crystal.position.set(x, 1.55, z);
+  const light = new THREE.PointLight(0x9feeff, 2.2, 9);
+  light.position.set(x, 2.2, z);
+  game.world.add(base, crystal, light);
+  addWorldLabel(label, x, 3.3, z);
+}
+
+function addPortal(x, z, label, targetZone, color, minLevel = 1, lockMessage = null) {
   const ring = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.15, 8, 32), mat(color, 0.75, true));
   ring.position.set(x, 2.2, z);
   ring.rotation.y = Math.PI / 2;
@@ -187,7 +253,7 @@ function addPortal(x, z, label, targetZone, color, minLevel = 1) {
   light.position.set(x, 2.4, z);
   game.world.add(ring, light);
   addWorldLabel(label, x, 4.2, z);
-  game.portals.push({ x, z, label, targetZone, minLevel, radius: 3 });
+  game.portals.push({ x, z, label, targetZone, minLevel, lockMessage, radius: 3 });
 }
 
 function addCrack() {
@@ -375,6 +441,42 @@ function populateGoblinMesh(group, def) {
   group.userData.kind = "goblin";
 }
 
+function populateKnightMesh(group, def) {
+  const parts = {};
+  const addPart = (key, size, position, color, rotation = null) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), mat(color));
+    mesh.position.set(position[0], position[1], position[2]);
+    if (rotation) mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.baseRotation = mesh.rotation.clone();
+    group.add(mesh);
+    parts[key] = mesh;
+    return mesh;
+  };
+  addPart("torso", [0.78, 1.08, 0.5], [0, 1.25, 0], 0x8fb8c7);
+  addPart("chestPlate", [0.9, 0.72, 0.12], [0, 1.38, -0.31], def.color || 0xa8cad9);
+  addPart("head", [0.62, 0.58, 0.54], [0, 2.1, -0.03], 0xcfe8ef);
+  addPart("helmet", [0.75, 0.26, 0.64], [0, 2.47, 0], 0xe8f8ff);
+  addPart("leftUpperArm", [0.28, 0.58, 0.28], [-0.68, 1.33, 0], 0x8fb8c7);
+  addPart("rightUpperArm", [0.28, 0.58, 0.28], [0.68, 1.33, 0], 0x8fb8c7);
+  addPart("leftLowerArm", [0.25, 0.54, 0.25], [-0.69, 0.8, -0.02], 0xb6d4df);
+  addPart("rightLowerArm", [0.25, 0.54, 0.25], [0.69, 0.8, -0.02], 0xb6d4df);
+  addPart("leftUpperLeg", [0.3, 0.62, 0.32], [-0.25, 0.47, 0], 0x7fa6b6);
+  addPart("rightUpperLeg", [0.3, 0.62, 0.32], [0.25, 0.47, 0], 0x7fa6b6);
+  addPart("leftFoot", [0.36, 0.18, 0.5], [-0.25, 0.1, -0.12], 0xe8f8ff);
+  addPart("rightFoot", [0.36, 0.18, 0.5], [0.25, 0.1, -0.12], 0xe8f8ff);
+  const shield = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.82, 0.62), mat(0xb9e5f2));
+  shield.position.set(-0.92, 0.98, -0.28);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.1, 0.1), mat(0xebfbff));
+  blade.position.set(0.9, 1.05, -0.22);
+  blade.rotation.set(0.1, 0, -0.65);
+  group.add(shield, blade);
+  parts.sword = blade;
+  group.userData.parts = parts;
+  group.userData.kind = "knight";
+}
+
 function createEnemyMesh(enemy) {
   const def = getEnemy(enemy.enemyId);
   const group = new THREE.Group();
@@ -421,6 +523,8 @@ function createEnemyMesh(enemy) {
     const target = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.46, 24), mat(0xe35c55, 0.9));
     target.position.set(0, 1.52, -0.66);
     group.add(body, head, arm, target);
+  } else if (def.family === "knight") {
+    populateKnightMesh(group, def);
   } else {
     const core = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 1), mat(0x77736b));
     core.position.y = 1.45;
@@ -626,7 +730,7 @@ function updateMovement(dt) {
 }
 
 function updateLocalEnemies(dt) {
-  if (game.online || isLocallyDead() || game.zone !== ZONES.FIELD) return;
+  if (game.online || isLocallyDead() || ![ZONES.FIELD, ZONES.FROSTVEIL].includes(game.zone)) return;
   for (const enemy of game.enemies.values()) {
     const def = getEnemy(enemy.enemyId);
     if (enemy.health <= 0) continue;

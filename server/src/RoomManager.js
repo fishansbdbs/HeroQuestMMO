@@ -6,13 +6,15 @@ import { addInventoryStack } from "../../shared/inventory.js";
 import { spendAttributePoint, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, purchaseTrainerAbility } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
-import { applyQuestKill } from "../../shared/quests.js";
+import { applyQuestEvent, applyQuestKill } from "../../shared/quests.js";
+import { canEnterZone, unlockWaypoint } from "../../shared/zones.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
 import { LootSystem } from "./LootSystem.js";
 import { EnemySystem } from "./EnemySystem.js";
 import { BossSystem } from "./BossSystem.js";
 import { CombatSystem } from "./CombatSystem.js";
 import { PartySystem } from "./PartySystem.js";
+import { PublicEventSystem } from "./PublicEventSystem.js";
 
 export class RoomManager {
   constructor(io) {
@@ -23,6 +25,7 @@ export class RoomManager {
     this.boss = new BossSystem({ lootSystem: this.loot });
     this.combat = new CombatSystem({ enemySystem: this.enemies, bossSystem: this.boss });
     this.parties = new PartySystem();
+    this.publicEvents = new PublicEventSystem({ enemySystem: this.enemies });
     this.chests = createChests();
     this.lastTick = Date.now();
     this.tickTimer = setInterval(() => this.tick(), SERVER_TICK_MS);
@@ -53,9 +56,13 @@ export class RoomManager {
         ack?.({ ok: false, reason: "dead", player: sanitizePlayer(player) });
         return;
       }
-      socket.leave(player.zone);
-      player.zone = payload.zone;
-      player.position = payload.position || defaultZonePosition(payload.zone);
+      const oldZone = player.zone;
+      const result = this.changePlayerZone(player, payload.zone, payload.position);
+      if (!result.ok) {
+        ack?.(result);
+        return;
+      }
+      socket.leave(oldZone);
       socket.join(player.zone);
       if (player.zone === ZONES.BOSS) this.boss.start();
       ack?.({ ok: true, player: sanitizePlayer(player), snapshot: this.snapshotForZone(player.zone) });
@@ -74,6 +81,8 @@ export class RoomManager {
         equippedWeapon: payload.equippedWeapon ?? player.equippedWeapon,
         equippedArmor: payload.equippedArmor ?? player.equippedArmor,
         questProgress: payload.questProgress ?? player.questProgress,
+        waypoints: payload.waypoints ?? player.waypoints,
+        zoneCompletion: payload.zoneCompletion ?? player.zoneCompletion,
         title: payload.title ?? player.title
       });
     });
@@ -283,6 +292,22 @@ export class RoomManager {
     return { ok: true };
   }
 
+  changePlayerZone(player, zone, position = null) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const gate = canEnterZone(player, zone);
+    if (!gate.ok) return gate;
+
+    player.zone = zone;
+    player.position = position || defaultZonePosition(zone);
+    if (zone === ZONES.FROSTVEIL) {
+      const waypoint = unlockWaypoint(player, "frostveil_camp");
+      if (waypoint.ok) Object.assign(player, waypoint.player);
+      const questUpdate = applyQuestEvent(player.questProgress, "enter_frostveil");
+      player.questProgress = questUpdate.progress;
+    }
+    return { ok: true };
+  }
+
   equipItem(player, slot, itemId) {
     if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
     const result = equipItemToSlot(player, slot, itemId);
@@ -359,6 +384,7 @@ export class RoomManager {
     this.processDeaths();
     const bossEvents = this.boss.update(this.players);
     this.handleBossEvents(bossEvents);
+    this.handlePublicEvents(this.publicEvents.update(this.players, dt));
     this.processDeaths();
     this.processRespawns();
     this.loot.cleanup();
@@ -452,6 +478,12 @@ export class RoomManager {
     return { ok: true, chestId, reward, player: sanitizePlayer(player) };
   }
 
+  handlePublicEvents(events) {
+    for (const event of events || []) {
+      this.io.to(event.zone || ZONES.FROSTVEIL).emit(NET.WORLD_EVENT, event);
+    }
+  }
+
   broadcastSnapshots() {
     const zones = new Set([...this.players.values()].map((player) => player.zone));
     zones.add(ZONES.HUB);
@@ -468,6 +500,7 @@ export class RoomManager {
       loot: this.loot.snapshot(zone),
       chests: this.snapshotChests(zone),
       boss: this.boss.snapshot(),
+      publicEvent: this.publicEvents.snapshot(zone),
       parties: this.parties.snapshot(),
       serverTime: Date.now()
     };
@@ -496,7 +529,7 @@ function applyRewardItems(inventory, items = []) {
 }
 
 function clampPosition(position, zone) {
-  const bounds = zone === ZONES.FIELD ? 54 : zone === ZONES.BOSS ? 30 : 42;
+  const bounds = zone === ZONES.FIELD ? 54 : zone === ZONES.FROSTVEIL ? 58 : zone === ZONES.BOSS ? 30 : 42;
   return {
     x: Math.max(-bounds, Math.min(bounds, Number(position.x) || 0)),
     y: 0,
@@ -507,6 +540,7 @@ function clampPosition(position, zone) {
 
 function defaultZonePosition(zone) {
   if (zone === ZONES.FIELD) return { x: 0, y: 0, z: 31, rot: Math.PI };
+  if (zone === ZONES.FROSTVEIL) return { x: 0, y: 0, z: 24, rot: Math.PI };
   if (zone === ZONES.BOSS) return { x: 0, y: 0, z: 22, rot: Math.PI };
   return { x: 0, y: 0, z: 6, rot: 0 };
 }
@@ -543,6 +577,17 @@ function createChests() {
         position: { x: 20, y: 0.25, z: -22 },
         coins: 36,
         items: [{ itemId: "rusty_blade", quantity: 1 }],
+        openedBy: new Set()
+      }
+    ],
+    [
+      "frostveil_snow_cache",
+      {
+        id: "frostveil_snow_cache",
+        zone: ZONES.FROSTVEIL,
+        position: { x: -10, y: 0.25, z: -12 },
+        coins: 45,
+        items: [{ itemId: "ice_shard", quantity: 2 }],
         openedBy: new Set()
       }
     ]

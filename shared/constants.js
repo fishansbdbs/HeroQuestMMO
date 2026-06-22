@@ -3,6 +3,7 @@ export const GAME_VERSION = "1.2.4";
 export const ZONES = {
   HUB: "hub",
   FIELD: "field",
+  FROSTVEIL: "frostveil",
   BOSS: "boss"
 };
 

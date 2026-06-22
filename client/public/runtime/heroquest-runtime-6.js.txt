@@ -40,6 +40,17 @@ function handleWorldEvent(event) {
   if (event.type === "player_respawned" && event.playerId === game.socket?.id) {
     finishRespawn();
   }
+  if (event.type === "public_event_started" && event.eventId === "defend_frost_ward") {
+    game.publicEvent = { ...game.publicEvent, ...event, active: true };
+    toast("Public event: Defend the Frost Ward.");
+  }
+  if (event.type === "public_event_wave" && event.eventId === "defend_frost_ward") {
+    toast(`Frost Ward wave ${event.wave} begins.`);
+  }
+  if (event.type === "public_event_completed" && event.eventId === "defend_frost_ward") {
+    game.publicEvent = { ...game.publicEvent, active: false };
+    toast("Frost Ward secured.");
+  }
 }
 
 function ensureTrainingDummy() {
@@ -92,6 +103,8 @@ function syncRemotePlayers(players) {
       game.save.skillTreeNodes = player.skillTreeNodes || game.save.skillTreeNodes;
       game.save.savedBuilds = player.savedBuilds || game.save.savedBuilds;
       game.save.activeLoadout = player.activeLoadout || game.save.activeLoadout;
+      game.save.waypoints = player.waypoints || game.save.waypoints;
+      game.save.zoneCompletion = player.zoneCompletion || game.save.zoneCompletion;
       game.save.state = player.state || game.save.state || "alive";
       if (player.respawnAt) {
         game.respawnAt = player.respawnAt;
@@ -465,6 +478,7 @@ function openChest(chestId) {
 }
 
 function localChestReward(chestId) {
+  if (chestId === "frostveil_snow_cache") return { coins: 45, items: [{ itemId: "ice_shard", quantity: 2 }] };
   if (chestId === "field_south_cache") return { coins: 36, items: [{ itemId: "rusty_blade", quantity: 1 }] };
   if (chestId === "field_north_cache") return { coins: 28, items: [{ itemId: "small_health_potion", quantity: 1 }] };
   return { coins: 18, items: [{ itemId: "small_health_potion", quantity: 1 }] };
@@ -791,7 +805,9 @@ function applyServerPlayerUpdate(player) {
     hotbar: player.hotbar || game.save.hotbar,
     skillTreeNodes: player.skillTreeNodes || game.save.skillTreeNodes,
     savedBuilds: player.savedBuilds || game.save.savedBuilds,
-    activeLoadout: player.activeLoadout || game.save.activeLoadout
+    activeLoadout: player.activeLoadout || game.save.activeLoadout,
+    waypoints: player.waypoints || game.save.waypoints,
+    zoneCompletion: player.zoneCompletion || game.save.zoneCompletion
   });
   game.save = applyEquipment(game.save);
   if (game.playerGroup) applyVisualEquipment(game.playerGroup, game.save);
