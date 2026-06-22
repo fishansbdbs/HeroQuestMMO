@@ -2,12 +2,19 @@ import "./styles/main.css";
 import * as THREE from "three";
 import { io } from "socket.io-client";
 import { ABILITIES } from "../../shared/abilities.js";
-import { BOSS, ENEMIES, FIELD_SPAWNS, getEnemy } from "../../shared/enemies.js";
+import { BOSS, ICE_MAGE_BOSS, ENEMIES, FIELD_SPAWNS, FROSTVEIL_SPAWNS, getEnemy } from "../../shared/enemies.js";
 import { GAME_VERSION, PATCH_NOTES, PLAYER_LIMITS, STARTING_PLAYER, XP_TABLE, ZONES } from "../../shared/constants.js";
 import { getItem, ITEMS, STARTER_INVENTORY } from "../../shared/items.js";
 import { NET } from "../../shared/netMessages.js";
-import { applyQuestKill, createQuestProgress, getQuestList } from "../../shared/quests.js";
-import { getZone, ZONE_DEFS } from "../../shared/zones.js";
+import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot, slotForItem } from "../../shared/equipment.js";
+import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory } from "../../shared/inventory.js";
+import { ICEZERO_MIGRATION_ID, migrateIceZeroSave } from "../../shared/saveMigration.js";
+import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
+import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from "../../shared/trainers.js";
+import { activateLoadout, purchaseSkillNode, saveLoadout, SKILL_NODES, SKILL_TREES } from "../../shared/skillTrees.js";
+import { applyQuestEvent, applyQuestKill, createQuestProgress, getQuestList } from "../../shared/quests.js";
+import { getZone, ZONE_DEFS, canEnterZone, unlockWaypoint } from "../../shared/zones.js";
+import { ACHIEVEMENTS, TITLES, calculateZoneCompletion, recordBestiaryKill, refreshMetaProgress, refreshZoneCompletion, setActiveTitle } from "../../shared/metaProgress.js";
 import {
   addInventoryItem,
   addProgressRewards,
@@ -52,8 +59,10 @@ const bootRuntime = new Function(
   "io",
   "ABILITIES",
   "BOSS",
+  "ICE_MAGE_BOSS",
   "ENEMIES",
   "FIELD_SPAWNS",
+  "FROSTVEIL_SPAWNS",
   "getEnemy",
   "GAME_VERSION",
   "PATCH_NOTES",
@@ -65,11 +74,28 @@ const bootRuntime = new Function(
   "ITEMS",
   "STARTER_INVENTORY",
   "NET",
+  "EQUIPMENT_SLOTS",
+  "createEquipmentState",
+  "equipItemToSlot",
+  "slotForItem",
+  "INVENTORY_SLOT_COUNT",
+  "addInventoryStack",
+  "normalizeInventory",
+  "applyQuestEvent",
   "applyQuestKill",
   "createQuestProgress",
   "getQuestList",
   "getZone",
   "ZONE_DEFS",
+  "canEnterZone",
+  "unlockWaypoint",
+  "ACHIEVEMENTS",
+  "TITLES",
+  "calculateZoneCompletion",
+  "recordBestiaryKill",
+  "refreshMetaProgress",
+  "refreshZoneCompletion",
+  "setActiveTitle",
   "addInventoryItem",
   "addProgressRewards",
   "applyEquipment",
@@ -82,6 +108,21 @@ const bootRuntime = new Function(
   "createCameraRelativeMove",
   "smoothAngleToward",
   "visualYawForMoveDirection",
+  "ICEZERO_MIGRATION_ID",
+  "migrateIceZeroSave",
+  "applyProgressionStats",
+  "regenerateMana",
+  "spendAttributePoint",
+  "spendMana",
+  "useRestStone",
+  "assignHotbarAbility",
+  "getTrainerAbilities",
+  "purchaseTrainerAbility",
+  "activateLoadout",
+  "purchaseSkillNode",
+  "saveLoadout",
+  "SKILL_NODES",
+  "SKILL_TREES",
   "env",
   `"use strict";\n${runtimeSource}`
 );
@@ -91,8 +132,10 @@ bootRuntime(
   io,
   ABILITIES,
   BOSS,
+  ICE_MAGE_BOSS,
   ENEMIES,
   FIELD_SPAWNS,
+  FROSTVEIL_SPAWNS,
   getEnemy,
   GAME_VERSION,
   PATCH_NOTES,
@@ -104,11 +147,28 @@ bootRuntime(
   ITEMS,
   STARTER_INVENTORY,
   NET,
+  EQUIPMENT_SLOTS,
+  createEquipmentState,
+  equipItemToSlot,
+  slotForItem,
+  INVENTORY_SLOT_COUNT,
+  addInventoryStack,
+  normalizeInventory,
+  applyQuestEvent,
   applyQuestKill,
   createQuestProgress,
   getQuestList,
   getZone,
   ZONE_DEFS,
+  canEnterZone,
+  unlockWaypoint,
+  ACHIEVEMENTS,
+  TITLES,
+  calculateZoneCompletion,
+  recordBestiaryKill,
+  refreshMetaProgress,
+  refreshZoneCompletion,
+  setActiveTitle,
   addInventoryItem,
   addProgressRewards,
   applyEquipment,
@@ -121,5 +181,20 @@ bootRuntime(
   createCameraRelativeMove,
   smoothAngleToward,
   visualYawForMoveDirection,
+  ICEZERO_MIGRATION_ID,
+  migrateIceZeroSave,
+  applyProgressionStats,
+  regenerateMana,
+  spendAttributePoint,
+  spendMana,
+  useRestStone,
+  assignHotbarAbility,
+  getTrainerAbilities,
+  purchaseTrainerAbility,
+  activateLoadout,
+  purchaseSkillNode,
+  saveLoadout,
+  SKILL_NODES,
+  SKILL_TREES,
   import.meta.env
 );

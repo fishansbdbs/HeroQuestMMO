@@ -1,8 +1,10 @@
-export const GAME_VERSION = "1.2.4";
+export const GAME_VERSION = "2.0.0";
 
 export const ZONES = {
   HUB: "hub",
   FIELD: "field",
+  FROSTVEIL: "frostveil",
+  PALACE: "palace",
   BOSS: "boss"
 };
 
@@ -26,7 +28,7 @@ export const PLAYER_STATES = {
 
 export const RESPAWN_DELAY_MS = 5000;
 
-export const XP_TABLE = [0, 60, 145, 260, 420, 650, 940, 1300, 1760, 2300, 3000];
+export const XP_TABLE = [0, 60, 145, 260, 420, 650, 940, 1300, 1760, 2300, 3000, 3840, 4800, 5900, 7150];
 
 export const PLAYER_LIMITS = {
   partySize: 4,
@@ -42,6 +44,41 @@ export const SNAPSHOT_MS = 120;
 export const PATCH_NOTES = {
   title: "HeroQuest MMO Patch Notes",
   versions: [
+    {
+      version: "2.0.0",
+      title: "ICEZERO",
+      date: "2026-06-22",
+      summary: "A major expansion adding IceZero progression, Frostveil Reach, the Palace of Zero, and long-term MMO meta systems.",
+      sections: [
+        {
+          title: "Progression",
+          items: [
+            "Added character attributes and attribute points.",
+            "Added three skill trees, skill points, and two build loadouts.",
+            "Added mana, trainer abilities, spellbook management, and configurable hotbar abilities.",
+            "Added Rest Stones for safe stat and skill resets."
+          ]
+        },
+        {
+          title: "World",
+          items: [
+            "Added Frostveil Reach as a level 5 ice zone.",
+            "Added six frozen enemy types, elite variants, and a Frost Ward public event.",
+            "Added the Palace of Zero and Zero, the Ice Mage with repeated telegraphed attacks.",
+            "Added IceZero quests, waypoints, personal boss rewards, and first-clear rewards."
+          ]
+        },
+        {
+          title: "Items And Meta",
+          items: [
+            "Added staffs, ice weapons, armor, helmets, and visible equipment upgrades.",
+            "Upgraded inventory and equipment handling.",
+            "Added Bestiary, achievements, titles, zone completion, and quest breadcrumbs.",
+            "Preserved existing multiplayer, quests, treasure chests, death recovery, boss telegraphs, Netlify, and Render support."
+          ]
+        }
+      ]
+    },
     {
       version: "1.2.4",
       title: "Movement & Weapon Hold Fix",

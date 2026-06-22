@@ -29,7 +29,7 @@
       musicOsc = context.createOscillator();
       const gain = context.createGain();
       musicOsc.type = "sine";
-      musicOsc.frequency.value = game.zone === ZONES.BOSS ? 74 : 110;
+      musicOsc.frequency.value = game.zone === ZONES.BOSS ? 74 : game.zone === ZONES.PALACE ? 88 : 110;
       gain.gain.value = 0.018 * game.save.settings.master * game.save.settings.music;
       musicOsc.connect(gain).connect(context.destination);
       musicOsc.start();

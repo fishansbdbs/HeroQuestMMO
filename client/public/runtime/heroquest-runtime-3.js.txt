@@ -11,19 +11,30 @@ function updateQuestTracker() {
     ui.questTracker.innerHTML = "";
     return;
   }
-  ui.questTracker.innerHTML = getQuestList().slice(0, 5).map((quest) => {
+  const frostQuestIds = new Set(["frozen_road", "cold_blooded", "howling_white", "shattered_ward", "heart_of_the_blizzard", "palace_of_zero"]);
+  const palaceQuestIds = new Set(["palace_of_zero", "icezero"]);
+  const quests = game.zone === ZONES.PALACE
+    ? getQuestList().filter((quest) => palaceQuestIds.has(quest.id))
+    : game.zone === ZONES.FROSTVEIL
+      ? getQuestList().filter((quest) => frostQuestIds.has(quest.id))
+    : getQuestList().slice(0, 5);
+  ui.questTracker.innerHTML = quests.map((quest) => {
     const progress = game.save.questProgress[quest.id] || { current: 0, complete: false };
     return `<div class="quest-item ${progress.complete ? "complete" : ""}"><strong>${quest.name}</strong><span>${progress.current}/${quest.required}</span></div>`;
   }).join("");
 }
 
 function updateBossHud() {
-  const active = game.zone === ZONES.BOSS && game.boss && !game.boss.defeated;
+  const activeShadow = game.zone === ZONES.BOSS && game.boss && !game.boss.defeated;
+  const activeIceMage = game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated;
+  const active = activeShadow || activeIceMage;
   ui.bossFrame.classList.toggle("active", active);
   if (!active) return;
-  ui.bossBar.style.width = `${(game.boss.health / game.boss.maxHealth) * 100}%`;
-  ui.bossPhase.textContent = `Phase ${game.boss.phase}`;
-  ui.bossWarning.textContent = game.boss.attack ? bossAttackText(game.boss.attack.type) : "Watch the wings and tail.";
+  const bossState = activeIceMage ? game.iceMage : game.boss;
+  if (ui.bossName) ui.bossName.textContent = activeIceMage ? ICE_MAGE_BOSS.name : BOSS.name;
+  ui.bossBar.style.width = `${(bossState.health / bossState.maxHealth) * 100}%`;
+  ui.bossPhase.textContent = `Phase ${bossState.phase}`;
+  ui.bossWarning.textContent = bossState.attack ? bossAttackText(bossState.attack.type) : activeIceMage ? "Watch the ice floor." : "Watch the wings and tail.";
 }
 
 function updateNetworkStatus() {
@@ -35,7 +46,7 @@ function updateNetworkStatus() {
 
 function updateTargetFrame() {
   const target = getCurrentTarget();
-  if (target?.id === "shadow_wyrm") {
+  if (target?.id === "shadow_wyrm" || target?.id === ICE_MAGE_BOSS.id) {
     ui.targetFrame.classList.add("hidden");
     return;
   }
@@ -51,21 +62,34 @@ function updateTargetFrame() {
 
 function updateHotbar(now) {
   ui.hotbar?.querySelectorAll("[data-hotbar-action]").forEach((button) => {
-    const slot = HOTBAR_DEFS.find((entry) => entry.action === button.dataset.hotbarAction);
+    const baseSlot = HOTBAR_DEFS.find((entry) => entry.slot === Number(button.dataset.hotbarSlot));
+    const slot = resolveHotbarSlot(baseSlot);
     const cooldown = cooldownLeft(slot, now);
+    const notLearned = Boolean(slot?.requiresAbility && !knowsAbility(slot.requiresAbility));
     const overlay = button.querySelector(".slot-cooldown");
     const count = button.querySelector(".slot-count");
+    button.dataset.hotbarAction = slot.action;
+    button.querySelector(".slot-key").textContent = slot.key;
+    button.querySelector(".slot-icon").textContent = slot.icon;
+    button.querySelector(".slot-name").textContent = slot.name;
     button.classList.toggle("cooling", cooldown > 0);
     button.classList.toggle("active", slot.action === "auto" && game.autoAttack);
     button.classList.toggle("pressed", game.hotbarPressed === slot.action);
-    button.disabled = isLocallyDead() || Boolean(slot.locked) || (slot.action !== "auto" && cooldown > 0) || (slot.action === "potion" && countItem("small_health_potion") <= 0);
+    button.classList.toggle("locked", Boolean(slot.locked) || notLearned);
+    button.title = notLearned ? "Learn Hero Pulse from the Mage Trainer." : slot.tooltip;
+    button.disabled = isLocallyDead() || Boolean(slot.locked) || notLearned || (slot.action !== "auto" && cooldown > 0) || (slot.action === "potion" && countItem("small_health_potion") <= 0);
     if (overlay) overlay.style.height = cooldown > 0 ? `${Math.min(100, (cooldown / Math.max(1, slot.cooldownMs)) * 100)}%` : "0%";
     if (count) {
       if (slot.action === "potion") count.textContent = `x${countItem("small_health_potion")}`;
+      else if (slot.action === "pulse" && !notLearned) count.textContent = game.save.mana < ABILITIES.hero_pulse.manaCost ? "Mana" : "";
       else if (cooldown > 0) count.textContent = `${Math.ceil(cooldown / 1000)}`;
       else count.textContent = "";
     }
   });
+}
+
+function knowsAbility(abilityId) {
+  return (game.save.learnedAbilities || []).includes(abilityId);
 }
 
 function cooldownLeft(slot, now) {
@@ -100,6 +124,9 @@ function getCurrentTarget() {
   if (game.targetId === "shadow_wyrm" && game.zone === ZONES.BOSS && game.boss && !game.boss.defeated) {
     return { id: "shadow_wyrm", name: BOSS.name, level: BOSS.level, health: game.boss.health, maxHealth: game.boss.maxHealth, position: { x: 0, y: 0, z: 0 } };
   }
+  if (game.targetId === ICE_MAGE_BOSS.id && game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated) {
+    return { id: ICE_MAGE_BOSS.id, name: ICE_MAGE_BOSS.name, level: ICE_MAGE_BOSS.level, health: game.iceMage.health, maxHealth: game.iceMage.maxHealth, position: { x: 0, y: 0, z: 0 } };
+  }
   const enemy = game.targetId ? game.enemies.get(game.targetId) : null;
   if (!enemy || enemy.health <= 0) {
     game.targetId = null;
@@ -113,6 +140,7 @@ function getCurrentTarget() {
 function targetDisplayName(target) {
   if (!target) return "No target";
   if (target.id === "shadow_wyrm") return BOSS.name;
+  if (target.id === ICE_MAGE_BOSS.id) return ICE_MAGE_BOSS.name;
   return target.name || getEnemy(target.enemyId)?.name || "Enemy";
 }
 
@@ -131,7 +159,7 @@ function updateTargetRing() {
   }
   game.targetRing.visible = true;
   game.targetRing.position.set(target.position.x, 0.08, target.position.z);
-  const scale = target.id === "shadow_wyrm" ? 3.2 : 1;
+  const scale = target.id === "shadow_wyrm" ? 3.2 : target.id === ICE_MAGE_BOSS.id ? 2.15 : 1;
   game.targetRing.scale.setScalar(scale + Math.sin(performance.now() * 0.006) * 0.05);
 }
 
@@ -150,10 +178,19 @@ function pickEnemyFromPointer(event) {
       }
     });
   }
+  if (game.iceMageGroup && game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated) {
+    game.iceMageGroup.traverse((child) => {
+      if (child.isMesh) {
+        child.userData.enemyInstanceId = ICE_MAGE_BOSS.id;
+        pickables.push(child);
+      }
+    });
+  }
   const hit = raycaster.intersectObjects(pickables, true)[0];
   let object = hit?.object || null;
   while (object) {
     if (object.userData.enemyInstanceId === "shadow_wyrm") return "shadow_wyrm";
+    if (object.userData.enemyInstanceId === ICE_MAGE_BOSS.id) return ICE_MAGE_BOSS.id;
     if (object.userData.enemyInstanceId) return object.userData.enemyInstanceId;
     object = object.parent;
   }
@@ -188,10 +225,11 @@ function updatePrompt() {
   }
   for (const portal of game.portals) {
     if (distance2d(player, portal) <= portal.radius) {
-      const locked = game.save.level < portal.minLevel;
+      const gate = canEnterZone(game.save, portal.targetZone);
+      const locked = !gate.ok || game.save.level < portal.minLevel;
       game.promptAction = () => {
         if (locked) {
-          toast(`Reach level ${portal.minLevel} to enter ${portal.label}.`);
+          toast(portal.lockMessage || gate.message || `Reach level ${portal.minLevel} to enter ${portal.label}.`);
           return;
         }
         loadZone(portal.targetZone, true);
@@ -236,7 +274,35 @@ function updatePrompt() {
     ui.prompt.classList.remove("hidden");
     return;
   }
+  const breadcrumb = currentBreadcrumb();
+  if (breadcrumb) {
+    ui.prompt.textContent = breadcrumb;
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
   ui.prompt.classList.add("hidden");
+}
+
+function currentBreadcrumb() {
+  if (game.zone === ZONES.HUB && game.save.level >= 2 && !knowsAbility("hero_pulse")) {
+    return "Marker: Arcanist Mira trains magic near the plaza.";
+  }
+  if (game.zone === ZONES.HUB && game.save.level >= 5 && !(game.save.waypoints || []).includes("frostveil_camp")) {
+    return "Marker: Greenvale portal leads toward Frostveil.";
+  }
+  if (game.zone === ZONES.FIELD && game.save.level >= 5 && !game.save.questProgress?.frozen_road?.complete) {
+    return "Marker: Frostveil portal waits on the northwest ridge.";
+  }
+  if (game.zone === ZONES.FROSTVEIL && !game.save.questProgress?.shattered_ward?.complete) {
+    return "Marker: Frozen wards glow across Frostveil.";
+  }
+  if (game.zone === ZONES.FROSTVEIL && game.save.level >= 8 && !game.save.questProgress?.palace_of_zero?.complete) {
+    return "Marker: Palace gate rises northeast.";
+  }
+  if (game.zone === ZONES.PALACE && !game.save.questProgress?.icezero?.complete) {
+    return "Marker: Zero waits in the central chamber.";
+  }
+  return "";
 }
 
 function interact() {

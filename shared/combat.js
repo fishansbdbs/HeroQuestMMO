@@ -1,5 +1,7 @@
 import { XP_TABLE, STARTING_PLAYER } from "./constants.js";
-import { getItem, ITEMS } from "./items.js";
+import { getItem } from "./items.js";
+import { applyProgressionStats, calculateDamageReduction, LEVEL_CAP } from "./progression.js";
+import { normalizeEquipment } from "./equipment.js";
 
 export function randomInt(min, max, rng = Math.random) {
   return Math.floor(rng() * (max - min + 1)) + min;
@@ -20,7 +22,7 @@ export function computeLevelFromXp(xp) {
   for (let i = 1; i < XP_TABLE.length; i += 1) {
     if (xp >= XP_TABLE[i]) level = i + 1;
   }
-  return Math.min(level, XP_TABLE.length);
+  return Math.min(level, LEVEL_CAP);
 }
 
 export function xpToNextLevel(level) {
@@ -29,22 +31,34 @@ export function xpToNextLevel(level) {
 
 export function applyEquipment(basePlayer) {
   const player = { ...STARTING_PLAYER, ...basePlayer };
-  const weapon = getItem(player.equippedWeapon) || ITEMS.wooden_sword;
-  const armor = getItem(player.equippedArmor) || ITEMS.traveler_tunic;
+  const equipment = normalizeEquipment(player);
+  const equippedItems = Object.values(equipment).map(getItem).filter(Boolean);
   const level = computeLevelFromXp(player.xp || 0);
-  const maxHealth = STARTING_PLAYER.maxHealth + (level - 1) * 14;
-  const attack = STARTING_PLAYER.attack + (level - 1) * 2 + (weapon.attack || 0);
-  const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + (armor.defense || 0);
-  const speed = STARTING_PLAYER.speed * (weapon.speed || 1) * (armor.speed || 1);
-  return {
+  const itemAttack = equippedItems.reduce((total, item) => total + (item.attack || 0), 0);
+  const itemDefense = equippedItems.reduce((total, item) => total + (item.defense || 0), 0);
+  const itemHealth = equippedItems.reduce((total, item) => total + (item.health || 0), 0);
+  const itemMagicPower = equippedItems.reduce((total, item) => total + (item.magicPower || 0), 0);
+  const itemSpeedMultiplier = equippedItems.reduce((total, item) => total * (item.speed || 1), 1);
+  const maxHealth = STARTING_PLAYER.maxHealth + (level - 1) * 14 + itemHealth;
+  const attack = STARTING_PLAYER.attack + (level - 1) * 2 + itemAttack;
+  const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + itemDefense;
+  const speed = STARTING_PLAYER.speed * itemSpeedMultiplier;
+  return applyProgressionStats({
     ...player,
+    equipment,
+    equippedWeapon: equipment.weapon || STARTING_PLAYER.equippedWeapon,
+    equippedArmor: equipment.chest || STARTING_PLAYER.equippedArmor,
     level,
+    baseMaxHealth: maxHealth,
+    baseAttack: attack,
+    baseDefense: defense,
+    itemMagicPower,
     maxHealth,
     health: Math.min(player.health ?? maxHealth, maxHealth),
     attack,
     defense,
     speed
-  };
+  });
 }
 
 export function calculatePlayerDamage(player, rng = Math.random) {
@@ -54,8 +68,8 @@ export function calculatePlayerDamage(player, rng = Math.random) {
 }
 
 export function calculateIncomingDamage(rawDamage, player) {
-  const stats = applyEquipment(player);
-  return Math.max(1, Math.round(rawDamage - stats.defense * 0.6));
+  const stats = player?.baseDefense != null || player?.baseMaxHealth != null ? applyProgressionStats(player) : applyEquipment(player);
+  return Math.max(1, Math.round(rawDamage * (1 - calculateDamageReduction(stats.defense))));
 }
 
 export function addProgressRewards(player, reward) {
@@ -64,14 +78,17 @@ export function addProgressRewards(player, reward) {
   const coins = (before.coins || 0) + (reward.coins || 0);
   const afterLevel = computeLevelFromXp(xp);
   const leveledUp = afterLevel > before.level;
-  const maxHealth = STARTING_PLAYER.maxHealth + (afterLevel - 1) * 14;
-  return applyEquipment({
+  const after = applyEquipment({
     ...before,
     xp,
     coins,
-    level: afterLevel,
-    health: leveledUp ? maxHealth : before.health
+    level: afterLevel
   });
+  return {
+    ...after,
+    health: leveledUp ? after.maxHealth : after.health,
+    mana: leveledUp ? after.maxMana : after.mana
+  };
 }
 
 export function addInventoryItem(inventory, itemId, quantity = 1) {

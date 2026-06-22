@@ -8,15 +8,31 @@
 }
 
 function applyLootBag(bag) {
+  const inventoryResult = applyRewardItemsToInventory(game.save.inventory, bag.items || []);
+  if (!inventoryResult.ok) {
+    toast(inventoryResult.reason === "full" ? "Inventory full. Make space before collecting loot." : "That loot cannot be collected.");
+    return false;
+  }
+  game.save.inventory = inventoryResult.inventory;
   game.save.coins += bag.coins || 0;
   if (bag.coins) toast(`Collected ${bag.coins} coins.`);
   for (const item of bag.items || []) {
-    game.save.inventory = addInventoryItem(game.save.inventory, item.itemId, item.quantity || 1);
     const found = getItem(item.itemId);
     toast(`${["Rare", "Epic"].includes(found?.rarity) ? "Rare drop: " : "Found "}${found?.name || item.itemId}.`);
   }
   playUiSound("pickup");
   saveGame();
+  return true;
+}
+
+function applyRewardItemsToInventory(inventory, items = []) {
+  let nextInventory = inventory || [];
+  for (const item of items) {
+    const result = addInventoryStack(nextInventory, item.itemId, item.quantity || 1);
+    if (!result.ok) return result;
+    nextInventory = result.inventory;
+  }
+  return { ok: true, inventory: nextInventory, overflow: [] };
 }
 
 function hitBoss(damage, kind = "auto") {
@@ -38,6 +54,8 @@ function defeatBoss() {
   game.save.title = "Wyrm-Touched";
   const questUpdate = applyQuestKill(game.save.questProgress, { id: BOSS.id, family: BOSS.family });
   game.save.questProgress = questUpdate.progress;
+  game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [BOSS.id]: true };
+  refreshLocalMetaProgress();
   const drop = rollLoot(BOSS);
   const lootId = `boss_loot_${game.localLootId++}`;
   game.loot.set(lootId, { id: lootId, zone: ZONES.BOSS, position: { x: 0, y: 0.25, z: 0 }, coins: 0, items: drop.items });
@@ -51,6 +69,29 @@ function defeatBoss() {
   saveGame();
 }
 
+function hitIceMage(damage, kind = "auto") {
+  if (isLocallyDead() || !game.iceMage || game.iceMage.defeated) return;
+  game.iceMage.health = Math.max(0, game.iceMage.health - damage);
+  game.iceMage.phase = game.iceMage.health <= game.iceMage.maxHealth * 0.3 ? 3 : game.iceMage.health <= game.iceMage.maxHealth * 0.6 ? 2 : 1;
+  floatingText(`-${damage}`, { x: 0, y: 4.8, z: -0.6 }, "#9ae8ff");
+  hitSpark({ x: 0, y: 3.8, z: -0.8 }, kind);
+  flashMesh(game.iceMageGroup, 0x8df2ff);
+  logCombat(`${kind === "slash" ? "Slash" : kind === "pulse" ? "Hero Pulse" : "Hit"} ${ICE_MAGE_BOSS.name} for ${damage}.`);
+  if (game.iceMage.health <= 0) defeatIceMage();
+}
+
+function defeatIceMage() {
+  game.iceMage.defeated = true;
+  clearTelegraphs();
+  completeIceMageQuestLocal({ xp: ICE_MAGE_BOSS.xp, coins: ICE_MAGE_BOSS.coins });
+  const drop = rollLoot(ICE_MAGE_BOSS);
+  const lootId = `ice_mage_loot_${game.localLootId++}`;
+  game.loot.set(lootId, { id: lootId, zone: ZONES.PALACE, position: { x: 0, y: 0.25, z: 0 }, coins: 0, items: drop.items });
+  toast("Zero, the Ice Mage defeated!");
+  playUiSound("boss");
+  saveGame();
+}
+
 function handleCombatAck(result) {
   if (!result?.ok) return;
   if (result.damage) {
@@ -58,7 +99,7 @@ function handleCombatAck(result) {
     if (target?.position) {
       floatingText(`-${result.damage}`, target.position, result.kind === "slash" ? "#ffe38b" : "#ffdd9a");
       hitSpark(target.position, result.kind);
-      flashMesh(target.id === "shadow_wyrm" ? game.bossGroup : game.enemyMeshes.get(target.id), 0xfff0a0);
+      flashMesh(target.id === "shadow_wyrm" ? game.bossGroup : target.id === ICE_MAGE_BOSS.id ? game.iceMageGroup : game.enemyMeshes.get(target.id), 0xfff0a0);
       logCombat(`${result.kind === "slash" ? "Slash" : "Hit"} ${targetDisplayName(target)} for ${result.damage}.`);
     }
   }
@@ -81,10 +122,26 @@ function handleCombatAck(result) {
     if (bossResult.lootBag) game.loot.set(bossResult.lootBag.id, bossResult.lootBag);
     toast("Shadow Wyrm defeated!");
   }
+  const iceMageResult = result.iceMage || result.result?.iceMage;
+  const iceMageSnapshot = iceMageResult?.iceMage || iceMageResult?.boss;
+  if (iceMageSnapshot) {
+    game.iceMage = { ...game.iceMage, ...iceMageSnapshot };
+  }
+  if (result.iceMage && result.damage) {
+    floatingText(`-${result.damage}`, { x: 0, y: 4.8, z: -0.6 }, "#9ae8ff");
+    hitSpark({ x: 0, y: 3.8, z: -0.8 }, result.kind);
+    flashMesh(game.iceMageGroup, 0x8df2ff);
+  }
+  if (iceMageResult?.defeated) {
+    completeIceMageQuestLocal(iceMageResult.reward || { xp: ICE_MAGE_BOSS.xp, coins: ICE_MAGE_BOSS.coins });
+    if (iceMageResult.lootBag) game.loot.set(iceMageResult.lootBag.id, iceMageResult.lootBag);
+    toast("Zero, the Ice Mage defeated!");
+  }
 }
 
 function damagePlayer(amount) {
   if (isLocallyDead()) return;
+  markCombat();
   const guarded = performance.now() < game.guardUntil;
   const finalAmount = guarded ? Math.max(1, Math.round(amount * (1 - ABILITIES.guard.damageReduction))) : amount;
   game.save.health = Math.max(0, game.save.health - finalAmount);
@@ -159,6 +216,8 @@ function finishRespawn(serverPlayer = null) {
 function completeBossQuestLocal(reward = { xp: BOSS.xp, coins: BOSS.coins }) {
   if (game.save.questProgress?.shadow_at_the_peak?.complete) {
     game.save.title = "Wyrm-Touched";
+    game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [BOSS.id]: true };
+    refreshLocalMetaProgress();
     saveGame();
     return;
   }
@@ -167,6 +226,40 @@ function completeBossQuestLocal(reward = { xp: BOSS.xp, coins: BOSS.coins }) {
   game.save.title = "Wyrm-Touched";
   const questUpdate = applyQuestKill(game.save.questProgress, { id: BOSS.id, family: BOSS.family });
   game.save.questProgress = questUpdate.progress;
+  game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [BOSS.id]: true };
+  refreshLocalMetaProgress();
+  for (const quest of questUpdate.completed) toast(`Quest complete: ${quest.name}`);
+  if (game.save.level > beforeLevel) {
+    toast(`Level ${game.save.level}! Fully healed.`);
+    levelUpEffect();
+  }
+  saveGame();
+}
+
+function completeIceMageQuestLocal(reward = { xp: ICE_MAGE_BOSS.xp, coins: ICE_MAGE_BOSS.coins }) {
+  if (game.save.questProgress?.icezero?.complete) {
+    game.save.title = "Icebreaker";
+    game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [ICE_MAGE_BOSS.id]: true };
+    refreshLocalMetaProgress();
+    saveGame();
+    return;
+  }
+  const beforeLevel = game.save.level;
+  game.save = addProgressRewards(game.save, reward);
+  game.save.title = "Icebreaker";
+  const questUpdate = applyQuestKill(game.save.questProgress, ICE_MAGE_BOSS);
+  game.save.questProgress = questUpdate.progress;
+  game.save.firstClearRewards = game.save.firstClearRewards || {};
+  game.save.achievements = Array.isArray(game.save.achievements) ? game.save.achievements : [];
+  if (!game.save.firstClearRewards[ICE_MAGE_BOSS.id]) {
+    game.save.firstClearRewards[ICE_MAGE_BOSS.id] = true;
+    if (!game.save.achievements.includes("icebreaker")) game.save.achievements.push("icebreaker");
+    game.save = addProgressRewards(game.save, { xp: 300, coins: 180 });
+    const rare = addInventoryStack(game.save.inventory || [], "frostspire_staff", 1);
+    if (rare.ok) game.save.inventory = rare.inventory;
+    toast("First clear: Icebreaker earned.");
+  }
+  refreshLocalMetaProgress();
   for (const quest of questUpdate.completed) toast(`Quest complete: ${quest.name}`);
   if (game.save.level > beforeLevel) {
     toast(`Level ${game.save.level}! Fully healed.`);
@@ -177,7 +270,8 @@ function completeBossQuestLocal(reward = { xp: BOSS.xp, coins: BOSS.coins }) {
 
 function spawnLocalEnemies() {
   game.enemies.clear();
-  for (const spawn of FIELD_SPAWNS) {
+  const spawns = game.zone === ZONES.FROSTVEIL ? FROSTVEIL_SPAWNS : FIELD_SPAWNS;
+  for (const spawn of spawns) {
     for (let i = 0; i < spawn.count; i += 1) {
       const angle = Math.random() * Math.PI * 2;
       const radius = Math.random() * spawn.radius;
@@ -235,6 +329,20 @@ function startLocalBoss() {
   };
 }
 
+function startLocalIceMage() {
+  game.iceMage = {
+    id: ICE_MAGE_BOSS.id,
+    name: ICE_MAGE_BOSS.name,
+    health: ICE_MAGE_BOSS.maxHealth,
+    maxHealth: ICE_MAGE_BOSS.maxHealth,
+    phase: 1,
+    active: true,
+    defeated: false,
+    attack: null,
+    nextAttackAt: performance.now() + 2600
+  };
+}
+
 function createClientBossAttack(type, now = performance.now()) {
   const player = groupPosition(game.playerGroup);
   const summonPoints = [
@@ -258,6 +366,39 @@ function createClientBossAttack(type, now = performance.now()) {
     durationMs: def.durationMs,
     recastMs: def.recastMs,
     targetId: def.targetId || null,
+    shape: { ...def.shape },
+    resolved: false
+  };
+}
+
+function createClientIceMageAttack(type, now = performance.now()) {
+  const player = groupPosition(game.playerGroup);
+  const shatterCircles = [
+    { x: -8, z: -5, radius: 3.2 },
+    { x: 7, z: -8, radius: 3.2 },
+    { x: -4, z: 8, radius: 3.2 },
+    { x: 9, z: 7, radius: 3.2 }
+  ];
+  const defs = {
+    ice_lance: { name: "Ice Lance", delayMs: 1300, recastMs: 3600, durationMs: 2600, shape: { kind: "line", x: player.x, z: 0, length: 32, width: 3 } },
+    frozen_circle: { name: "Frozen Circle", delayMs: 1400, recastMs: 3900, durationMs: 2700, shape: { kind: "circle", x: player.x, z: player.z, radius: 4.6 } },
+    frost_bolt: { name: "Frost Bolt", delayMs: 900, recastMs: 2600, durationMs: 2100, shape: { kind: "circle", x: player.x, z: player.z, radius: 2.8 } },
+    ice_wall: { name: "Ice Wall", delayMs: 1100, recastMs: 4300, durationMs: 2500, shape: { kind: "walls", walls: [{ x: -8, z: -2, width: 2, length: 18 }, { x: 8, z: -2, width: 2, length: 18 }] } },
+    blizzard_ring: { name: "Blizzard Ring", delayMs: 1450, recastMs: 4400, durationMs: 2800, shape: { kind: "ring", x: 0, z: 0, innerRadius: 6, outerRadius: 15 } },
+    frozen_servants: { name: "Frozen Servants", delayMs: 1200, recastMs: 5200, durationMs: 2600, shape: { kind: "summon", points: [{ x: -10, z: -6 }, { x: 10, z: -6 }], radius: 3.2 } },
+    zero_hour: { name: "Zero Hour", delayMs: 1650, recastMs: 5600, durationMs: 3000, shape: { kind: "sequence", lines: [{ x: -9, zMin: -18, zMax: 18, width: 3 }, { x: 9, zMin: -18, zMax: 18, width: 3 }] } },
+    shatter: { name: "Shatter", delayMs: 1350, recastMs: 4300, durationMs: 2700, shape: { kind: "sequence", circles: shatterCircles } }
+  };
+  const def = defs[type] || defs.ice_lance;
+  return {
+    type,
+    name: def.name,
+    startedAt: now,
+    resolvesAt: now + def.delayMs,
+    durationMs: def.durationMs,
+    recastMs: def.recastMs,
+    targetId: "local",
+    damageScale: type === "ice_lance" ? 1.25 : type === "frost_bolt" ? 0.72 : type === "blizzard_ring" ? 0.9 : type === "ice_wall" || type === "frozen_servants" ? 0 : 1.05,
     shape: { ...def.shape },
     resolved: false
   };
@@ -305,6 +446,52 @@ function resolveBossAttack(attackOrType) {
   }
 }
 
+function resolveIceMageAttack(attackOrType) {
+  const attack = typeof attackOrType === "string" ? createClientIceMageAttack(attackOrType) : attackOrType;
+  bossImpactEffect(attack);
+  if (attack.type === "frozen_servants") {
+    for (const [index, point] of (attack.shape?.points || []).entries()) {
+      const enemyId = index % 2 === 0 ? "frost_wisp" : "frozen_knight";
+      const def = getEnemy(enemyId);
+      const id = `ice_servant_${game.localEnemyId++}`;
+      game.enemies.set(id, {
+        id,
+        enemyId,
+        zone: ZONES.PALACE,
+        health: def.maxHealth,
+        maxHealth: def.maxHealth,
+        position: { x: point.x, y: 0, z: point.z }
+      });
+    }
+    toast("Frozen servants answer Zero's call.");
+    return;
+  }
+  if (attack.type === "ice_wall") {
+    toast("Ice walls fracture and fade.");
+    return;
+  }
+  if (playerInIceMageAttack(attack)) {
+    const damage = calculateIncomingDamage(Math.round(ICE_MAGE_BOSS.damage * (attack.damageScale || 1)), game.save);
+    damagePlayer(damage);
+  }
+}
+
+function playerInIceMageAttack(attack) {
+  const pos = groupPosition(game.playerGroup);
+  const shape = attack.shape || {};
+  if (shape.kind === "line") return Math.abs(pos.x - (shape.x || 0)) <= (shape.width || 3) / 2 && pos.z >= -16 && pos.z <= 20;
+  if (shape.kind === "circle") return distance2d(pos, shape) <= shape.radius;
+  if (shape.kind === "ring") {
+    const dist = distance2d(pos, shape);
+    return dist >= shape.innerRadius && dist <= shape.outerRadius;
+  }
+  if (shape.kind === "sequence") {
+    return (shape.circles || []).some((circle) => distance2d(pos, circle) <= circle.radius) ||
+      (shape.lines || []).some((line) => Math.abs(pos.x - line.x) <= line.width / 2 && pos.z >= line.zMin && pos.z <= line.zMax);
+  }
+  return false;
+}
+
 function showTelegraph(attackOrType) {
   clearTelegraphs();
   const attack = typeof attackOrType === "string" ? createClientBossAttack(attackOrType) : attackOrType;
@@ -325,22 +512,50 @@ function showTelegraph(attackOrType) {
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.y = 0.13;
     group.add(mesh);
-  } else if (type === "shadow_summon") {
+  } else if (attack.shape?.kind === "summon") {
     for (const point of attack.shape?.points || []) {
       const mesh = new THREE.Mesh(new THREE.CircleGeometry(attack.shape.radius || 3.2, 40), mat(0x9a55ff, 0.34, true));
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(point.x, 0.13, point.z);
       group.add(mesh);
     }
+  } else if (attack.shape?.kind === "line") {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(attack.shape.width || 3, 0.05, attack.shape.length || 28), mat(0x49d8ff, 0.34, true));
+    mesh.position.set(attack.shape.x || 0, 0.14, attack.shape.z || 0);
+    group.add(mesh);
+  } else if (attack.shape?.kind === "ring") {
+    const mesh = new THREE.Mesh(new THREE.RingGeometry(attack.shape.innerRadius || 6, attack.shape.outerRadius || 15, 72), mat(0x62dfff, 0.34, true));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(attack.shape.x || 0, 0.14, attack.shape.z || 0);
+    group.add(mesh);
+  } else if (attack.shape?.kind === "walls") {
+    for (const wall of attack.shape.walls || []) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(wall.width || 2, 0.08, wall.length || 14), mat(0x8eeaff, 0.38, true));
+      mesh.position.set(wall.x || 0, 0.16, wall.z || 0);
+      group.add(mesh);
+    }
+  } else if (attack.shape?.kind === "sequence") {
+    for (const line of attack.shape.lines || []) {
+      const length = Math.abs((line.zMax || 0) - (line.zMin || 0));
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(line.width || 3, 0.05, length || 28), mat(0x59dfff, 0.34, true));
+      mesh.position.set(line.x || 0, 0.14, ((line.zMin || 0) + (line.zMax || 0)) / 2);
+      group.add(mesh);
+    }
+    for (const circle of attack.shape.circles || []) {
+      const mesh = new THREE.Mesh(new THREE.CircleGeometry(circle.radius || 3.2, 40), mat(0x59dfff, 0.32, true));
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(circle.x || 0, 0.14, circle.z || 0);
+      group.add(mesh);
+    }
   } else {
     const radius = attack.shape?.radius || (type === "wing_gust" ? 15 : 4.8);
-    const color = type === "shadow_slam" ? 0xff3d3d : 0xff7d3d;
+    const color = type.startsWith("ice") || type.startsWith("frost") || type.startsWith("blizzard") || type === "shatter" ? 0x59dfff : type === "shadow_slam" ? 0xff3d3d : 0xff7d3d;
     const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 56), mat(color, 0.29, true));
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(attack.shape?.x || 0, 0.13, attack.shape?.z || 0);
     group.add(mesh);
   }
-  const label = makeLabel(attack.name || bossAttackText(type), type === "shadow_summon" ? "#e8d4ff" : "#ffd7b0");
+  const label = makeLabel(attack.name || bossAttackText(type), attack.shape?.kind === "summon" ? "#e8d4ff" : type.startsWith("ice") || type.startsWith("frost") || type.startsWith("blizzard") || type === "zero_hour" || type === "shatter" ? "#d8fbff" : "#ffd7b0");
   const labelPos = attack.shape?.kind === "circle" ? attack.shape : { x: 0, z: -2 };
   label.position.set(labelPos.x || 0, 2.4, labelPos.z || 0);
   group.add(label);
@@ -364,9 +579,11 @@ function animateTelegraph(group, attack) {
 }
 
 function bossImpactEffect(attack) {
-  const center = attack.shape?.kind === "circle" ? attack.shape : { x: 0, z: attack.type === "fire_cone" ? -7 : 0 };
-  const color = attack.type === "shadow_summon" ? 0x9a55ff : attack.type === "wing_gust" ? 0xffd08a : 0xff5d3d;
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, attack.shape?.radius || 4.5, 48), mat(color, 0.36, true));
+  const center = attack.shape?.kind === "circle" || attack.shape?.kind === "ring" ? attack.shape : { x: 0, z: attack.type === "fire_cone" ? -7 : 0 };
+  const icy = attack.type?.startsWith("ice") || attack.type?.startsWith("frost") || attack.type?.startsWith("blizzard") || attack.type === "zero_hour" || attack.type === "shatter";
+  const color = attack.shape?.kind === "summon" ? 0x9a55ff : icy ? 0x65dfff : attack.type === "wing_gust" ? 0xffd08a : 0xff5d3d;
+  const radius = attack.shape?.outerRadius || attack.shape?.radius || (attack.shape?.kind === "line" ? 7 : 4.5);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, radius, 48), mat(color, 0.36, true));
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(center.x || 0, 0.18, center.z || 0);
   game.scene.add(ring);
@@ -395,11 +612,17 @@ function applySnapshot(snapshot) {
     snapshot.enemies.forEach((enemy) => game.enemies.set(enemy.id, enemy));
     if (game.zone === ZONES.HUB) ensureTrainingDummy();
   }
-  if (game.targetId && game.targetId !== "shadow_wyrm" && !game.enemies.has(game.targetId)) selectTarget(null);
+  if (game.targetId && game.targetId !== "shadow_wyrm" && game.targetId !== ICE_MAGE_BOSS.id && !game.enemies.has(game.targetId)) selectTarget(null);
   if (snapshot.loot) {
     game.loot.clear();
     snapshot.loot.forEach((bag) => game.loot.set(bag.id, bag));
   }
   if (snapshot.boss) {
     game.boss = { ...game.boss, ...snapshot.boss };
+  }
+  if (snapshot.iceMage) {
+    game.iceMage = { ...game.iceMage, ...snapshot.iceMage };
+  }
+  if (snapshot.publicEvent) {
+    game.publicEvent = snapshot.publicEvent;
   }

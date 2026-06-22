@@ -1,4 +1,4 @@
-import { FIELD_SPAWNS, ENEMIES, getEnemy } from "../../shared/enemies.js";
+import { ELITE_MODIFIERS, FIELD_SPAWNS, FROSTVEIL_SPAWNS, ENEMIES, getEnemy } from "../../shared/enemies.js";
 import { ZONES } from "../../shared/constants.js";
 import { distance2d, calculateIncomingDamage } from "../../shared/combat.js";
 import { LootSystem } from "./LootSystem.js";
@@ -9,12 +9,21 @@ export class EnemySystem {
     this.rng = rng;
     this.enemies = new Map();
     this.nextId = 1;
-    this.spawnField();
+    this.spawnWorld();
+  }
+
+  spawnWorld() {
+    this.enemies.clear();
+    this.spawnConfigured(FIELD_SPAWNS, ZONES.FIELD);
+    this.spawnConfigured(FROSTVEIL_SPAWNS, ZONES.FROSTVEIL);
   }
 
   spawnField() {
-    this.enemies.clear();
-    for (const spawn of FIELD_SPAWNS) {
+    this.spawnWorld();
+  }
+
+  spawnConfigured(spawns, zone) {
+    for (const spawn of spawns) {
       for (let i = 0; i < spawn.count; i += 1) {
         const angle = this.rng() * Math.PI * 2;
         const radius = this.rng() * spawn.radius;
@@ -22,22 +31,27 @@ export class EnemySystem {
           x: spawn.center[0] + Math.cos(angle) * radius,
           y: 0,
           z: spawn.center[2] + Math.sin(angle) * radius
-        });
+        }, zone, { eliteModifier: rollEliteModifier(spawn.eliteChance || 0, this.rng) });
       }
     }
   }
 
-  spawnEnemy(enemyId, position, zone = ZONES.FIELD) {
+  spawnEnemy(enemyId, position, zone = ZONES.FIELD, options = {}) {
     const enemy = getEnemy(enemyId);
     if (!enemy) throw new Error(`Unknown enemy id: ${enemyId}`);
+    const modifier = options.eliteModifier ? ELITE_MODIFIERS[options.eliteModifier] : null;
+    const eliteHealth = enemy.elite ? 1.25 : 1;
+    const maxHealth = Math.round(enemy.maxHealth * eliteHealth * (modifier?.healthMultiplier || 1));
     const instance = {
       id: `enemy_${this.nextId++}`,
       enemyId,
       zone,
       position,
       home: { ...position },
-      health: enemy.maxHealth,
-      maxHealth: enemy.maxHealth,
+      health: maxHealth,
+      maxHealth,
+      eliteModifier: modifier?.id || null,
+      eventId: options.eventId || null,
       targetId: null,
       lastAttackAt: 0,
       respawnAt: 0
@@ -84,7 +98,7 @@ export class EnemySystem {
       const enemyDef = getEnemy(instance.enemyId);
       if (instance.health <= 0) {
         if (now >= instance.respawnAt) {
-          instance.health = enemyDef.maxHealth;
+          instance.health = instance.maxHealth || enemyDef.maxHealth;
           instance.position = { ...instance.home };
         }
         continue;
@@ -106,10 +120,10 @@ export class EnemySystem {
       }
 
       if (nearestDistance > enemyDef.attackRange) {
-        moveToward(instance.position, nearest.position, enemyDef.speed, dtMs);
+        moveToward(instance.position, nearest.position, modifiedSpeed(enemyDef, instance), dtMs);
       } else if (now - instance.lastAttackAt >= enemyDef.attackCooldownMs) {
         instance.lastAttackAt = now;
-        nearest.health = Math.max(0, nearest.health - calculateIncomingDamage(enemyDef.damage, nearest));
+        nearest.health = Math.max(0, nearest.health - calculateIncomingDamage(modifiedDamage(enemyDef, instance), nearest));
       }
     }
   }
@@ -121,9 +135,27 @@ export class EnemySystem {
       zone: enemy.zone,
       position: enemy.position,
       health: enemy.health,
-      maxHealth: enemy.maxHealth
+      maxHealth: enemy.maxHealth,
+      eliteModifier: enemy.eliteModifier || null,
+      eventId: enemy.eventId || null
     }));
   }
+}
+
+function rollEliteModifier(chance, rng = Math.random) {
+  if (!chance || rng() > chance) return null;
+  const modifiers = Object.keys(ELITE_MODIFIERS);
+  return modifiers[Math.floor(rng() * modifiers.length) % modifiers.length];
+}
+
+function modifiedSpeed(enemyDef, instance) {
+  const modifier = ELITE_MODIFIERS[instance.eliteModifier];
+  return enemyDef.speed * (modifier?.speedMultiplier || 1);
+}
+
+function modifiedDamage(enemyDef, instance) {
+  const modifier = ELITE_MODIFIERS[instance.eliteModifier];
+  return Math.round(enemyDef.damage * (modifier?.damageMultiplier || 1));
 }
 
 function moveToward(position, target, speed, dtMs) {

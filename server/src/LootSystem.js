@@ -32,6 +32,14 @@ export class LootSystem {
   }
 
   claimForPlayer({ lootId, player, range = 4 }) {
+    const inspected = this.inspectForPlayer({ lootId, player, range });
+    if (!inspected.ok) return inspected;
+    const bag = inspected.bag;
+    this.lootBags.delete(lootId);
+    return { ok: true, bag };
+  }
+
+  inspectForPlayer({ lootId, player, range = 4 }) {
     const bag = this.lootBags.get(lootId);
     if (!player) return { ok: false, reason: "missing_player" };
     if (isPlayerDead(player)) return { ok: false, reason: "dead" };
@@ -39,7 +47,6 @@ export class LootSystem {
     if (bag.ownerId && bag.ownerId !== player.id) return { ok: false, reason: "owner" };
     if (bag.zone && bag.zone !== player.zone) return { ok: false, reason: "zone" };
     if (distance2d(player.position, bag.position) > range) return { ok: false, reason: "range" };
-    this.lootBags.delete(lootId);
     return { ok: true, bag };
   }
 

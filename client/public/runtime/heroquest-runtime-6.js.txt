@@ -34,11 +34,51 @@ function handleWorldEvent(event) {
     clearTelegraphs();
     toast("Shadow Wyrm defeated!");
   }
+  if (event.type === "ice_mage_telegraph" && game.zone === ZONES.PALACE) {
+    game.iceMage = { ...game.iceMage, attack: event.attack };
+    showTelegraph(event.attack);
+    playUiSound("danger");
+    logCombat(`${event.attack?.name || bossAttackText(event.attack?.type)} incoming.`);
+  }
+  if (event.type === "ice_mage_impact" && game.zone === ZONES.PALACE) {
+    bossImpactEffect(event.attack);
+    const hit = event.hits?.find((entry) => entry.playerId === game.socket?.id);
+    if (hit) {
+      game.save.health = hit.health;
+      floatingText(`-${hit.damage}`, groupPosition(game.playerGroup), "#9eefff");
+      if (hit.health <= 0) beginDefeat();
+    }
+  }
+  if (event.type === "ice_mage_summon" && game.zone === ZONES.PALACE) {
+    bossImpactEffect(event.attack);
+    toast("Frozen servants answer Zero's call.");
+  }
+  if (event.type === "ice_mage_reset" && game.zone === ZONES.PALACE) {
+    game.iceMage = { ...game.iceMage, active: false, attack: null };
+    clearTelegraphs();
+    toast("The Palace of Zero grows quiet.");
+  }
+  if (event.type === "ice_mage_defeated") {
+    if (!event.playerIds || event.playerIds.includes(game.socket?.id)) completeIceMageQuestLocal(event.reward || { xp: ICE_MAGE_BOSS.xp, coins: ICE_MAGE_BOSS.coins });
+    clearTelegraphs();
+    toast("Zero, the Ice Mage defeated!");
+  }
   if (event.type === "player_defeated" && event.playerId === game.socket?.id) {
     beginDefeat(event.respawnAt || Date.now() + 5000);
   }
   if (event.type === "player_respawned" && event.playerId === game.socket?.id) {
     finishRespawn();
+  }
+  if (event.type === "public_event_started" && event.eventId === "defend_frost_ward") {
+    game.publicEvent = { ...game.publicEvent, ...event, active: true };
+    toast("Public event: Defend the Frost Ward.");
+  }
+  if (event.type === "public_event_wave" && event.eventId === "defend_frost_ward") {
+    toast(`Frost Ward wave ${event.wave} begins.`);
+  }
+  if (event.type === "public_event_completed" && event.eventId === "defend_frost_ward") {
+    game.publicEvent = { ...game.publicEvent, active: false };
+    toast("Frost Ward secured.");
   }
 }
 
@@ -73,10 +113,32 @@ function syncRemotePlayers(players) {
   for (const player of players) {
     if (player.id === game.socket?.id) {
       game.save.health = player.health ?? game.save.health;
+      game.save.mana = player.mana ?? game.save.mana;
       game.save.xp = player.xp ?? game.save.xp;
       game.save.coins = player.coins ?? game.save.coins;
       game.save.level = player.level ?? game.save.level;
       game.save.maxHealth = player.maxHealth ?? game.save.maxHealth;
+      game.save.maxMana = player.maxMana ?? game.save.maxMana;
+      game.save.availableAttributePoints = player.availableAttributePoints ?? game.save.availableAttributePoints;
+      game.save.availableSkillPoints = player.availableSkillPoints ?? game.save.availableSkillPoints;
+      game.save.spentAttributes = player.spentAttributes || game.save.spentAttributes;
+      game.save.inventory = player.inventory || game.save.inventory;
+      game.save.equipment = player.equipment || game.save.equipment;
+      game.save.equippedWeapon = player.equippedWeapon || game.save.equippedWeapon;
+      game.save.equippedArmor = player.equippedArmor || game.save.equippedArmor;
+      game.save.magicPower = player.magicPower ?? game.save.magicPower;
+      game.save.learnedAbilities = player.learnedAbilities || game.save.learnedAbilities;
+      game.save.hotbar = player.hotbar || game.save.hotbar;
+      game.save.skillTreeNodes = player.skillTreeNodes || game.save.skillTreeNodes;
+      game.save.savedBuilds = player.savedBuilds || game.save.savedBuilds;
+      game.save.activeLoadout = player.activeLoadout || game.save.activeLoadout;
+      game.save.waypoints = player.waypoints || game.save.waypoints;
+      game.save.openedChests = player.openedChests || game.save.openedChests;
+      game.save.bestiaryProgress = player.bestiaryProgress || game.save.bestiaryProgress;
+      game.save.zoneCompletion = player.zoneCompletion || game.save.zoneCompletion;
+      game.save.achievements = player.achievements || game.save.achievements;
+      game.save.firstClearRewards = player.firstClearRewards || game.save.firstClearRewards;
+      game.save.title = player.title || game.save.title;
       game.save.state = player.state || game.save.state || "alive";
       if (player.respawnAt) {
         game.respawnAt = player.respawnAt;
@@ -84,6 +146,7 @@ function syncRemotePlayers(players) {
       } else if (game.save.state !== "dead") {
         game.respawnAt = null;
       }
+      applyVisualEquipment(game.playerGroup, game.save);
       continue;
     }
     seen.add(player.id);
@@ -225,8 +288,16 @@ function openPanel(panel) {
     character: renderCharacterPanel,
     party: renderPartyPanel,
     quests: renderQuestPanel,
+    bestiary: renderBestiaryPanel,
+    achievements: renderAchievementsPanel,
+    zones: renderZoneCompletionPanel,
     settings: renderSettingsPanel,
     shop: renderShopPanel,
+    spellbook: renderSpellbookPanel,
+    skillTree: renderSkillTreePanel,
+    loadouts: renderLoadoutPanel,
+    mageTrainer: () => renderTrainerPanel("mage"),
+    healerTrainer: () => renderTrainerPanel("healer"),
     help: renderHelpPanel,
     patch: renderPatchPanel
   };
@@ -244,26 +315,67 @@ function closePanel() {
 
 function renderInventoryPanel() {
   ui.panelTitle.textContent = "Inventory";
-  const inventory = game.save.inventory || [];
+  const inventory = normalizeInventory(game.save.inventory || []);
+  const equipment = createEquipmentState({
+    ...(game.save.equipment || {}),
+    weapon: game.save.equipment?.weapon || game.save.equippedWeapon,
+    chest: game.save.equipment?.chest || game.save.equippedArmor
+  });
+  const query = (game.inventorySearch || "").toLowerCase();
+  const filter = game.inventoryFilter || "all";
+  const slots = Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => inventory[index] || null);
   ui.panelContent.innerHTML = `
-    <div class="stat-line"><span>Weapon</span><strong>${getItem(game.save.equippedWeapon)?.name}</strong></div>
-    <div class="stat-line"><span>Armor</span><strong>${getItem(game.save.equippedArmor)?.name}</strong></div>
-    ${inventory.length ? inventory.map((entry) => {
+    <div class="inventory-tools">
+      <input id="inventory-search" maxlength="24" placeholder="Search items" value="${escapeHtml(game.inventorySearch || "")}" />
+      <select id="inventory-filter">
+        <option value="all" ${filter === "all" ? "selected" : ""}>All</option>
+        <option value="equipment" ${filter === "equipment" ? "selected" : ""}>Equipment</option>
+        <option value="consumable" ${filter === "consumable" ? "selected" : ""}>Consumables</option>
+        <option value="material" ${filter === "material" ? "selected" : ""}>Materials</option>
+      </select>
+    </div>
+    <div class="stat-line"><span>Slots</span><strong>${inventory.length} / ${INVENTORY_SLOT_COUNT}</strong></div>
+    <div class="equipment-grid">
+      ${EQUIPMENT_SLOTS.map((slot) => {
+        const item = getItem(equipment[slot]);
+        return `<div class="equipment-slot">
+          <span>${equipmentSlotLabel(slot)}</span>
+          <strong>${item?.name || "Empty"}</strong>
+          <small>${item?.rarity || ""}</small>
+        </div>`;
+      }).join("")}
+    </div>
+    <div class="inventory-grid">
+      ${slots.map((entry, index) => {
+        if (!entry) return `<div class="inventory-slot empty"><span>${index + 1}</span><small>Empty</small></div>`;
       const item = getItem(entry.itemId);
-      const canEquip = item?.type === "weapon" || item?.type === "armor";
-      const canUse = item?.type === "consumable";
-      return `<div class="item-row">
-        <div><strong>${item?.name || entry.itemId}</strong> x${entry.quantity}<small>${item?.rarity || ""} ${item?.description || ""}</small></div>
-        <div>${canEquip ? `<button data-equip="${entry.itemId}">Equip</button>` : ""}${canUse ? `<button data-use="${entry.itemId}">Use</button>` : ""}</div>
+        if (!itemMatchesInventoryFilter(item, query, filter)) return `<div class="inventory-slot filtered"><span>${index + 1}</span><small>Hidden</small></div>`;
+      const canEquip = Boolean(slotForItem(item));
+      const canUse = item?.type === "consumable" || entry.itemId === "rest_stone";
+        return `<div class="inventory-slot filled">
+          <span>${index + 1}</span>
+          <strong>${item?.name || entry.itemId}</strong>
+          <small>x${entry.quantity} ${item?.rarity || ""}</small>
+          <div class="slot-actions">${canEquip ? `<button data-equip="${entry.itemId}">Equip</button>` : ""}${canUse ? `<button data-use="${entry.itemId}">Use</button>` : ""}</div>
       </div>`;
-    }).join("") : `<p class="intro">No loose items yet. Monsters drop glowing bags in the world.</p>`}
+      }).join("")}
+    </div>
   `;
+  ui.panelContent.querySelector("#inventory-search")?.addEventListener("input", (event) => {
+    game.inventorySearch = event.target.value;
+    renderInventoryPanel();
+  });
+  ui.panelContent.querySelector("#inventory-filter")?.addEventListener("change", (event) => {
+    game.inventoryFilter = event.target.value;
+    renderInventoryPanel();
+  });
   ui.panelContent.querySelectorAll("[data-equip]").forEach((button) => {
     button.addEventListener("click", () => equipItem(button.dataset.equip));
   });
   ui.panelContent.querySelectorAll("[data-use]").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.use === "small_health_potion") usePotion();
+      if (button.dataset.use === "rest_stone") useRestStoneItem();
       renderInventoryPanel();
     });
   });
@@ -272,9 +384,22 @@ function renderInventoryPanel() {
 function equipItem(itemId) {
   const item = getItem(itemId);
   if (!item) return;
-  if (item.type === "weapon") game.save.equippedWeapon = itemId;
-  if (item.type === "armor") game.save.equippedArmor = itemId;
-  game.save = applyEquipment(game.save);
+  const slot = slotForItem(item);
+  if (!slot) return toast("That item cannot be equipped.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_EQUIP_ITEM, { slot, itemId }, (ack) => {
+      if (!ack?.ok) return toast(equipReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("equip");
+      toast(`Equipped ${item.name}.`);
+      renderInventoryPanel();
+    });
+    return;
+  }
+  const result = equipItemToSlot(game.save, slot, itemId);
+  if (!result.ok) return toast(equipReason(result.reason));
+  game.save = result.player;
   applyVisualEquipment(game.playerGroup, game.save);
   saveGame();
   playUiSound("equip");
@@ -282,19 +407,42 @@ function equipItem(itemId) {
   renderInventoryPanel();
 }
 
+function equipmentSlotLabel(slot) {
+  return slot.charAt(0).toUpperCase() + slot.slice(1);
+}
+
+function itemMatchesInventoryFilter(item, query, filter) {
+  if (!item) return false;
+  const searchable = `${item.name || ""} ${item.id || ""} ${item.description || ""}`.toLowerCase();
+  if (query && !searchable.includes(query)) return false;
+  if (filter === "equipment") return Boolean(slotForItem(item));
+  if (filter === "consumable") return item.type === "consumable" || item.id === "rest_stone";
+  if (filter === "material") return item.type === "material";
+  return true;
+}
+
+function equipReason(reason) {
+  if (reason === "level") return "Your level is too low for that item.";
+  if (reason === "missing") return "That item is not in your inventory.";
+  if (reason === "slot") return "That item does not fit that slot.";
+  if (reason === "dead") return "You cannot equip items while defeated.";
+  return "That item cannot be equipped.";
+}
+
 function renderShopPanel() {
   ui.panelTitle.textContent = "Weapon Shop";
   ui.panelContent.innerHTML = SHOP_ITEMS.map((stock) => {
     const item = getItem(stock.itemId);
     const owned = ownsItem(stock.itemId);
-    const equipped = game.save.equippedWeapon === stock.itemId || game.save.equippedArmor === stock.itemId;
+    const equipped = equippedItemIds().has(stock.itemId);
+    const canEquip = Boolean(slotForItem(item));
     const stat = item?.attack ? `+${item.attack} attack` : item?.heal ? `Heals ${item.heal} HP` : "Starter item";
     const status = equipped ? "Equipped" : owned && item?.type !== "consumable" ? "Owned" : `${stock.price} coins`;
     return `<div class="item-row shop-row">
       <div><strong>${item?.name || stock.itemId}</strong><small>${item?.rarity || ""} ${stat}. ${item?.description || ""}</small></div>
       <div class="shop-actions">
         <span>${status}</span>
-        ${item?.type !== "consumable" ? `<button data-shop-equip="${stock.itemId}" ${owned ? "" : "disabled"}>Equip</button>` : ""}
+        ${canEquip ? `<button data-shop-equip="${stock.itemId}" ${owned ? "" : "disabled"}>Equip</button>` : ""}
         <button data-shop-buy="${stock.itemId}" ${equipped && item?.type !== "consumable" ? "disabled" : ""}>${owned && item?.type !== "consumable" ? "Owned" : "Buy"}</button>
       </div>
     </div>`;
@@ -312,7 +460,15 @@ function renderShopPanel() {
 }
 
 function ownsItem(itemId) {
-  return game.save.equippedWeapon === itemId || game.save.equippedArmor === itemId || countItem(itemId) > 0 || itemId === "wooden_sword";
+  return equippedItemIds().has(itemId) || countItem(itemId) > 0 || itemId === "wooden_sword";
+}
+
+function equippedItemIds() {
+  return new Set(Object.values(createEquipmentState({
+    ...(game.save.equipment || {}),
+    weapon: game.save.equipment?.weapon || game.save.equippedWeapon,
+    chest: game.save.equipment?.chest || game.save.equippedArmor
+  })).filter(Boolean));
 }
 
 function buyShopItem(itemId) {
@@ -328,8 +484,13 @@ function buyShopItem(itemId) {
     toast(`Need ${stock.price} coins for ${item.name}.`);
     return;
   }
+  const inventoryResult = addInventoryStack(game.save.inventory, itemId, 1);
+  if (!inventoryResult.ok) {
+    toast("Inventory full. Make space before buying.");
+    return renderShopPanel();
+  }
   game.save.coins -= stock.price;
-  game.save.inventory = addInventoryItem(game.save.inventory, itemId, 1);
+  game.save.inventory = inventoryResult.inventory;
   game.save = applyEquipment(game.save);
   saveGame();
   playUiSound("pickup");
@@ -345,7 +506,7 @@ function openChest(chestId) {
   if (game.online) {
     game.socket.emit(NET.CHEST_CLAIM, { chestId }, (ack) => {
       if (!ack?.ok) return toast(chestClaimReason(ack?.reason));
-      applyChestReward(chest, ack.reward);
+      applyChestReward(chest, ack.reward, ack.player);
     });
     return;
   }
@@ -354,20 +515,35 @@ function openChest(chestId) {
 }
 
 function localChestReward(chestId) {
+  if (chestId === "frostveil_snow_cache") return { coins: 45, items: [{ itemId: "ice_shard", quantity: 2 }] };
   if (chestId === "field_south_cache") return { coins: 36, items: [{ itemId: "rusty_blade", quantity: 1 }] };
   if (chestId === "field_north_cache") return { coins: 28, items: [{ itemId: "small_health_potion", quantity: 1 }] };
   return { coins: 18, items: [{ itemId: "small_health_potion", quantity: 1 }] };
 }
 
-function applyChestReward(chest, reward) {
-  setChestOpened(chest, true);
-  game.save.coins += reward?.coins || 0;
-  for (const item of reward?.items || []) {
-    game.save.inventory = addInventoryItem(game.save.inventory, item.itemId, item.quantity || 1);
+function applyChestReward(chest, reward, serverPlayer = null) {
+  if (serverPlayer) {
+    applyServerPlayerUpdate(serverPlayer);
+    setChestOpened(chest, true);
+    refreshLocalMetaProgress();
+    saveGame();
+    playUiSound("pickup");
+    toast(`Chest opened: +${reward?.coins || 0} coins${reward?.items?.length ? " and item loot" : ""}.`);
+    return true;
   }
+  const inventoryResult = applyRewardItemsToInventory(game.save.inventory, reward?.items || []);
+  if (!inventoryResult.ok) {
+    toast(inventoryResult.reason === "full" ? "Inventory full. Make space before opening this chest." : "That chest cannot be opened.");
+    return false;
+  }
+  setChestOpened(chest, true);
+  game.save.inventory = inventoryResult.inventory;
+  game.save.coins += reward?.coins || 0;
+  refreshLocalMetaProgress();
   saveGame();
   playUiSound("pickup");
   toast(`Chest opened: +${reward?.coins || 0} coins${reward?.items?.length ? " and item loot" : ""}.`);
+  return true;
 }
 
 function openDialogue(dialogueId, index = 0) {
@@ -381,12 +557,242 @@ function openDialogue(dialogueId, index = 0) {
     <div class="dialogue-actions">
       <button id="dialogue-next">${index < dialogue.lines.length - 1 ? "Next" : "Restart"}</button>
       ${dialogueId === "shopkeeper" ? `<button id="dialogue-shop" class="primary">Open Shop</button>` : ""}
+      ${dialogueId === "mage_trainer" ? `<button id="dialogue-mage" class="primary">Train Magic</button>` : ""}
+      ${dialogueId === "healer_trainer" ? `<button id="dialogue-healer" class="primary">Train Healing</button>` : ""}
       <button id="dialogue-close">Close</button>
     </div>
   `;
   ui.panelContent.querySelector("#dialogue-next").addEventListener("click", () => openDialogue(dialogueId, index < dialogue.lines.length - 1 ? index + 1 : 0));
   ui.panelContent.querySelector("#dialogue-close").addEventListener("click", closePanel);
   ui.panelContent.querySelector("#dialogue-shop")?.addEventListener("click", () => openPanel("shop"));
+  ui.panelContent.querySelector("#dialogue-mage")?.addEventListener("click", () => openPanel("mageTrainer"));
+  ui.panelContent.querySelector("#dialogue-healer")?.addEventListener("click", () => openPanel("healerTrainer"));
+}
+
+function renderTrainerPanel(trainerId) {
+  const title = trainerId === "healer" ? "Healer" : "Mage Trainer";
+  ui.panelTitle.textContent = title;
+  const abilities = getTrainerAbilities(trainerId);
+  ui.panelContent.innerHTML = abilities.map((ability) => {
+    const learned = knowsAbility(ability.id);
+    const reqs = abilityRequirementText(ability);
+    const status = learned ? "Learned" : `${ability.price} coins`;
+    return `<div class="item-row">
+      <div>
+        <strong>${ability.name}</strong>
+        <small>${ability.description} ${reqs}</small>
+        <small>Scaling: ${ability.scalingStat || "none"} | Mana: ${ability.manaCost || 0} | Cooldown: ${Math.round((ability.cooldownMs || 0) / 1000)}s</small>
+      </div>
+      <div class="shop-actions">
+        <span>${status}</span>
+        <button data-train-ability="${ability.id}" ${learned ? "disabled" : ""}>Buy</button>
+      </div>
+    </div>`;
+  }).join("") + `<button id="open-spellbook" class="primary">Open Spellbook</button>`;
+  ui.panelContent.querySelectorAll("[data-train-ability]").forEach((button) => {
+    button.addEventListener("click", () => buyTrainerAbility(button.dataset.trainAbility, trainerId));
+  });
+  ui.panelContent.querySelector("#open-spellbook").addEventListener("click", () => openPanel("spellbook"));
+}
+
+function abilityRequirementText(ability) {
+  const attributes = Object.entries(ability.attributeRequirements || {})
+    .map(([id, value]) => `${id} ${value}`)
+    .join(", ");
+  return `Requires level ${ability.levelRequirement || 1}${attributes ? `, ${attributes}` : ""}.`;
+}
+
+function buyTrainerAbility(abilityId, trainerId) {
+  if (isLocallyDead()) return toast("You cannot train while defeated.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_BUY_ABILITY, { abilityId }, (ack) => {
+      if (!ack?.ok) return toast(trainerBuyReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("pickup");
+      toast(`Learned ${ack.ability?.name || abilityId}.`);
+      renderTrainerPanel(trainerId);
+    });
+    return;
+  }
+  const result = purchaseTrainerAbility(game.save, abilityId);
+  if (!result.ok) return toast(trainerBuyReason(result.reason));
+  game.save = result.player;
+  saveGame();
+  playUiSound("pickup");
+  toast(`Learned ${result.ability.name}.`);
+  renderTrainerPanel(trainerId);
+}
+
+function trainerBuyReason(reason) {
+  if (reason === "known") return "That ability is already learned.";
+  if (reason === "level") return "Your level is too low for that training.";
+  if (reason === "attribute") return "Your attributes do not meet the requirement.";
+  if (reason === "coins") return "Not enough coins.";
+  return "That training is unavailable.";
+}
+
+function renderSpellbookPanel() {
+  ui.panelTitle.textContent = "Spellbook";
+  const abilities = ["hero_pulse", "ground_pound", "fireball", "dark_punch", "water_blast", "healing_orb", "mend_ally"]
+    .map((abilityId) => ABILITIES[abilityId])
+    .filter(Boolean);
+  ui.panelContent.innerHTML = abilities.map((ability) => {
+    const learned = knowsAbility(ability.id);
+    const slotted = (game.save.hotbar || []).includes(ability.id);
+    return `<div class="item-row">
+      <div>
+        <strong>${ability.name}</strong>
+        <small>${learned ? "Learned" : "Locked"} from ${ability.trainerId === "healer" ? "Sister Elara" : "Arcanist Mira"}. ${ability.description}</small>
+        <small>Mana ${ability.manaCost || 0}. ${abilityRequirementText(ability)}</small>
+      </div>
+      <div class="shop-actions">
+        <span>${slotted ? "Slotted" : learned ? "Ready" : "Locked"}</span>
+        ${ability.id === "hero_pulse" ? `<button data-slot-ability="${ability.id}" data-slot="3" ${learned ? "" : "disabled"}>${slotted ? "Slot 3" : "Assign 3"}</button>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  ui.panelContent.querySelectorAll("[data-slot-ability]").forEach((button) => {
+    button.addEventListener("click", () => assignAbilityToHotbar(Number(button.dataset.slot), button.dataset.slotAbility));
+  });
+}
+
+function assignAbilityToHotbar(slot, abilityId) {
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_ASSIGN_HOTBAR, { slot, abilityId }, (ack) => {
+      if (!ack?.ok) return toast("That ability cannot be assigned.");
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      toast("Hotbar updated.");
+      renderSpellbookPanel();
+    });
+    return;
+  }
+  const result = assignHotbarAbility(game.save, slot, abilityId);
+  if (!result.ok) return toast("That ability cannot be assigned.");
+  game.save = result.player;
+  saveGame();
+  toast("Hotbar updated.");
+  renderSpellbookPanel();
+}
+
+function renderSkillTreePanel() {
+  const stats = applyEquipment(game.save);
+  ui.panelTitle.textContent = "Skill Tree";
+  ui.panelContent.innerHTML = `
+    <div class="stat-line"><span>Skill Points</span><strong>${stats.availableSkillPoints}</strong></div>
+    ${Object.values(SKILL_TREES).map((tree) => `
+      <div class="quest-row"><strong>${tree.name}</strong><small>${tree.nodeIds.length} nodes</small></div>
+      ${tree.nodeIds.map((nodeId) => {
+        const node = SKILL_NODES[nodeId];
+        const rank = stats.skillTreeNodes?.[nodeId] || 0;
+        const prereq = (node.prerequisites || []).map((entry) => `${SKILL_NODES[entry.nodeId]?.name || entry.nodeId} ${entry.rank}`).join(", ");
+        return `<div class="item-row">
+          <div><strong>${node.name}</strong><small>${rank}/${node.maxRank}. ${node.description}${prereq ? ` Requires ${prereq}.` : ""}</small></div>
+          <button class="mini-button" data-skill-node="${node.id}" ${rank >= node.maxRank || stats.availableSkillPoints <= 0 ? "disabled" : ""}>+</button>
+        </div>`;
+      }).join("")}
+    `).join("")}
+  `;
+  ui.panelContent.querySelectorAll("[data-skill-node]").forEach((button) => {
+    button.addEventListener("click", () => buySkillTreeNode(button.dataset.skillNode));
+  });
+}
+
+function buySkillTreeNode(nodeId) {
+  if (isLocallyDead()) return toast("You cannot train skill trees while defeated.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_BUY_SKILL_NODE, { nodeId }, (ack) => {
+      if (!ack?.ok) return toast(skillNodeReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("tick");
+      renderSkillTreePanel();
+    });
+    return;
+  }
+  const result = purchaseSkillNode(game.save, nodeId);
+  if (!result.ok) return toast(skillNodeReason(result.reason));
+  game.save = result.player;
+  saveGame();
+  playUiSound("tick");
+  renderSkillTreePanel();
+}
+
+function skillNodeReason(reason) {
+  if (reason === "prerequisite") return "That node needs another node first.";
+  if (reason === "points") return "No skill points available.";
+  if (reason === "max_rank") return "That node is already maxed.";
+  return "That skill node is unavailable.";
+}
+
+function renderLoadoutPanel() {
+  ui.panelTitle.textContent = "Loadouts";
+  const builds = game.save.savedBuilds || {};
+  ui.panelContent.innerHTML = ["A", "B"].map((slot) => {
+    const build = builds[slot];
+    return `<div class="item-row">
+      <div><strong>Loadout ${slot}</strong><small>${build?.label || "Empty build slot"}</small></div>
+      <div class="shop-actions">
+        <button data-save-loadout="${slot}">Save</button>
+        <button data-activate-loadout="${slot}" ${build ? "" : "disabled"}>Activate</button>
+      </div>
+    </div>`;
+  }).join("");
+  ui.panelContent.querySelectorAll("[data-save-loadout]").forEach((button) => {
+    button.addEventListener("click", () => saveCurrentLoadout(button.dataset.saveLoadout));
+  });
+  ui.panelContent.querySelectorAll("[data-activate-loadout]").forEach((button) => {
+    button.addEventListener("click", () => activateSavedLoadout(button.dataset.activateLoadout));
+  });
+}
+
+function saveCurrentLoadout(slot) {
+  const label = `Build ${slot}`;
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_SAVE_LOADOUT, { slot, label }, (ack) => {
+      if (!ack?.ok) return toast("Could not save that loadout.");
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      toast(`Saved Loadout ${slot}.`);
+      renderLoadoutPanel();
+    });
+    return;
+  }
+  const result = saveLoadout(game.save, slot, label);
+  if (!result.ok) return toast("Could not save that loadout.");
+  game.save = result.player;
+  saveGame();
+  toast(`Saved Loadout ${slot}.`);
+  renderLoadoutPanel();
+}
+
+function activateSavedLoadout(slot) {
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_ACTIVATE_LOADOUT, { slot }, (ack) => {
+      if (!ack?.ok) return toast(loadoutReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      applyVisualEquipment(game.playerGroup, game.save);
+      saveGame();
+      toast(`Activated Loadout ${slot}.`);
+      renderLoadoutPanel();
+    });
+    return;
+  }
+  const result = activateLoadout(game.save, slot);
+  if (!result.ok) return toast(loadoutReason(result.reason));
+  game.save = result.player;
+  applyVisualEquipment(game.playerGroup, game.save);
+  saveGame();
+  toast(`Activated Loadout ${slot}.`);
+  renderLoadoutPanel();
+}
+
+function loadoutReason(reason) {
+  if (reason === "ability") return "That loadout uses an unlearned ability.";
+  if (reason === "item") return "That loadout uses missing equipment.";
+  if (reason === "combat") return "Leave combat before changing loadouts.";
+  return "That loadout is unavailable.";
 }
 
 function renderHelpPanel() {
@@ -404,6 +810,7 @@ function lootClaimReason(reason) {
   if (reason === "dead") return "You cannot collect loot while defeated.";
   if (reason === "range") return "Move closer to collect that loot.";
   if (reason === "owner") return "That loot belongs to another hero.";
+  if (reason === "inventory_full") return "Inventory full. Make space before collecting loot.";
   return "That loot cannot be collected.";
 }
 
@@ -411,21 +818,133 @@ function chestClaimReason(reason) {
   if (reason === "dead") return "You cannot open chests while defeated.";
   if (reason === "range") return "Move closer to open that chest.";
   if (reason === "opened") return "That chest is already empty.";
+  if (reason === "inventory_full") return "Inventory full. Make space before opening this chest.";
   return "That chest cannot be opened.";
+}
+
+function applyServerPlayerUpdate(player) {
+  if (!player) return;
+  Object.assign(game.save, {
+    health: player.health ?? game.save.health,
+    maxHealth: player.maxHealth ?? game.save.maxHealth,
+    mana: player.mana ?? game.save.mana,
+    maxMana: player.maxMana ?? game.save.maxMana,
+    level: player.level ?? game.save.level,
+    xp: player.xp ?? game.save.xp,
+    coins: player.coins ?? game.save.coins,
+    equipment: player.equipment || game.save.equipment,
+    equippedWeapon: player.equippedWeapon || game.save.equippedWeapon,
+    equippedArmor: player.equippedArmor || game.save.equippedArmor,
+    magicPower: player.magicPower ?? game.save.magicPower,
+    spentAttributes: player.spentAttributes || game.save.spentAttributes,
+    availableAttributePoints: player.availableAttributePoints ?? game.save.availableAttributePoints,
+    availableSkillPoints: player.availableSkillPoints ?? game.save.availableSkillPoints,
+    inventory: player.inventory || game.save.inventory,
+    learnedAbilities: player.learnedAbilities || game.save.learnedAbilities,
+    hotbar: player.hotbar || game.save.hotbar,
+    skillTreeNodes: player.skillTreeNodes || game.save.skillTreeNodes,
+    savedBuilds: player.savedBuilds || game.save.savedBuilds,
+    activeLoadout: player.activeLoadout || game.save.activeLoadout,
+    waypoints: player.waypoints || game.save.waypoints,
+    openedChests: player.openedChests || game.save.openedChests,
+    bestiaryProgress: player.bestiaryProgress || game.save.bestiaryProgress,
+    zoneCompletion: player.zoneCompletion || game.save.zoneCompletion,
+    achievements: player.achievements || game.save.achievements,
+    firstClearRewards: player.firstClearRewards || game.save.firstClearRewards,
+    title: player.title || game.save.title
+  });
+  game.save = applyEquipment(game.save);
+  if (game.playerGroup) applyVisualEquipment(game.playerGroup, game.save);
+}
+
+function allocateAttributePoint(attributeId) {
+  if (isLocallyDead()) return toast("You cannot allocate stats while defeated.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_SPEND_ATTRIBUTE, { attributeId, count: 1 }, (ack) => {
+      if (!ack?.ok) return toast(ack?.reason === "points" ? "No attribute points available." : "That stat cannot be increased.");
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("tick");
+      renderCharacterPanel();
+    });
+    return;
+  }
+  const result = spendAttributePoint(game.save, attributeId, 1);
+  if (!result.ok) return toast(result.reason === "points" ? "No attribute points available." : "That stat cannot be increased.");
+  game.save = result.player;
+  saveGame();
+  playUiSound("tick");
+  renderCharacterPanel();
+}
+
+function useRestStoneItem() {
+  if (isLocallyDead()) return toast("You cannot reset stats while defeated.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_USE_REST_STONE, {}, (ack) => {
+      if (!ack?.ok) return toast("No Rest Stone available.");
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("equip");
+      toast("Rest Stone restored your points.");
+      renderCharacterPanel();
+    });
+    return;
+  }
+  const result = useRestStone(game.save);
+  if (!result.ok) return toast("No Rest Stone available.");
+  game.save = result.player;
+  saveGame();
+  playUiSound("equip");
+  toast("Rest Stone restored your points.");
+  renderCharacterPanel();
 }
 
 function renderCharacterPanel() {
   const stats = applyEquipment(game.save);
+  const equipment = stats.equipment || createEquipmentState({
+    weapon: stats.equippedWeapon,
+    chest: stats.equippedArmor
+  });
+  const attributeRows = [
+    { id: "health", label: "Health", benefit: "+12 max HP, +1 potion healing" },
+    { id: "strength", label: "Strength", benefit: "+2 physical power" },
+    { id: "magic", label: "Magic", benefit: "+2 spell power, +2 healing, +5 mana" },
+    { id: "defense", label: "Defense", benefit: "+2 defense, better Guard" }
+  ];
   ui.panelTitle.textContent = "Character";
   ui.panelContent.innerHTML = `
     <div class="item-row"><div><strong>${escapeHtml(game.save.name || "New Hero")}</strong><small>${game.save.title || "No title yet"}</small></div><div>Lv. ${stats.level}</div></div>
-    <div class="stat-line"><span>Attack</span><strong>${stats.attack}</strong></div>
+    <div class="stat-line"><span>HP</span><strong>${Math.round(stats.health)} / ${stats.maxHealth}</strong></div>
+    <div class="stat-line"><span>Mana</span><strong>${Math.floor(stats.mana)} / ${stats.maxMana}</strong></div>
+    <div class="stat-line"><span>Physical Power</span><strong>${stats.physicalPower}</strong></div>
+    <div class="stat-line"><span>Spell Power</span><strong>${stats.spellPower}</strong></div>
+    <div class="stat-line"><span>Healing Power</span><strong>${stats.healingPower}</strong></div>
     <div class="stat-line"><span>Defense</span><strong>${stats.defense}</strong></div>
+    <div class="stat-line"><span>Damage Reduction</span><strong>${Math.round((stats.damageReduction || 0) * 100)}%</strong></div>
     <div class="stat-line"><span>Speed</span><strong>${stats.speed.toFixed(1)}</strong></div>
     <div class="stat-line"><span>Coins</span><strong>${stats.coins}</strong></div>
+    <div class="stat-line"><span>Attribute Points</span><strong>${stats.availableAttributePoints}</strong></div>
+    <div class="stat-line"><span>Skill Points</span><strong>${stats.availableSkillPoints}</strong></div>
     <div class="stat-line"><span>Weapon</span><strong>${getItem(stats.equippedWeapon)?.name}</strong></div>
     <div class="stat-line"><span>Armor</span><strong>${getItem(stats.equippedArmor)?.name}</strong></div>
+    <div class="equipment-grid compact">
+      ${EQUIPMENT_SLOTS.map((slot) => {
+        const item = getItem(equipment[slot]);
+        return `<div class="equipment-slot"><span>${equipmentSlotLabel(slot)}</span><strong>${item?.name || "Empty"}</strong></div>`;
+      }).join("")}
+    </div>
+    ${attributeRows.map((attribute) => `
+      <div class="item-row">
+        <div><strong>${attribute.label}</strong><small>${stats.spentAttributes?.[attribute.id] || 0} spent. Next point: ${attribute.benefit}.</small></div>
+        <button class="mini-button" data-attribute="${attribute.id}" ${stats.availableAttributePoints <= 0 ? "disabled" : ""}>+</button>
+      </div>
+    `).join("")}
+    ${countItem("rest_stone") > 0 ? `<button id="reset-stats" class="primary">Reset Stats</button>` : ""}
   `;
+  ui.panelContent.querySelectorAll("[data-attribute]").forEach((button) => {
+    button.addEventListener("click", () => allocateAttributePoint(button.dataset.attribute));
+  });
+  ui.panelContent.querySelector("#reset-stats")?.addEventListener("click", useRestStoneItem);
 }
 
 function renderPartyPanel() {

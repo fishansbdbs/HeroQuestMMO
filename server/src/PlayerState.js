@@ -2,37 +2,40 @@ import { STARTER_INVENTORY } from "../../shared/items.js";
 import { PLAYER_STATES, STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment } from "../../shared/combat.js";
 import { createQuestProgress } from "../../shared/quests.js";
+import { migrateIceZeroSave } from "../../shared/saveMigration.js";
 
 export function createPlayerState(socketId, profile = {}) {
-  const color = Number(profile.color || 0x4da7ff);
-  const incomingHealth = Number(profile.health ?? STARTING_PLAYER.health);
-  const shouldRecover = incomingHealth <= 0 || profile.state === PLAYER_STATES.DEAD;
+  const migrated = migrateIceZeroSave(profile).save;
+  const color = Number(migrated.color || 0x4da7ff);
+  const rawIncomingHealth = Number(profile.health ?? STARTING_PLAYER.health);
+  const incomingHealth = Number(migrated.health ?? STARTING_PLAYER.health);
+  const shouldRecover = rawIncomingHealth <= 0 || incomingHealth <= 0 || profile.state === PLAYER_STATES.DEAD || migrated.state === PLAYER_STATES.DEAD;
   const base = applyEquipment({
     ...STARTING_PLAYER,
-    ...profile,
+    ...migrated,
     health: shouldRecover ? STARTING_PLAYER.health : incomingHealth,
-    inventory: profile.inventory || STARTER_INVENTORY,
-    questProgress: profile.questProgress || createQuestProgress(),
-    equippedWeapon: profile.equippedWeapon || STARTING_PLAYER.equippedWeapon,
-    equippedArmor: profile.equippedArmor || STARTING_PLAYER.equippedArmor
+    inventory: migrated.inventory || STARTER_INVENTORY,
+    questProgress: migrated.questProgress || createQuestProgress(),
+    equippedWeapon: migrated.equippedWeapon || STARTING_PLAYER.equippedWeapon,
+    equippedArmor: migrated.equippedArmor || STARTING_PLAYER.equippedArmor
   });
   if (shouldRecover) base.health = base.maxHealth;
 
   return {
     ...base,
     id: socketId,
-    name: cleanName(profile.name || "New Hero"),
+    name: cleanName(migrated.name || "New Hero"),
     color,
     state: PLAYER_STATES.ALIVE,
     defeatedAt: null,
     respawnAt: null,
-    zone: shouldRecover ? ZONES.HUB : profile.zone || ZONES.HUB,
-    position: shouldRecover ? dawnrestSpawn() : profile.position || dawnrestSpawn(),
+    zone: shouldRecover ? ZONES.HUB : migrated.zone || ZONES.HUB,
+    position: shouldRecover ? dawnrestSpawn() : migrated.position || dawnrestSpawn(),
     lastInputAt: Date.now(),
     lastAttackAt: 0,
     lastAbilityAt: 0,
     partyId: null,
-    title: profile.title || ""
+    title: migrated.title || ""
   };
 }
 
@@ -46,14 +49,37 @@ export function sanitizePlayer(player) {
     level: player.level,
     health: player.health,
     maxHealth: player.maxHealth,
+    mana: player.mana,
+    maxMana: player.maxMana,
+    physicalPower: player.physicalPower,
+    spellPower: player.spellPower,
+    healingPower: player.healingPower,
+    damageReduction: player.damageReduction,
+    availableAttributePoints: player.availableAttributePoints,
+    availableSkillPoints: player.availableSkillPoints,
+    spentAttributes: player.spentAttributes,
     coins: player.coins,
     xp: player.xp,
     partyId: player.partyId,
     title: player.title,
     state: player.state || PLAYER_STATES.ALIVE,
     respawnAt: player.respawnAt || null,
+    equipment: player.equipment,
     equippedWeapon: player.equippedWeapon,
-    equippedArmor: player.equippedArmor
+    equippedArmor: player.equippedArmor,
+    magicPower: player.magicPower,
+    inventory: player.inventory,
+    waypoints: player.waypoints,
+    openedChests: player.openedChests,
+    bestiaryProgress: player.bestiaryProgress,
+    zoneCompletion: player.zoneCompletion,
+    achievements: player.achievements,
+    firstClearRewards: player.firstClearRewards,
+    learnedAbilities: player.learnedAbilities,
+    hotbar: player.hotbar,
+    skillTreeNodes: player.skillTreeNodes,
+    savedBuilds: player.savedBuilds,
+    activeLoadout: player.activeLoadout
   };
 }
 

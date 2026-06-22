@@ -1,10 +1,11 @@
 ﻿const SERVER_URL = env.VITE_SERVER_URL || "http://localhost:3000";
 const STORAGE_KEY = "heroquest-mmo-v1-save";
+const SAVE_BACKUP_KEY = `${STORAGE_KEY}-backup-${ICEZERO_MIGRATION_ID}`;
 const COLORS = [0x4da7ff, 0x55d07a, 0xf2c867, 0xe86e58, 0xb38cff, 0x70e4d2];
 const HOTBAR_DEFS = [
   { slot: 1, action: "auto", name: "Auto Attack", key: "1", icon: "A", cooldownMs: ABILITIES.auto_attack.cooldownMs, tooltip: "Toggle auto attacks against your selected target." },
   { slot: 2, action: "slash", name: "Slash", key: "2", icon: "/", cooldownMs: ABILITIES.slash.cooldownMs, tooltip: "150% melee damage. Requires a nearby target." },
-  { slot: 3, action: "pulse", name: "Hero Pulse", key: "3", icon: "O", cooldownMs: ABILITIES.hero_pulse.cooldownMs, tooltip: "Shockwave nearby enemies and the boss." },
+  { slot: 3, action: "pulse", name: "Hero Pulse", key: "3", icon: "O", cooldownMs: ABILITIES.hero_pulse.cooldownMs, requiresAbility: "hero_pulse", tooltip: "Learn Hero Pulse from the Mage Trainer before using it." },
   { slot: 4, action: "guard", name: "Guard", key: "4", icon: "[]", cooldownMs: ABILITIES.guard.cooldownMs, tooltip: "Reduce incoming damage by half for 3 seconds." },
   { slot: 5, action: "potion", name: "Potion", key: "5", icon: "+", cooldownMs: ABILITIES.potion.cooldownMs, tooltip: "Use a health potion if one is available." },
   { slot: 6, action: "dash", name: "Dash", key: "6", icon: ">>", cooldownMs: ABILITIES.dash.cooldownMs, tooltip: "Burst forward with a short movement trail." },
@@ -34,8 +35,24 @@ const NPC_DIALOGUES = {
     name: "Combat Trainer",
     lines: [
       "Click an enemy or press 1 to start auto attack. Press 2 for Slash when you are close.",
-      "Use Q or hotbar slot 3 for Hero Pulse. It hits nearby enemies and the training dummy.",
+      "Strength improves weapon hits and physical abilities. Magic improves spells, mana, and healing.",
       "Use 5 to drink a potion. Enemies and the dummy show health bars and damage numbers."
+    ]
+  },
+  mage_trainer: {
+    name: "Arcanist Mira",
+    lines: [
+      "I teach combat magic and physical techniques that need focused training.",
+      "Hero Pulse is no longer free training. Buy it here, then slot it from your spellbook.",
+      "Magic powers Hero Pulse, Fireball, and Water Blast. Strength powers Ground Pound and Dark Punch."
+    ]
+  },
+  healer_trainer: {
+    name: "Sister Elara",
+    lines: [
+      "Healing scales from Magic and is meant for allies, party members, and yourself.",
+      "Healing Orb creates a shared recovery pickup. Mend Ally targets a friendly player.",
+      "Open your spellbook after training to place support abilities on your hotbar."
     ]
   },
   shopkeeper: {
@@ -82,6 +99,9 @@ const game = {
   blockers: [],
   boss: null,
   bossGroup: null,
+  iceMage: null,
+  iceMageGroup: null,
+  publicEvent: null,
   telegraphs: [],
   input: {
     keys: new Set(),
@@ -103,7 +123,10 @@ const game = {
   autoAttack: false,
   lastAutoAttackAt: 0,
   guardUntil: 0,
+  lastCombatAt: 0,
   combatLog: [],
+  inventorySearch: "",
+  inventoryFilter: "all",
   lastPingMs: null,
   questCollapsed: false,
   hotbarPressed: null,
@@ -170,7 +193,28 @@ function installDebugHooks() {
                 z: parts.sword.rotation.z
               }
             : null
-        }
+        },
+        progression: {
+          mana: game.save.mana,
+          maxMana: game.save.maxMana,
+          availableAttributePoints: game.save.availableAttributePoints,
+          availableSkillPoints: game.save.availableSkillPoints,
+          spentAttributes: game.save.spentAttributes
+        },
+        equipment: game.save.equipment,
+        inventory: {
+          slotsUsed: normalizeInventory(game.save.inventory || []).length,
+          slotCount: INVENTORY_SLOT_COUNT
+        },
+        waypoints: game.save.waypoints || [],
+        openedChests: game.save.openedChests || [],
+        bestiaryProgress: game.save.bestiaryProgress || {},
+        zoneCompletion: game.save.zoneCompletion || {},
+        achievements: game.save.achievements || [],
+        publicEvent: game.publicEvent,
+        iceMage: game.iceMage,
+        telegraphCount: game.telegraphs.length,
+        enemyCount: game.enemies.size
       };
     },
     setKey(key, down = true) {
@@ -208,14 +252,57 @@ function bootstrap() {
   const smoke = params.get("smoke");
   game.debugDemo = params.get("demo");
   if (smoke) {
-    const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : ZONES.HUB;
+    const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : smoke === "frostveil" ? ZONES.FROSTVEIL : smoke === "palace" ? ZONES.PALACE : ZONES.HUB;
+    const phase2Smoke = params.get("phase2") === "progression";
+    const phase4Smoke = params.get("phase4") === "trees";
+    const phase5Smoke = params.get("phase5") === "equipment";
+    const phase6Smoke = params.get("phase6") === "frostveil" || smoke === "frostveil";
+    const phase7Smoke = params.get("phase7") === "ice_mage" || smoke === "palace";
+    const phase8Smoke = params.get("phase8") === "meta";
+    const smokeInventory = phase5Smoke
+      ? [
+          { itemId: "apprentice_staff", quantity: 1 },
+          { itemId: "snowhide_helmet", quantity: 1 },
+          { itemId: "frostguard_chestplate", quantity: 1 },
+          { itemId: "small_health_potion", quantity: 5 }
+        ]
+      : game.save.inventory;
     game.save = applyEquipment({
       ...game.save,
       name: "SmokeTester",
       color: COLORS[1],
+      xp: phase7Smoke ? 1300 : phase6Smoke ? 420 : phase2Smoke || phase5Smoke ? 260 : game.save.xp,
+      coins: phase7Smoke ? 450 : phase2Smoke || phase5Smoke || phase6Smoke ? 150 : game.save.coins,
+      inventory: phase2Smoke ? addInventoryItem(game.save.inventory || [], "rest_stone", 1) : smokeInventory,
+      equipment: phase5Smoke ? createEquipmentState() : game.save.equipment,
+      learnedAbilities: phase7Smoke || phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
+      hotbar: phase7Smoke || phase4Smoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null] : phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
+      skillTreeNodes: phase4Smoke ? {} : game.save.skillTreeNodes,
+      savedBuilds: phase4Smoke ? {} : game.save.savedBuilds,
+      activeLoadout: phase4Smoke ? null : game.save.activeLoadout,
+      bestiaryProgress: phase8Smoke ? {} : game.save.bestiaryProgress,
+      zoneCompletion: phase8Smoke ? {} : game.save.zoneCompletion,
+      achievements: phase8Smoke ? [] : game.save.achievements,
+      waypoints: phase8Smoke ? ["dawnrest", "frostveil_camp"] : game.save.waypoints,
+      openedChests: phase8Smoke ? ["frostveil_snow_cache"] : game.save.openedChests,
       zone,
       settings: { ...game.save.settings, showFps: true }
     });
+    if (phase8Smoke) {
+      game.save.learnedAbilities = ["hero_pulse"];
+      game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [ICE_MAGE_BOSS.id]: true };
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "enter_frostveil").progress;
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "activate_frost_ward").progress;
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "activate_frost_ward").progress;
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "activate_frost_ward").progress;
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "enter_palace").progress;
+      game.save.questProgress = applyQuestKill(game.save.questProgress, ICE_MAGE_BOSS).progress;
+      for (const enemyId of ["frost_slime", "ice_goblin", "snow_wolf", "frost_wisp", "ice_golem", "frozen_knight"]) {
+        const bestiary = recordBestiaryKill(game.save, ENEMIES[enemyId], { elite: enemyId === "ice_golem" });
+        if (bestiary.ok) game.save = bestiary.player;
+      }
+      game.save = refreshMetaProgress(game.save).player;
+    }
     startGame();
     return;
   }
@@ -231,6 +318,10 @@ function loadSave() {
     coins: STARTING_PLAYER.coins,
     health: STARTING_PLAYER.health,
     inventory: clone(STARTER_INVENTORY),
+    equipment: createEquipmentState({
+      weapon: STARTING_PLAYER.equippedWeapon,
+      chest: STARTING_PLAYER.equippedArmor
+    }),
     equippedWeapon: STARTING_PLAYER.equippedWeapon,
     equippedArmor: STARTING_PLAYER.equippedArmor,
     openedChests: [],
@@ -249,20 +340,36 @@ function loadSave() {
     },
     title: ""
   };
+  const finalizeSave = (incoming) => {
+    const result = migrateIceZeroSave(incoming);
+    if (result.migrated) {
+      try {
+        localStorage.setItem(SAVE_BACKUP_KEY, JSON.stringify(result.backup));
+      } catch {
+        // Backup failure should not block a safe load.
+      }
+    }
+    const loaded = recoverSavedHealth(applyEquipment({
+      ...base,
+      ...result.save,
+      settings: { ...base.settings, ...(result.save.settings || {}) },
+      questProgress: { ...base.questProgress, ...(result.save.questProgress || {}) },
+      openedChests: result.save.openedChests || [],
+      inventory: normalizeInventory(result.save.inventory || base.inventory),
+      equipment: result.save.equipment || createEquipmentState({
+        weapon: result.save.equippedWeapon || base.equippedWeapon,
+        chest: result.save.equippedArmor || base.equippedArmor
+      })
+    }));
+    loaded.migrationMessages = result.messages || [];
+    return loaded;
+  };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return recoverSavedHealth(applyEquipment(base));
-    const parsed = JSON.parse(raw);
-    return recoverSavedHealth(applyEquipment({
-      ...base,
-      ...parsed,
-      settings: { ...base.settings, ...(parsed.settings || {}) },
-      questProgress: { ...base.questProgress, ...(parsed.questProgress || {}) },
-      openedChests: parsed.openedChests || [],
-      inventory: parsed.inventory || base.inventory
-    }));
+    if (!raw) return finalizeSave(base);
+    return finalizeSave(raw);
   } catch {
-    return recoverSavedHealth(applyEquipment(base));
+    return finalizeSave(base);
   }
 }
 
@@ -286,48 +393,96 @@ function saveGame() {
     health: game.save.health,
     state: game.save.state || "alive",
     inventory: game.save.inventory,
+    equipment: game.save.equipment,
     equippedWeapon: game.save.equippedWeapon,
     equippedArmor: game.save.equippedArmor,
     openedChests: game.save.openedChests || [],
     questProgress: game.save.questProgress,
     settings: game.save.settings,
-    title: game.save.title
+    title: game.save.title,
+    migrations: game.save.migrations || [],
+    saveSchemaVersion: game.save.saveSchemaVersion,
+    spentAttributes: game.save.spentAttributes,
+    availableAttributePoints: game.save.availableAttributePoints,
+    availableSkillPoints: game.save.availableSkillPoints,
+    skillTreeNodes: game.save.skillTreeNodes || {},
+    learnedAbilities: game.save.learnedAbilities || [],
+    hotbar: game.save.hotbar,
+    savedBuilds: game.save.savedBuilds,
+    activeLoadout: game.save.activeLoadout,
+    bestiaryProgress: game.save.bestiaryProgress,
+    zoneCompletion: game.save.zoneCompletion,
+    waypoints: game.save.waypoints,
+    achievements: game.save.achievements,
+    firstClearRewards: game.save.firstClearRewards,
+    restStones: game.save.restStones,
+    mana: game.save.mana,
+    maxMana: game.save.maxMana
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
 }
 
 function renderMainMenu() {
   const selectedColor = Number(game.save.color || COLORS[0]);
+  const currentLevel = game.save.level || 1;
+  const latestNotes = PATCH_NOTES.versions[0];
   uiRoot.innerHTML = `
-    <section class="menu-screen">
+    <section class="menu-screen icezero-menu">
+      <div class="snowfield" aria-hidden="true"></div>
       <div class="menu-panel">
         <div class="brand-row">
           <div>
             <div class="kicker">Version ${GAME_VERSION}</div>
-            <h1>HeroQuest MMO</h1>
+            <h1 class="ice-title">HeroQuest MMO</h1>
+            <div class="ice-subtitle">ICEZERO</div>
           </div>
-          <div class="status-pill">Movement & Weapon Hold Fix</div>
+          <div class="status-pill">Major Expansion</div>
         </div>
-        <p class="intro">
-          The old kingdoms fell when shadow rifts opened across the world. From those rifts came slimes, goblins, wolves, wisps, golems, and greater beasts of darkness. Now new heroes gather in the town of Dawnrest, taking up simple weapons to push back the shadows one quest at a time.
-        </p>
-        <div class="setup-grid">
+        <div class="menu-status-grid">
+          <div><span>Server status</span><strong id="menu-server-status">Checking...</strong></div>
+          <div><span>Current character level</span><strong>${currentLevel}</strong></div>
+        </div>
+        <div class="news-card">
+          <strong>Expansion News</strong>
+          <small>Frostveil Reach is open. Train new abilities, build with attributes and skill trees, push into the Palace of Zero, and challenge Zero, the Ice Mage.</small>
+        </div>
+        <details class="menu-patch" open>
+          <summary>v${latestNotes.version} Patch Notes - ${latestNotes.title}</summary>
+          <p>${latestNotes.summary}</p>
+          <div class="patch-section-grid">
+            ${latestNotes.sections.map((section) => `
+              <section class="patch-card compact">
+                <h3>${section.title}</h3>
+                ${section.items.map((item) => `<div class="patch-item">${item}</div>`).join("")}
+              </section>
+            `).join("")}
+          </div>
+        </details>
+        <div class="menu-actions">
+          <button class="primary" id="continue-game">Continue Game</button>
+          <button id="character-menu">Character</button>
+          <button id="settings-menu">Settings</button>
+        </div>
+        <div class="menu-subpanel" id="menu-character">
           <label class="field">
             Hero name
             <input id="hero-name" maxlength="18" value="${escapeHtml(game.save.name || "")}" placeholder="New Hero" />
           </label>
-          <button class="primary" id="start-game">Enter Dawnrest</button>
-        </div>
-        <div class="field" style="margin-top:16px">
-          Hero color
-          <div class="swatches">
-            ${COLORS.map((color) => `
-              <button class="swatch ${color === selectedColor ? "selected" : ""}" data-color="${color}" style="background:#${color.toString(16).padStart(6, "0")}" aria-label="Select hero color"></button>
-            `).join("")}
+          <div class="field">
+            Hero color
+            <div class="swatches">
+              ${COLORS.map((color) => `
+                <button class="swatch ${color === selectedColor ? "selected" : ""}" data-color="${color}" style="background:#${color.toString(16).padStart(6, "0")}" aria-label="Select hero color"></button>
+              `).join("")}
+            </div>
           </div>
         </div>
-        <div class="setup-grid">
-          <button id="patch-notes-menu">Patch Notes</button>
+        <div class="menu-subpanel hidden" id="menu-settings-panel">
+          <label class="setting-row"><span>Master Volume</span><input data-menu-setting="master" type="range" min="0" max="1" step="0.05" value="${game.save.settings.master}" /></label>
+          <label class="setting-row"><span>SFX Volume</span><input data-menu-setting="sfx" type="range" min="0" max="1" step="0.05" value="${game.save.settings.sfx}" /></label>
+          <label class="setting-row"><span>Show FPS</span><input data-menu-setting="showFps" type="checkbox" ${game.save.settings.showFps ? "checked" : ""} /></label>
+        </div>
+        <div class="menu-secondary">
           <button id="reset-save">Reset Save</button>
         </div>
       </div>
@@ -344,15 +499,29 @@ function renderMainMenu() {
     });
   });
 
-  uiRoot.querySelector("#start-game").addEventListener("click", () => {
+  uiRoot.querySelector("#continue-game").addEventListener("click", () => {
     const name = uiRoot.querySelector("#hero-name").value.trim() || "New Hero";
     game.save = applyEquipment({ ...game.save, name, color: pickedColor });
     saveGame();
     startGame();
   });
 
-  uiRoot.querySelector("#patch-notes-menu").addEventListener("click", () => {
-    alert(formatPatchNotesPlainText());
+  uiRoot.querySelector("#character-menu").addEventListener("click", () => {
+    uiRoot.querySelector("#menu-character").classList.toggle("hidden");
+    playUiSound("tick");
+  });
+
+  uiRoot.querySelector("#settings-menu").addEventListener("click", () => {
+    uiRoot.querySelector("#menu-settings-panel").classList.toggle("hidden");
+    playUiSound("tick");
+  });
+
+  uiRoot.querySelectorAll("[data-menu-setting]").forEach((control) => {
+    control.addEventListener("input", () => {
+      const key = control.dataset.menuSetting;
+      game.save.settings[key] = control.type === "checkbox" ? control.checked : Number(control.value);
+      saveGame();
+    });
   });
 
   uiRoot.querySelector("#reset-save").addEventListener("click", () => {
@@ -361,6 +530,21 @@ function renderMainMenu() {
     playUiSound("low");
     renderMainMenu();
   });
+  refreshMenuServerStatus();
+}
+
+function refreshMenuServerStatus() {
+  const status = uiRoot.querySelector("#menu-server-status");
+  if (!status) return;
+  fetch(`${SERVER_URL}/health`)
+    .then((response) => {
+      status.textContent = response.ok ? "Online" : "Solo ready";
+      status.className = response.ok ? "online" : "offline";
+    })
+    .catch(() => {
+      status.textContent = "Solo ready";
+      status.className = "offline";
+    });
 }
 
 function startGame() {
@@ -372,11 +556,16 @@ function startGame() {
   game.input.distance = game.save.settings.cameraDistance;
   game.zone = game.save.zone || ZONES.HUB;
   loadZone(game.zone, true);
+  if (game.debugDemo === "frostward" && game.zone === ZONES.FROSTVEIL) {
+    game.playerGroup.position.set(8, 0, -8);
+  }
   setupNetwork();
   game.started = true;
   game.clock.start();
   requestAnimationFrame(loop);
   toast("Welcome to Dawnrest.");
+  for (const message of game.save.migrationMessages || []) toast(message);
+  delete game.save.migrationMessages;
   if (game.debugDemo === "combat") setTimeout(startCombatDemo, 650);
 }
 
@@ -388,6 +577,8 @@ function buildHud() {
           <div class="frame-title"><strong id="hero-label">Hero</strong><span id="zone-label">Dawnrest</span></div>
           <div class="bar health"><i id="health-bar"></i></div>
           <div class="stat-line"><span id="health-text">100 / 100 HP</span><span id="guard-text">Guard ready</span></div>
+          <div class="bar mana"><i id="mana-bar"></i></div>
+          <div class="stat-line"><span id="mana-text">50 / 50 mana</span><span id="points-text"></span></div>
           <div class="bar xp"><i id="xp-bar"></i></div>
           <div class="stat-line"><span id="level-text">Level 1</span><span id="xp-text">0 XP</span><span id="coins-text">50 coins</span></div>
         </div>
@@ -420,8 +611,14 @@ function buildHud() {
       <div class="bottom-left">
         <button class="icon" data-panel="inventory" title="Inventory (I)">I</button>
         <button class="icon" data-panel="character" title="Character (C)">C</button>
+        <button class="icon" data-panel="spellbook" title="Spellbook (K)">K</button>
+        <button class="icon" data-panel="skillTree" title="Skill Tree (N)">N</button>
+        <button class="icon" data-panel="loadouts" title="Loadouts (B)">B</button>
         <button class="icon" data-panel="party" title="Party (P)">P</button>
         <button class="icon" data-panel="quests" title="Quest Log (M)">M</button>
+        <button class="icon" data-panel="bestiary" title="Bestiary (Y)">Y</button>
+        <button class="icon" data-panel="achievements" title="Achievements (U)">U</button>
+        <button class="icon" data-panel="zones" title="Zone Completion (Z)">Z</button>
         <button class="icon" data-panel="settings" title="Settings (Esc)">S</button>
         <button class="icon" data-panel="help" title="Help (H)">H</button>
         <button class="icon" data-panel="patch" title="Patch Notes">?</button>
@@ -429,10 +626,10 @@ function buildHud() {
       <div class="bottom-center">
         <div class="hotbar" id="hotbar">
           ${HOTBAR_DEFS.map((slot) => `
-            <button class="hotbar-slot ${slot.locked ? "locked" : ""}" data-hotbar-action="${slot.action}" title="${escapeHtml(slot.tooltip)}" ${slot.locked ? "disabled" : ""}>
-              <span class="slot-key">${slot.key}</span>
-              <span class="slot-icon">${slot.icon}</span>
-              <span class="slot-name">${slot.name}</span>
+            <button class="hotbar-slot ${resolveHotbarSlot(slot).locked ? "locked" : ""}" data-hotbar-slot="${slot.slot}" data-hotbar-action="${resolveHotbarSlot(slot).action}" title="${escapeHtml(resolveHotbarSlot(slot).tooltip)}" ${resolveHotbarSlot(slot).locked ? "disabled" : ""}>
+              <span class="slot-key">${resolveHotbarSlot(slot).key}</span>
+              <span class="slot-icon">${resolveHotbarSlot(slot).icon}</span>
+              <span class="slot-name">${resolveHotbarSlot(slot).name}</span>
               <span class="slot-cooldown"></span>
               <span class="slot-count"></span>
             </button>
@@ -460,6 +657,9 @@ function buildHud() {
   ui.zoneLabel = uiRoot.querySelector("#zone-label");
   ui.healthBar = uiRoot.querySelector("#health-bar");
   ui.healthText = uiRoot.querySelector("#health-text");
+  ui.manaBar = uiRoot.querySelector("#mana-bar");
+  ui.manaText = uiRoot.querySelector("#mana-text");
+  ui.pointsText = uiRoot.querySelector("#points-text");
   ui.guardText = uiRoot.querySelector("#guard-text");
   ui.coinsText = uiRoot.querySelector("#coins-text");
   ui.xpBar = uiRoot.querySelector("#xp-bar");
@@ -488,6 +688,7 @@ function buildHud() {
   ui.defeatTimer = uiRoot.querySelector("#defeat-timer");
   ui.respawnButton = uiRoot.querySelector("#respawn-button");
   ui.bossFrame = uiRoot.querySelector("#boss-frame");
+  ui.bossName = uiRoot.querySelector("#boss-name");
   ui.bossBar = uiRoot.querySelector("#boss-bar");
   ui.bossPhase = uiRoot.querySelector("#boss-phase");
   ui.bossWarning = uiRoot.querySelector("#boss-warning");
@@ -501,7 +702,7 @@ function buildHud() {
     playUiSound("tick");
   });
   uiRoot.querySelectorAll("[data-hotbar-action]").forEach((button) => {
-    button.addEventListener("click", () => handleHotbarAction(button.dataset.hotbarAction));
+    button.addEventListener("click", () => handleHotbarSlot(Number(button.dataset.hotbarSlot)));
   });
   uiRoot.querySelectorAll("[data-panel]").forEach((button) => {
     button.addEventListener("click", () => openPanel(button.dataset.panel));
@@ -548,16 +749,22 @@ function setupInput() {
     game.input.keys.add(key);
     if (key === "i") openPanel("inventory");
     if (key === "c") openPanel("character");
+    if (key === "k") openPanel("spellbook");
+    if (key === "n") openPanel("skillTree");
+    if (key === "b") openPanel("loadouts");
     if (key === "p") openPanel("party");
     if (key === "m") openPanel("quests");
+    if (key === "y") openPanel("bestiary");
+    if (key === "u") openPanel("achievements");
+    if (key === "z") openPanel("zones");
     if (key === "h") openPanel("help");
     if (key === "escape") togglePanel("settings");
-    if (key === "1") handleHotbarAction("auto");
-    if (key === "2") handleHotbarAction("slash");
-    if (key === "3") handleHotbarAction("pulse");
-    if (key === "4") handleHotbarAction("guard");
-    if (key === "5") handleHotbarAction("potion");
-    if (key === "6") handleHotbarAction("dash");
+    if (key === "1") handleHotbarSlot(1);
+    if (key === "2") handleHotbarSlot(2);
+    if (key === "3") handleHotbarSlot(3);
+    if (key === "4") handleHotbarSlot(4);
+    if (key === "5") handleHotbarSlot(5);
+    if (key === "6") handleHotbarSlot(6);
     if (key === "q") handleHotbarAction("pulse");
     if (key === "e") interact();
     if (key === " ") handleHotbarAction("dash");
@@ -629,12 +836,32 @@ function serializeForServer() {
     xp: game.save.xp,
     coins: game.save.coins,
     health: game.save.health,
+    mana: game.save.mana,
+    maxMana: game.save.maxMana,
     state: game.save.state || "alive",
+    equipment: game.save.equipment,
     equippedWeapon: game.save.equippedWeapon,
     equippedArmor: game.save.equippedArmor,
     inventory: game.save.inventory,
     questProgress: game.save.questProgress,
-    title: game.save.title
+    title: game.save.title,
+    migrations: game.save.migrations || [],
+    saveSchemaVersion: game.save.saveSchemaVersion,
+    spentAttributes: game.save.spentAttributes,
+    availableAttributePoints: game.save.availableAttributePoints,
+    availableSkillPoints: game.save.availableSkillPoints,
+    skillTreeNodes: game.save.skillTreeNodes || {},
+    learnedAbilities: game.save.learnedAbilities || [],
+    hotbar: game.save.hotbar,
+    savedBuilds: game.save.savedBuilds,
+    activeLoadout: game.save.activeLoadout,
+    bestiaryProgress: game.save.bestiaryProgress,
+    zoneCompletion: game.save.zoneCompletion,
+    waypoints: game.save.waypoints,
+    openedChests: game.save.openedChests,
+    achievements: game.save.achievements,
+    firstClearRewards: game.save.firstClearRewards,
+    restStones: game.save.restStones
   };
 }
 
@@ -658,26 +885,51 @@ function loadZone(zoneId, moveToSpawn = false) {
   game.telegraphs.forEach((mesh) => game.scene.remove(mesh));
   game.telegraphs = [];
   if (game.world) game.scene.remove(game.world);
+  game.boss = null;
+  game.bossGroup = null;
+  game.iceMage = null;
+  game.iceMageGroup = null;
   game.world = new THREE.Group();
   game.scene.add(game.world);
 
   if (zoneId === ZONES.HUB) buildHub();
   if (zoneId === ZONES.FIELD) buildField();
+  if (zoneId === ZONES.FROSTVEIL) buildFrostveil();
+  if (zoneId === ZONES.PALACE) buildPalace();
   if (zoneId === ZONES.BOSS) buildBossArena();
 
   const zone = getZone(zoneId);
   if (moveToSpawn) {
     game.playerGroup.position.set(zone.spawn.x, 0, zone.spawn.z);
   }
-  if (zoneId === ZONES.FIELD && !game.online) spawnLocalEnemies();
+  if (zoneId === ZONES.FROSTVEIL) applyZoneEntryProgress("enter_frostveil", "frostveil_camp");
+  if (zoneId === ZONES.PALACE) applyZoneEntryProgress("enter_palace");
+  if ((zoneId === ZONES.FIELD || zoneId === ZONES.FROSTVEIL) && !game.online) spawnLocalEnemies();
   if (zoneId === ZONES.BOSS) startLocalBoss();
+  if (zoneId === ZONES.PALACE) startLocalIceMage();
   saveGame();
   updateHud();
   if (game.online) {
     game.socket.emit(NET.PLAYER_ZONE, { zone: zoneId, position: groupPosition(game.playerGroup) }, (ack) => {
+      if (!ack?.ok) {
+        toast(ack?.message || "That zone is locked.");
+        return;
+      }
+      if (ack?.player) applyServerPlayerUpdate(ack.player);
       if (ack?.snapshot) applySnapshot(ack.snapshot);
     });
   }
+}
+
+function applyZoneEntryProgress(eventId, waypointId = null) {
+  if (waypointId) {
+    const waypoint = unlockWaypoint(game.save, waypointId);
+    if (waypoint.ok) game.save = waypoint.player;
+  }
+  const questUpdate = applyQuestEvent(game.save.questProgress, eventId);
+  game.save.questProgress = questUpdate.progress;
+  for (const quest of questUpdate.completed) toast(`Quest complete: ${quest.name}`);
+  refreshLocalMetaProgress();
 }
 
 function buildHub() {
@@ -700,5 +952,7 @@ function buildHub() {
   addDummy(16, -12);
   addNpc(0, 13, "Quest Guide", "quest_guide", 0x75c792);
   addNpc(13, -9, "Combat Trainer", "combat_trainer", 0xf0c06d);
+  addNpc(2, 8, "Mage Trainer", "mage_trainer", 0x7d7dff);
+  addNpc(-2, 8, "Healer", "healer_trainer", 0xffe1a3);
   addNpc(-5, 15, "Shopkeeper", "shopkeeper", 0xc4473d);
   addNpc(24, 22, "Portal Keeper", "portal_keeper", 0x84bdff);

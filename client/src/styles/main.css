@@ -94,19 +94,63 @@ select {
   place-items: center;
   padding: 28px;
   background:
-    linear-gradient(rgba(7, 11, 18, 0.48), rgba(7, 11, 18, 0.72)),
-    radial-gradient(circle at 30% 18%, rgba(98, 158, 107, 0.22), transparent 28%),
-    radial-gradient(circle at 80% 80%, rgba(226, 99, 77, 0.18), transparent 30%),
+    linear-gradient(rgba(7, 11, 18, 0.38), rgba(7, 11, 18, 0.8)),
+    radial-gradient(circle at 20% 18%, rgba(111, 184, 255, 0.2), transparent 30%),
+    radial-gradient(circle at 82% 74%, rgba(85, 208, 122, 0.14), transparent 32%),
+    linear-gradient(135deg, rgba(18, 42, 56, 0.9), rgba(12, 14, 24, 0.98)),
     #111822;
+  overflow: hidden;
+}
+
+.icezero-menu::after,
+.snowfield {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+}
+
+.icezero-menu::after {
+  background-image:
+    linear-gradient(115deg, transparent 0 42%, rgba(151, 225, 255, 0.18) 42% 43%, transparent 43%),
+    linear-gradient(28deg, transparent 0 58%, rgba(246, 239, 226, 0.08) 58% 59%, transparent 59%);
+  opacity: 0.72;
+}
+
+.snowfield {
+  background-image:
+    radial-gradient(circle, rgba(246, 252, 255, 0.72) 0 1px, transparent 1px),
+    radial-gradient(circle, rgba(166, 224, 255, 0.55) 0 1px, transparent 1px),
+    radial-gradient(circle, rgba(246, 252, 255, 0.32) 0 2px, transparent 2px);
+  background-position: 0 0, 22px 18px, 46px 12px;
+  background-size: 86px 86px, 132px 132px, 180px 180px;
+  animation: snow-drift 18s linear infinite;
+  opacity: 0.62;
+}
+
+@keyframes snow-drift {
+  from {
+    transform: translate3d(0, -20px, 0);
+  }
+
+  to {
+    transform: translate3d(-42px, 90px, 0);
+  }
 }
 
 .menu-panel {
-  width: min(780px, calc(100vw - 34px));
+  position: relative;
+  z-index: 1;
+  width: min(940px, calc(100vw - 34px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
   border: 1px solid var(--edge);
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(22, 27, 35, 0.93), rgba(14, 16, 22, 0.94));
-  box-shadow: 0 24px 68px rgba(0, 0, 0, 0.55);
-  padding: clamp(22px, 4vw, 42px);
+  background:
+    linear-gradient(180deg, rgba(19, 31, 40, 0.92), rgba(10, 13, 21, 0.96)),
+    rgba(17, 20, 28, 0.92);
+  box-shadow: 0 24px 68px rgba(0, 0, 0, 0.58), 0 0 60px rgba(111, 184, 255, 0.14);
+  padding: clamp(18px, 3.4vw, 38px);
 }
 
 .brand-row {
@@ -135,6 +179,80 @@ h3 {
 h1 {
   font-size: clamp(36px, 7vw, 72px);
   line-height: 0.92;
+}
+
+.ice-title {
+  color: #edfaff;
+  text-shadow: 0 0 16px rgba(135, 218, 255, 0.72), 0 5px 0 rgba(31, 64, 86, 0.55);
+}
+
+.ice-subtitle {
+  color: #9ee7ff;
+  font-size: clamp(28px, 6vw, 64px);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  margin-top: 5px;
+  text-shadow: 0 0 24px rgba(139, 223, 255, 0.86);
+}
+
+.menu-status-grid,
+.menu-actions,
+.menu-secondary {
+  display: grid;
+  gap: 10px;
+}
+
+.menu-status-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 14px 0;
+}
+
+.menu-status-grid > div,
+.news-card,
+.menu-subpanel,
+.menu-patch {
+  border: 1px solid rgba(178, 230, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(4, 9, 16, 0.42);
+  padding: 12px;
+}
+
+.menu-status-grid span,
+.news-card small,
+.menu-patch p {
+  display: block;
+  color: var(--muted);
+  line-height: 1.42;
+}
+
+.news-card strong {
+  color: var(--gold);
+}
+
+.menu-patch {
+  margin-top: 12px;
+}
+
+.menu-patch summary {
+  cursor: pointer;
+  color: #dff8ff;
+  font-weight: 800;
+}
+
+.menu-actions {
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr);
+  margin-top: 16px;
+}
+
+.menu-subpanel {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.menu-secondary {
+  justify-items: start;
+  margin-top: 12px;
 }
 
 .intro {
@@ -309,6 +427,10 @@ h1 {
 
 .bar.xp > i {
   background: linear-gradient(90deg, #5fa8ff, #b38cff);
+}
+
+.bar.mana > i {
+  background: linear-gradient(90deg, #3f8cff, #70e4d2);
 }
 
 .ability-chip {
@@ -574,6 +696,92 @@ h1 {
   align-items: center;
 }
 
+.inventory-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 135px;
+  gap: 8px;
+}
+
+.equipment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.equipment-grid.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.equipment-slot,
+.inventory-slot {
+  border: 1px solid rgba(255, 230, 175, 0.14);
+  border-radius: 7px;
+  background: rgba(7, 10, 14, 0.36);
+}
+
+.equipment-slot {
+  min-height: 58px;
+  padding: 8px;
+  display: grid;
+  gap: 3px;
+}
+
+.equipment-slot span,
+.inventory-slot span {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.equipment-slot strong,
+.inventory-slot strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.equipment-slot small,
+.inventory-slot small {
+  color: var(--muted);
+  min-height: 16px;
+}
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inventory-slot {
+  min-height: 112px;
+  padding: 7px;
+  display: grid;
+  grid-template-rows: 13px minmax(30px, auto) 17px auto;
+  align-content: start;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.inventory-slot.empty,
+.inventory-slot.filtered {
+  opacity: 0.58;
+  place-items: center;
+  text-align: center;
+}
+
+.slot-actions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.slot-actions button {
+  min-height: 26px;
+  padding: 0 7px;
+  font-size: 11px;
+  box-shadow: none;
+}
+
 .boss-frame {
   left: 50%;
   top: 18px;
@@ -656,8 +864,14 @@ h1 {
 }
 
 @media (max-width: 720px) {
-  .setup-grid {
+  .setup-grid,
+  .menu-actions,
+  .menu-status-grid {
     grid-template-columns: 1fr;
+  }
+
+  .menu-screen {
+    padding: 16px;
   }
 
   .top-right {
@@ -683,6 +897,13 @@ h1 {
     width: 58px;
     height: 58px;
     min-height: 58px;
+  }
+
+  .inventory-tools,
+  .equipment-grid,
+  .equipment-grid.compact,
+  .inventory-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .combat-log {

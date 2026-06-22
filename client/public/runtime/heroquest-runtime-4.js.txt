@@ -7,6 +7,25 @@ function basicAttack() {
   performAttack({ kind: "auto", source: "manual" });
 }
 
+function resolveHotbarSlot(baseSlot) {
+  if (!baseSlot) return { slot: 0, action: "empty", name: "Empty", key: "", icon: "--", cooldownMs: 0, locked: true, tooltip: "Empty hotbar slot." };
+  const assigned = (game.save.hotbar || [])[baseSlot.slot - 1];
+  if (baseSlot.slot === 3) {
+    if (assigned === "hero_pulse" || assigned === "pulse") return { ...baseSlot, action: "pulse", requiresAbility: "hero_pulse" };
+    return { ...baseSlot, action: "empty3", name: "Empty", icon: "--", cooldownMs: 0, locked: true, tooltip: "Open the Spellbook with K to assign an ability." };
+  }
+  return baseSlot;
+}
+
+function handleHotbarSlot(slotNumber) {
+  const slot = resolveHotbarSlot(HOTBAR_DEFS.find((entry) => entry.slot === slotNumber));
+  if (!slot || slot.locked || slot.action.startsWith("empty")) {
+    toast("That hotbar slot is empty.");
+    return;
+  }
+  handleHotbarAction(slot.action);
+}
+
 function handleHotbarAction(action) {
   const slot = HOTBAR_DEFS.find((entry) => entry.action === action);
   if (!slot || slot.locked) return;
@@ -32,6 +51,7 @@ function toggleAutoAttack() {
     const nearest = findNearestEnemy(PLAYER_LIMITS.meleeRange + 1.2);
     if (nearest) selectTarget(nearest);
     else if (game.zone === ZONES.BOSS && game.boss && !game.boss.defeated) selectTarget("shadow_wyrm");
+    else if (game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated) selectTarget(ICE_MAGE_BOSS.id);
   }
   if (!getCurrentTarget()) {
     toast("Select a target first.");
@@ -55,7 +75,7 @@ function updateAutoAttack(now) {
     game.autoAttack = false;
     return;
   }
-  const maxRange = target.id === "shadow_wyrm" ? 8 : PLAYER_LIMITS.meleeRange;
+  const maxRange = target.id === "shadow_wyrm" || target.id === ICE_MAGE_BOSS.id ? 8 : PLAYER_LIMITS.meleeRange;
   if (distance2d(groupPosition(game.playerGroup), target.position) > maxRange + 0.25) {
     game.autoAttack = false;
     logCombat("Auto attack stopped: target out of range.");
@@ -85,17 +105,22 @@ function performAttack({ kind = "auto", source = "manual" } = {}) {
     target = { id: "shadow_wyrm", name: BOSS.name, position: { x: 0, y: 0, z: 0 }, health: game.boss.health, maxHealth: game.boss.maxHealth, level: BOSS.level };
     selectTarget("shadow_wyrm");
   }
+  if (!target && game.zone === ZONES.PALACE && game.iceMage && !game.iceMage.defeated) {
+    target = { id: ICE_MAGE_BOSS.id, name: ICE_MAGE_BOSS.name, position: { x: 0, y: 0, z: 0 }, health: game.iceMage.health, maxHealth: game.iceMage.maxHealth, level: ICE_MAGE_BOSS.level };
+    selectTarget(ICE_MAGE_BOSS.id);
+  }
   if (!target) {
     if (source !== "auto") logCombat("No target selected.");
     return false;
   }
-  const maxRange = target.id === "shadow_wyrm" ? 8 : PLAYER_LIMITS.meleeRange;
+  const maxRange = target.id === "shadow_wyrm" || target.id === ICE_MAGE_BOSS.id ? 8 : PLAYER_LIMITS.meleeRange;
   if (distance2d(groupPosition(game.playerGroup), target.position) > maxRange) {
     if (source !== "auto") logCombat(`${targetDisplayName(target)} is out of range.`);
     return false;
   }
 
   game.cooldowns[cooldownKey] = now;
+  markCombat();
   if (kind === "slash") game.cooldowns.attack = now;
   playUiSound(kind === "slash" ? "slash" : "swing");
   swingWeapon(kind);
@@ -112,6 +137,7 @@ function performAttack({ kind = "auto", source = "manual" } = {}) {
     return true;
   }
   if (target.id === "shadow_wyrm") hitBoss(damage, kind);
+  else if (target.id === ICE_MAGE_BOSS.id) hitIceMage(damage, kind);
   else damageLocalEnemy(target.id, damage, { kind });
   return true;
 }
@@ -121,11 +147,24 @@ function useHeroPulse() {
     toast("You cannot use abilities while defeated.");
     return;
   }
+  if (!knowsAbility("hero_pulse")) {
+    toast("Learn Hero Pulse from the Mage Trainer first.");
+    logCombat("Hero Pulse is not learned.");
+    return;
+  }
   const now = performance.now();
   const weapon = getItem(game.save.equippedWeapon);
   const cooldown = ABILITIES.hero_pulse.cooldownMs * (weapon?.pulseCooldownBonus || 1);
   if (game.cooldowns.pulse && now - game.cooldowns.pulse < cooldown) return;
+  const manaSpend = spendMana(game.save, ABILITIES.hero_pulse.manaCost || 0);
+  if (!manaSpend.ok) {
+    toast("Not enough mana.");
+    logCombat("Not enough mana for Hero Pulse.");
+    return;
+  }
+  game.save = manaSpend.player;
   game.cooldowns.pulse = now;
+  markCombat();
   playUiSound("pulse");
   pulseEffect();
   logCombat("Hero Pulse released.");
@@ -149,6 +188,19 @@ function useHeroPulse() {
   if (game.zone === ZONES.BOSS && game.boss && distance2d(groupPosition(game.playerGroup), { x: 0, z: 0 }) <= 8) {
     hitBoss(Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale), "pulse");
   }
+  if (game.zone === ZONES.PALACE && game.iceMage && distance2d(groupPosition(game.playerGroup), { x: 0, z: 0 }) <= 8) {
+    hitIceMage(Math.round(calculatePlayerDamage(game.save) * ABILITIES.hero_pulse.damageScale), "pulse");
+  }
+  saveGame();
+}
+
+function markCombat() {
+  game.lastCombatAt = performance.now();
+}
+
+function updateMana(dt) {
+  if (isLocallyDead()) return;
+  game.save = regenerateMana(game.save, dt, performance.now() - (game.lastCombatAt || 0) < 5000);
 }
 
 function useGuard() {
@@ -190,10 +242,11 @@ function usePotion() {
   }
   game.cooldowns.potion = now;
   game.save.inventory = result.inventory;
-  game.save.health = Math.min(game.save.maxHealth, game.save.health + ABILITIES.potion.heal);
+  const healAmount = ABILITIES.potion.heal + (game.save.potionBonus || 0);
+  game.save.health = Math.min(game.save.maxHealth, game.save.health + healAmount);
   playUiSound("pickup");
   toast("Health potion used.");
-  logCombat(`Potion restored ${ABILITIES.potion.heal} HP.`);
+  logCombat(`Potion restored ${healAmount} HP.`);
   saveGame();
 }
 
@@ -231,6 +284,8 @@ function awardEnemy(enemyDef) {
   logCombat(`Reward: ${loot.xp} XP and ${loot.coins} coins.`);
   const questUpdate = applyQuestKill(game.save.questProgress, enemyDef);
   game.save.questProgress = questUpdate.progress;
+  const bestiary = recordBestiaryKill(game.save, enemyDef, { elite: enemyDef.elite });
+  if (bestiary.ok) game.save = bestiary.player;
   if (game.save.level > beforeLevel) {
     toast(`Level ${game.save.level}! Fully healed.`);
     levelUpEffect();
@@ -239,9 +294,14 @@ function awardEnemy(enemyDef) {
   for (const quest of questUpdate.completed) {
     toast(`Quest complete: ${quest.name}`);
     game.save = addProgressRewards(game.save, quest.reward);
-    if (quest.reward.itemId) game.save.inventory = addInventoryItem(game.save.inventory, quest.reward.itemId, 1);
+    if (quest.reward.itemId) {
+      const inventoryResult = addInventoryStack(game.save.inventory, quest.reward.itemId, 1);
+      if (inventoryResult.ok) game.save.inventory = inventoryResult.inventory;
+      else toast("Inventory full. Quest item stayed pending.");
+    }
     if (quest.reward.title) game.save.title = quest.reward.title;
   }
+  refreshLocalMetaProgress();
   saveGame();
 }
 
@@ -265,7 +325,8 @@ function claimLoot(lootId) {
   if (game.online) {
     game.socket.emit(NET.LOOT_CLAIM, { lootId }, (ack) => {
       if (ack?.ok) {
-        applyLootBag(ack.bag);
+        if (ack.player) applyServerPlayerUpdate(ack.player);
+        else applyLootBag(ack.bag);
         game.loot.delete(lootId);
         toast("Loot collected.");
       } else {
@@ -277,4 +338,4 @@ function claimLoot(lootId) {
   const bag = game.loot.get(lootId);
   if (!bag) return toast("That loot is no longer available.");
   if (distance2d(groupPosition(game.playerGroup), bag.position) > 4) return toast("Move closer to collect that loot.");
-  applyLootBag(bag);
+  if (!applyLootBag(bag)) return;
