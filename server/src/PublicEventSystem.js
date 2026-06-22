@@ -2,7 +2,11 @@ import { ZONES } from "../../shared/constants.js";
 import { distance2d } from "../../shared/combat.js";
 
 const FROST_WARD_EVENT_ID = "defend_frost_ward";
-const FROST_WARD_CENTER = { x: 8, y: 0, z: -8 };
+const FROST_WARDS = [
+  { id: "frost_ward", label: "Frost Ward", position: { x: 8, y: 0, z: -8 } },
+  { id: "north_ward", label: "North Ward", position: { x: -18, y: 0, z: -22 } },
+  { id: "east_ward", label: "East Ward", position: { x: 24, y: 0, z: 10 } }
+];
 const EVENT_RADIUS = 22;
 const EVENT_INTERACTION_RADIUS = 5;
 const EVENT_START_DELAY_MS = 5000;
@@ -22,6 +26,9 @@ export class PublicEventSystem {
     this.state = {
       eventId: FROST_WARD_EVENT_ID,
       eventInstanceId: null,
+      wardId: null,
+      wardLabel: null,
+      wardPosition: null,
       zone: ZONES.FROSTVEIL,
       phase: "inactive",
       active: false,
@@ -54,6 +61,7 @@ export class PublicEventSystem {
           type: "public_event_failed",
           eventId: this.state.eventId,
           eventInstanceId: this.state.eventInstanceId,
+          ...this.wardEventFields(),
           zone: this.state.zone
         });
         return events;
@@ -66,6 +74,7 @@ export class PublicEventSystem {
           type: "public_event_completed",
           eventId: this.state.eventId,
           eventInstanceId: this.state.eventInstanceId,
+          ...this.wardEventFields(),
           zone: this.state.zone,
           participants: [...this.state.participants]
         });
@@ -80,6 +89,9 @@ export class PublicEventSystem {
     if (this.state.phase === "cooldown" && now >= this.state.nextAvailableAt) {
       this.state.phase = "inactive";
       this.state.eventInstanceId = null;
+      this.state.wardId = null;
+      this.state.wardLabel = null;
+      this.state.wardPosition = null;
       this.state.startedAt = 0;
       this.state.startsAt = 0;
       this.state.endsAt = 0;
@@ -91,38 +103,66 @@ export class PublicEventSystem {
     return events;
   }
 
-  activate(player, players, now = Date.now()) {
+  activate(player, players, now = Date.now(), wardId = null) {
     if (this.state.active || this.state.phase === "starting") return { ok: false, reason: "active" };
     if (now < this.state.nextAvailableAt) return { ok: false, reason: "cooldown", nextAvailableAt: this.state.nextAvailableAt };
-    if (!this.canActivate(player)) return { ok: false, reason: this.activationFailureReason(player) };
+    const ward = this.activatableWard(player, wardId);
+    if (!ward) return { ok: false, reason: this.activationFailureReason(player, wardId) };
 
-    const participants = this.eligibleParticipants(players);
+    const participants = this.eligibleParticipants(players, ward);
     if (!participants.some((entry) => entry.id === player.id)) participants.push(player);
-    this.prepareStart(participants, now);
+    this.prepareStart(participants, ward, now);
     return { ok: true, events: [this.createStartingEvent()] };
   }
 
-  canActivate(player) {
-    return Boolean(
-      player &&
-      player.zone === ZONES.FROSTVEIL &&
-      player.health > 0 &&
-      distance2d(player.position || {}, FROST_WARD_CENTER) <= EVENT_INTERACTION_RADIUS
-    );
+  activatableWard(player, requestedWardId = null) {
+    if (!player || player.zone !== ZONES.FROSTVEIL || player.health <= 0) return null;
+    const wards = requestedWardId ? FROST_WARDS.filter((ward) => ward.id === requestedWardId) : FROST_WARDS;
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const ward of wards) {
+      const dist = distance2d(player.position || {}, ward.position);
+      if (dist <= EVENT_INTERACTION_RADIUS && dist < nearestDistance) {
+        nearest = ward;
+        nearestDistance = dist;
+      }
+    }
+    return nearest;
   }
 
-  activationFailureReason(player) {
+  activationFailureReason(player, requestedWardId = null) {
     if (!player || player.health <= 0) return "dead";
     if (player.zone !== ZONES.FROSTVEIL) return "zone";
+    if (requestedWardId && !FROST_WARDS.some((ward) => ward.id === requestedWardId)) return "ward";
     return "range";
   }
 
-  eligibleParticipants(players) {
+  eligibleParticipants(players, ward = this.currentWard()) {
+    const center = ward?.position || this.currentWard().position;
     return [...players.values()].filter((player) => (
       player.zone === ZONES.FROSTVEIL &&
       player.health > 0 &&
-      distance2d(player.position || {}, FROST_WARD_CENTER) <= EVENT_RADIUS
+      distance2d(player.position || {}, center) <= EVENT_RADIUS
     ));
+  }
+
+  currentWard() {
+    if (!this.state.wardId) return FROST_WARDS[0];
+    const fallback = FROST_WARDS.find((ward) => ward.id === this.state.wardId) || FROST_WARDS[0];
+    return {
+      id: this.state.wardId,
+      label: this.state.wardLabel || fallback.label,
+      position: this.state.wardPosition || fallback.position
+    };
+  }
+
+  wardEventFields() {
+    const ward = this.currentWard();
+    return {
+      wardId: ward.id,
+      wardLabel: ward.label,
+      wardPosition: { ...ward.position }
+    };
   }
 
   createStartingEvent() {
@@ -130,6 +170,7 @@ export class PublicEventSystem {
       type: "public_event_starting",
       eventId: this.state.eventId,
       eventInstanceId: this.state.eventInstanceId,
+      ...this.wardEventFields(),
       zone: this.state.zone,
       name: "Defend the Frost Ward",
       startsAt: this.state.startsAt,
@@ -142,16 +183,20 @@ export class PublicEventSystem {
       type: "public_event_started",
       eventId: this.state.eventId,
       eventInstanceId: this.state.eventInstanceId,
+      ...this.wardEventFields(),
       zone: this.state.zone,
       name: "Defend the Frost Ward",
       participants: [...this.state.participants]
     };
   }
 
-  prepareStart(participants, now = Date.now()) {
+  prepareStart(participants, ward, now = Date.now()) {
     this.state.phase = "starting";
     this.state.active = false;
-    this.state.eventInstanceId = `${this.state.eventId}:${now}:${this.nextInstanceId}`;
+    this.state.wardId = ward.id;
+    this.state.wardLabel = ward.label;
+    this.state.wardPosition = { ...ward.position };
+    this.state.eventInstanceId = `${this.state.eventId}:${ward.id}:${now}:${this.nextInstanceId}`;
     this.nextInstanceId += 1;
     this.state.startedAt = now;
     this.state.startsAt = now + EVENT_START_DELAY_MS;
@@ -174,17 +219,19 @@ export class PublicEventSystem {
     const participantCount = Math.max(1, this.state.participants.size || 1);
     const waveSize = Math.min(6, 3 + participantCount);
     const enemyIds = FROST_WARD_WAVES[this.state.wave - 1] || FROST_WARD_WAVES[0];
+    const center = this.currentWard().position;
     for (let i = 0; i < waveSize; i += 1) {
       const angle = (i / waveSize) * Math.PI * 2;
       const radius = 6 + this.rng() * 4;
       const enemyId = this.state.wave === 3 && i === 0 ? "ice_golem" : enemyIds[i % enemyIds.length];
       const enemy = this.enemySystem.spawnEnemy(enemyId, {
-        x: FROST_WARD_CENTER.x + Math.cos(angle) * radius,
+        x: center.x + Math.cos(angle) * radius,
         y: 0,
-        z: FROST_WARD_CENTER.z + Math.sin(angle) * radius
+        z: center.z + Math.sin(angle) * radius
       }, ZONES.FROSTVEIL, {
         eventId: this.state.eventId,
         eventInstanceId: this.state.eventInstanceId,
+        wardId: this.state.wardId,
         eliteModifier: this.state.wave === 3 && enemyId === "ice_golem" ? "chilling" : null
       });
       this.state.currentWaveEnemyIds.add(enemy.id);
@@ -214,6 +261,7 @@ export class PublicEventSystem {
       type: "public_event_wave",
       eventId: this.state.eventId,
       eventInstanceId: this.state.eventInstanceId,
+      ...this.wardEventFields(),
       zone: this.state.zone,
       wave: this.state.wave,
       totalWaves: FROST_WARD_WAVES.length,
@@ -240,6 +288,7 @@ export class PublicEventSystem {
     return {
       eventId: this.state.eventId,
       eventInstanceId: this.state.eventInstanceId,
+      ...this.wardEventFields(),
       zone: this.state.zone,
       phase: this.state.phase,
       active: this.state.active,

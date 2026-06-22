@@ -1003,7 +1003,29 @@ test("server validates Frost Ward activation intent before starting countdown", 
   }
 });
 
-test("Frost Ward completion credits participants once per event instance and awards Shattered Ward once", () => {
+test("Frost Ward activation uses stable ward IDs for event payloads and spawns", () => {
+  const enemies = new EnemySystem({ rng: () => 0 });
+  const eventSystem = new PublicEventSystem({ enemySystem: enemies, rng: () => 0 });
+  const player = createPlayerState("p1", {
+    xp: 420,
+    zone: ZONES.FROSTVEIL,
+    position: { x: -18, y: 0, z: -22 }
+  });
+  const players = new Map([[player.id, player]]);
+
+  const activation = eventSystem.activate(player, players, 1000, "north_ward");
+  assert.equal(activation.ok, true);
+  assert.equal(activation.events[0].wardId, "north_ward");
+
+  const events = eventSystem.update(players, 6000);
+  assert.ok(events.some((event) => event.type === "public_event_started" && event.wardId === "north_ward"));
+  assert.ok(events.some((event) => event.type === "public_event_wave" && event.wardId === "north_ward"));
+  assert.ok(enemies.getZoneEnemies(ZONES.FROSTVEIL).some((enemy) => (
+    enemy.eventId === "defend_frost_ward" && enemy.wardId === "north_ward"
+  )));
+});
+
+test("Frost Ward completion credits participants once per stable ward and awards Shattered Ward once", () => {
   const emitted = [];
   const io = { to: (zone) => ({ emit: (type, payload) => emitted.push({ zone, type, payload }) }) };
   const room = new RoomManager(io);
@@ -1028,11 +1050,12 @@ test("Frost Ward completion credits participants once per event instance and awa
     room.players.set(participant.id, participant);
     room.players.set(bystander.id, bystander);
 
-    const completeWard = (eventInstanceId) => {
+    const completeWard = (wardId, eventInstanceId = `${wardId}:run`) => {
       room.handlePublicEvents([
         {
           type: "public_event_completed",
           eventId: "defend_frost_ward",
+          wardId,
           eventInstanceId,
           zone: ZONES.FROSTVEIL,
           participants: [participant.id]
@@ -1040,17 +1063,17 @@ test("Frost Ward completion credits participants once per event instance and awa
       ]);
     };
 
-    completeWard("defend_frost_ward:1");
-    completeWard("defend_frost_ward:1");
+    completeWard("frost_ward", "frost_ward:first");
+    completeWard("frost_ward", "frost_ward:repeat");
     assert.equal(participant.questProgress.shattered_ward.current, 1);
-    assert.deepEqual(participant.publicEventClaims, ["defend_frost_ward:1"]);
+    assert.deepEqual(participant.publicEventClaims, ["defend_frost_ward:frost_ward"]);
     assert.equal(bystander.questProgress.shattered_ward.current, 0);
 
-    completeWard("defend_frost_ward:2");
+    completeWard("north_ward");
     const coinsBeforeFinalCredit = participant.coins;
     const iceShardsBeforeFinalCredit = inventoryQuantity(participant.inventory, "ice_shard");
 
-    completeWard("defend_frost_ward:3");
+    completeWard("east_ward");
     assert.equal(participant.questProgress.shattered_ward.current, 3);
     assert.equal(participant.questProgress.shattered_ward.complete, true);
     assert.equal(participant.coins, coinsBeforeFinalCredit + 140);
@@ -1058,7 +1081,7 @@ test("Frost Ward completion credits participants once per event instance and awa
 
     const coinsAfterCompletion = participant.coins;
     const iceShardsAfterCompletion = inventoryQuantity(participant.inventory, "ice_shard");
-    completeWard("defend_frost_ward:3");
+    completeWard("east_ward", "east_ward:repeat");
     assert.equal(participant.coins, coinsAfterCompletion);
     assert.equal(inventoryQuantity(participant.inventory, "ice_shard"), iceShardsAfterCompletion);
     assert.ok(emitted.some((event) => event.type === NET.WORLD_EVENT && event.payload.type === "public_event_completed"));

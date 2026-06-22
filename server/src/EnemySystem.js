@@ -52,6 +52,8 @@ export class EnemySystem {
       maxHealth,
       eliteModifier: modifier?.id || null,
       eventId: options.eventId || null,
+      eventInstanceId: options.eventInstanceId || null,
+      wardId: options.wardId || null,
       targetId: null,
       lastAttackAt: 0,
       respawnAt: 0
@@ -137,7 +139,9 @@ export class EnemySystem {
       health: enemy.health,
       maxHealth: enemy.maxHealth,
       eliteModifier: enemy.eliteModifier || null,
-      eventId: enemy.eventId || null
+      eventId: enemy.eventId || null,
+      eventInstanceId: enemy.eventInstanceId || null,
+      wardId: enemy.wardId || null
     }));
   }
 }

@@ -199,7 +199,7 @@ export class RoomManager {
 
     socket.on(NET.PUBLIC_EVENT_ACTIVATE, (payload, ack) => {
       const player = this.players.get(socket.id);
-      const result = this.activatePublicEvent(player, payload?.eventId);
+      const result = this.activatePublicEvent(player, payload?.eventId, Date.now(), payload?.wardId);
       ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
       if (result.ok) this.broadcastSnapshots();
     });
@@ -654,10 +654,10 @@ export class RoomManager {
     }
   }
 
-  activatePublicEvent(player, eventId, now = Date.now()) {
+  activatePublicEvent(player, eventId, now = Date.now(), wardId = null) {
     if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
     if (eventId !== "defend_frost_ward") return { ok: false, reason: "event" };
-    const result = this.publicEvents.activate(player, this.players, now);
+    const result = this.publicEvents.activate(player, this.players, now, wardId);
     if (!result.ok) return result;
     this.handlePublicEvents(result.events);
     return { ok: true, event: result.events[0] || null };
@@ -746,6 +746,10 @@ function applyRewardItems(inventory, items = []) {
 }
 
 function publicEventClaimKey(event) {
+  if (event?.eventId === "defend_frost_ward") {
+    const wardId = typeof event.wardId === "string" ? event.wardId.trim() : "";
+    if (wardId) return `${event.eventId}:${wardId}`;
+  }
   const instanceId = typeof event?.eventInstanceId === "string" ? event.eventInstanceId.trim() : "";
   return instanceId || `${event?.eventId || "public_event"}:completed`;
 }

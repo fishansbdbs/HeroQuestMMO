@@ -209,6 +209,24 @@ function updateFps(now) {
   }
 }
 
+function findNearestFrostWard(player, range = 5) {
+  const wards = [
+    { id: "frost_ward", label: "Frost Ward", x: 8, z: -8 },
+    { id: "north_ward", label: "North Ward", x: -18, z: -22 },
+    { id: "east_ward", label: "East Ward", x: 24, z: 10 }
+  ];
+  let nearest = null;
+  let best = Infinity;
+  for (const ward of wards) {
+    const dist = distance2d(player, ward);
+    if (dist <= range && dist < best) {
+      nearest = ward;
+      best = dist;
+    }
+  }
+  return nearest;
+}
+
 function updatePrompt() {
   game.promptAction = null;
   if (isLocallyDead()) {
@@ -253,17 +271,19 @@ function updatePrompt() {
     ui.prompt.classList.remove("hidden");
     return;
   }
-  if (game.zone === ZONES.FROSTVEIL && distance2d(player, { x: 8, z: -8 }) < 5) {
+  const nearestWard = game.zone === ZONES.FROSTVEIL ? findNearestFrostWard(player, 5) : null;
+  if (nearestWard) {
     const event = game.publicEvent || {};
+    const wardLabel = event.wardLabel || nearestWard.label;
     if (event.phase === "starting") {
-      ui.prompt.textContent = "Frost Ward defense is starting.";
+      ui.prompt.textContent = `${wardLabel} defense is starting.`;
     } else if (event.active) {
-      ui.prompt.textContent = `Frost Ward wave ${event.wave || 1}/${event.totalWaves || 3}`;
+      ui.prompt.textContent = `${wardLabel} wave ${event.wave || 1}/${event.totalWaves || 3}`;
     } else if (event.phase === "cooldown") {
-      ui.prompt.textContent = "Frost Ward is recharging.";
+      ui.prompt.textContent = `${wardLabel} is recharging.`;
     } else {
-      game.promptAction = () => activatePublicEvent("defend_frost_ward");
-      ui.prompt.textContent = "E: Activate Frost Ward";
+      game.promptAction = () => activatePublicEvent("defend_frost_ward", nearestWard.id);
+      ui.prompt.textContent = `E: Activate ${nearestWard.label}`;
     }
     ui.prompt.classList.remove("hidden");
     return;
