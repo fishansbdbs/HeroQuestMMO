@@ -416,6 +416,7 @@ function saveGame() {
     waypoints: game.save.waypoints,
     achievements: game.save.achievements,
     firstClearRewards: game.save.firstClearRewards,
+    publicEventClaims: game.save.publicEventClaims || [],
     restStones: game.save.restStones,
     mana: game.save.mana,
     maxMana: game.save.maxMana

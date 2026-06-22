@@ -35,6 +35,7 @@ export function createPlayerState(socketId, profile = {}) {
     lastAttackAt: 0,
     lastAbilityAt: 0,
     partyId: null,
+    publicEventClaims: Array.isArray(migrated.publicEventClaims) ? migrated.publicEventClaims : [],
     title: migrated.title || ""
   };
 }
@@ -69,12 +70,14 @@ export function sanitizePlayer(player) {
     equippedArmor: player.equippedArmor,
     magicPower: player.magicPower,
     inventory: player.inventory,
+    questProgress: player.questProgress,
     waypoints: player.waypoints,
     openedChests: player.openedChests,
     bestiaryProgress: player.bestiaryProgress,
     zoneCompletion: player.zoneCompletion,
     achievements: player.achievements,
     firstClearRewards: player.firstClearRewards,
+    publicEventClaims: player.publicEventClaims,
     learnedAbilities: player.learnedAbilities,
     hotbar: player.hotbar,
     skillTreeNodes: player.skillTreeNodes,

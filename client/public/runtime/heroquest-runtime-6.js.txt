@@ -132,12 +132,14 @@ function syncRemotePlayers(players) {
       game.save.skillTreeNodes = player.skillTreeNodes || game.save.skillTreeNodes;
       game.save.savedBuilds = player.savedBuilds || game.save.savedBuilds;
       game.save.activeLoadout = player.activeLoadout || game.save.activeLoadout;
+      game.save.questProgress = player.questProgress || game.save.questProgress;
       game.save.waypoints = player.waypoints || game.save.waypoints;
       game.save.openedChests = player.openedChests || game.save.openedChests;
       game.save.bestiaryProgress = player.bestiaryProgress || game.save.bestiaryProgress;
       game.save.zoneCompletion = player.zoneCompletion || game.save.zoneCompletion;
       game.save.achievements = player.achievements || game.save.achievements;
       game.save.firstClearRewards = player.firstClearRewards || game.save.firstClearRewards;
+      game.save.publicEventClaims = player.publicEventClaims || game.save.publicEventClaims;
       game.save.title = player.title || game.save.title;
       game.save.state = player.state || game.save.state || "alive";
       if (player.respawnAt) {
@@ -861,12 +863,14 @@ function applyServerPlayerUpdate(player) {
     skillTreeNodes: player.skillTreeNodes || game.save.skillTreeNodes,
     savedBuilds: player.savedBuilds || game.save.savedBuilds,
     activeLoadout: player.activeLoadout || game.save.activeLoadout,
+    questProgress: player.questProgress || game.save.questProgress,
     waypoints: player.waypoints || game.save.waypoints,
     openedChests: player.openedChests || game.save.openedChests,
     bestiaryProgress: player.bestiaryProgress || game.save.bestiaryProgress,
     zoneCompletion: player.zoneCompletion || game.save.zoneCompletion,
     achievements: player.achievements || game.save.achievements,
     firstClearRewards: player.firstClearRewards || game.save.firstClearRewards,
+    publicEventClaims: player.publicEventClaims || game.save.publicEventClaims,
     title: player.title || game.save.title
   });
   game.save = applyEquipment(game.save);

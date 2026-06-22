@@ -123,6 +123,7 @@ function createDefaultIceZeroSave() {
     waypoints: ["dawnrest"],
     achievements: [],
     firstClearRewards: {},
+    publicEventClaims: [],
     restStones: 0,
     maxMana: BASE_MANA,
     mana: BASE_MANA
@@ -203,6 +204,7 @@ export function migrateIceZeroSave(input) {
     waypoints: uniqueStrings(source.waypoints).length ? uniqueStrings(source.waypoints) : clone(base.waypoints),
     achievements: uniqueStrings(source.achievements),
     firstClearRewards: asObject(source.firstClearRewards),
+    publicEventClaims: uniqueStrings(source.publicEventClaims),
     restStones: nonNegativeInt(source.restStones, 0),
     maxMana,
     mana
@@ -243,6 +245,7 @@ export function migrateFrostforgedSave(input) {
     setProgress: asObject(source.setProgress),
     tierTwoSkillNodes: asObject(source.tierTwoSkillNodes),
     buyback: uniqueObjects(source.buyback),
+    publicEventClaims: uniqueStrings(source.publicEventClaims),
     spellbookHotbarVersion: Math.max(2, nonNegativeInt(source.spellbookHotbarVersion, 2)),
     bounties: {
       active: uniqueObjects(bounties.active),

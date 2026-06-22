@@ -96,6 +96,7 @@ export class RoomManager {
         zoneCompletion: payload.zoneCompletion ?? player.zoneCompletion,
         achievements: payload.achievements ?? player.achievements,
         firstClearRewards: payload.firstClearRewards ?? player.firstClearRewards,
+        publicEventClaims: payload.publicEventClaims ?? player.publicEventClaims,
         title: payload.title ?? player.title
       });
     });
@@ -641,7 +642,45 @@ export class RoomManager {
 
   handlePublicEvents(events) {
     for (const event of events || []) {
+      if (event.type === "public_event_completed") this.awardPublicEventCompletion(event);
       this.io.to(event.zone || ZONES.FROSTVEIL).emit(NET.WORLD_EVENT, event);
+    }
+  }
+
+  awardPublicEventCompletion(event) {
+    if (event?.eventId !== "defend_frost_ward") return;
+    const participantIds = new Set(Array.isArray(event.participants) ? event.participants : []);
+    if (participantIds.size === 0 && this.publicEvents?.state?.participants) {
+      for (const id of this.publicEvents.state.participants) participantIds.add(id);
+    }
+
+    const claimKey = publicEventClaimKey(event);
+    const creditedPlayerIds = [];
+    for (const id of participantIds) {
+      const player = this.players.get(id);
+      if (!player || isPlayerDead(player)) continue;
+      player.publicEventClaims = uniqueStringList(player.publicEventClaims);
+      if (player.publicEventClaims.includes(claimKey)) continue;
+
+      player.publicEventClaims.push(claimKey);
+      const questUpdate = applyQuestEvent(player.questProgress, "activate_frost_ward");
+      player.questProgress = questUpdate.progress;
+      this.grantQuestCompletionRewards(player, questUpdate.completed);
+      this.refreshMetaProgress(player);
+      creditedPlayerIds.push(id);
+    }
+    event.creditedPlayerIds = creditedPlayerIds;
+  }
+
+  grantQuestCompletionRewards(player, completedQuests = []) {
+    for (const quest of completedQuests) {
+      if (!quest?.reward) continue;
+      Object.assign(player, addProgressRewards(player, quest.reward));
+      if (quest.reward.itemId) {
+        const item = addInventoryStack(player.inventory || [], quest.reward.itemId, 1);
+        if (item.ok) player.inventory = item.inventory;
+      }
+      if (quest.reward.title) player.title = quest.reward.title;
     }
   }
 
@@ -688,6 +727,16 @@ function applyRewardItems(inventory, items = []) {
     nextInventory = result.inventory;
   }
   return { ok: true, inventory: nextInventory, overflow: [] };
+}
+
+function publicEventClaimKey(event) {
+  const instanceId = typeof event?.eventInstanceId === "string" ? event.eventInstanceId.trim() : "";
+  return instanceId || `${event?.eventId || "public_event"}:completed`;
+}
+
+function uniqueStringList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((entry) => typeof entry === "string"))];
 }
 
 function clampPosition(position, zone) {

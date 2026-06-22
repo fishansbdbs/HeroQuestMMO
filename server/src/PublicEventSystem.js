@@ -16,8 +16,10 @@ export class PublicEventSystem {
   constructor({ enemySystem, rng = Math.random } = {}) {
     this.enemySystem = enemySystem;
     this.rng = rng;
+    this.nextInstanceId = 1;
     this.state = {
       eventId: FROST_WARD_EVENT_ID,
+      eventInstanceId: null,
       zone: ZONES.FROSTVEIL,
       active: false,
       startedAt: 0,
@@ -37,7 +39,12 @@ export class PublicEventSystem {
       this.removeDefeatedEventEnemies();
       if (now >= this.state.endsAt) {
         this.reset(now);
-        events.push({ type: "public_event_failed", eventId: this.state.eventId, zone: this.state.zone });
+        events.push({
+          type: "public_event_failed",
+          eventId: this.state.eventId,
+          eventInstanceId: this.state.eventInstanceId,
+          zone: this.state.zone
+        });
         return events;
       }
 
@@ -47,6 +54,7 @@ export class PublicEventSystem {
         events.push({
           type: "public_event_completed",
           eventId: this.state.eventId,
+          eventInstanceId: this.state.eventInstanceId,
           zone: this.state.zone,
           participants: [...this.state.participants]
         });
@@ -70,6 +78,7 @@ export class PublicEventSystem {
     events.push({
       type: "public_event_started",
       eventId: this.state.eventId,
+      eventInstanceId: this.state.eventInstanceId,
       zone: this.state.zone,
       name: "Defend the Frost Ward",
       participants: participants.map((player) => player.id)
@@ -80,6 +89,8 @@ export class PublicEventSystem {
 
   start(participants, now = Date.now()) {
     this.state.active = true;
+    this.state.eventInstanceId = `${this.state.eventId}:${now}:${this.nextInstanceId}`;
+    this.nextInstanceId += 1;
     this.state.startedAt = now;
     this.state.endsAt = now + EVENT_DURATION_MS;
     this.state.participants = new Set(participants.map((player) => player.id));
@@ -105,6 +116,7 @@ export class PublicEventSystem {
         z: FROST_WARD_CENTER.z + Math.sin(angle) * radius
       }, ZONES.FROSTVEIL, {
         eventId: this.state.eventId,
+        eventInstanceId: this.state.eventInstanceId,
         eliteModifier: this.state.wave === 3 && enemyId === "ice_golem" ? "chilling" : null
       });
       this.state.currentWaveEnemyIds.add(enemy.id);
@@ -133,6 +145,7 @@ export class PublicEventSystem {
     return {
       type: "public_event_wave",
       eventId: this.state.eventId,
+      eventInstanceId: this.state.eventInstanceId,
       zone: this.state.zone,
       wave: this.state.wave,
       totalWaves: FROST_WARD_WAVES.length,
@@ -156,6 +169,7 @@ export class PublicEventSystem {
     if (zone !== ZONES.FROSTVEIL) return null;
     return {
       eventId: this.state.eventId,
+      eventInstanceId: this.state.eventInstanceId,
       zone: this.state.zone,
       active: this.state.active,
       endsAt: this.state.endsAt,

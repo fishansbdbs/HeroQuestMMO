@@ -18,6 +18,7 @@ import { assignHotbarAbility, purchaseTrainerAbility, validateAbilityTarget } fr
 import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
 import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot } from "../../shared/equipment.js";
 import { INVENTORY_SLOT_COUNT, addInventoryStack } from "../../shared/inventory.js";
+import { NET } from "../../shared/netMessages.js";
 import { applyQuestEvent, applyQuestKill, createQuestProgress } from "../../shared/quests.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
@@ -310,7 +311,8 @@ test("Frostforged v2.1 save migration adds scaffold fields once without duplicat
     skillTreeNodes: { might_1: 2, arcana_1: 1 },
     inventory: [{ itemId: "small_health_potion", quantity: 3 }],
     learnedAbilities: ["fireball"],
-    hotbar: ["auto", "slash", "fireball", "guard", "potion", "dash", null, null]
+    hotbar: ["auto", "slash", "fireball", "guard", "potion", "dash", null, null],
+    publicEventClaims: ["defend_frost_ward:1", "defend_frost_ward:1"]
   }).save;
 
   assert.equal(migrated.saveSchemaVersion, FROSTFORGED_SAVE_SCHEMA_VERSION);
@@ -324,6 +326,7 @@ test("Frostforged v2.1 save migration adds scaffold fields once without duplicat
   assert.equal(migrated.spellbookHotbarVersion, 2);
   assert.equal(migrated.dungeonProgress.frostbound_vault.bestEncounterLevel, 0);
   assert.deepEqual(migrated.bounties.active, []);
+  assert.deepEqual(migrated.publicEventClaims, ["defend_frost_ward:1"]);
 
   const remigrated = migrateFrostforgedSave(migrated).save;
 
@@ -953,6 +956,71 @@ test("Frost Ward public event advances three tracked waves and completes without
 
   const cooldownAttempt = eventSystem.update(players);
   assert.equal(cooldownAttempt.some((event) => event.type === "public_event_started"), false);
+});
+
+test("Frost Ward completion credits participants once per event instance and awards Shattered Ward once", () => {
+  const emitted = [];
+  const io = { to: (zone) => ({ emit: (type, payload) => emitted.push({ zone, type, payload }) }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const participant = createPlayerState("p1", {
+      name: "Wardkeeper",
+      xp: 420,
+      coins: 0,
+      zone: ZONES.FROSTVEIL,
+      position: { x: 8, y: 0, z: -8 },
+      inventory: []
+    });
+    const bystander = createPlayerState("p2", {
+      name: "Bystander",
+      xp: 420,
+      coins: 0,
+      zone: ZONES.FROSTVEIL,
+      inventory: []
+    });
+    room.players.set(participant.id, participant);
+    room.players.set(bystander.id, bystander);
+
+    const completeWard = (eventInstanceId) => {
+      room.handlePublicEvents([
+        {
+          type: "public_event_completed",
+          eventId: "defend_frost_ward",
+          eventInstanceId,
+          zone: ZONES.FROSTVEIL,
+          participants: [participant.id]
+        }
+      ]);
+    };
+
+    completeWard("defend_frost_ward:1");
+    completeWard("defend_frost_ward:1");
+    assert.equal(participant.questProgress.shattered_ward.current, 1);
+    assert.deepEqual(participant.publicEventClaims, ["defend_frost_ward:1"]);
+    assert.equal(bystander.questProgress.shattered_ward.current, 0);
+
+    completeWard("defend_frost_ward:2");
+    const coinsBeforeFinalCredit = participant.coins;
+    const iceShardsBeforeFinalCredit = inventoryQuantity(participant.inventory, "ice_shard");
+
+    completeWard("defend_frost_ward:3");
+    assert.equal(participant.questProgress.shattered_ward.current, 3);
+    assert.equal(participant.questProgress.shattered_ward.complete, true);
+    assert.equal(participant.coins, coinsBeforeFinalCredit + 140);
+    assert.equal(inventoryQuantity(participant.inventory, "ice_shard"), iceShardsBeforeFinalCredit + 1);
+
+    const coinsAfterCompletion = participant.coins;
+    const iceShardsAfterCompletion = inventoryQuantity(participant.inventory, "ice_shard");
+    completeWard("defend_frost_ward:3");
+    assert.equal(participant.coins, coinsAfterCompletion);
+    assert.equal(inventoryQuantity(participant.inventory, "ice_shard"), iceShardsAfterCompletion);
+    assert.ok(emitted.some((event) => event.type === NET.WORLD_EVENT && event.payload.type === "public_event_completed"));
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
 });
 
 test("enemy defeat produces rewards and marks quest progress", () => {
