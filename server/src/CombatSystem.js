@@ -94,6 +94,30 @@ export class CombatSystem {
         projectile: createProjectilePayload(ability.id, player.position, target.enemy.position, target.enemy.id)
       };
     }
+    if (ability.id === "water_blast") {
+      const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.abilityRange);
+      if (!target.ok) return target;
+      const manaSpend = spendMana(player, ability.manaCost || 0);
+      if (!manaSpend.ok) return { ok: false, reason: "mana" };
+      Object.assign(player, manaSpend.player);
+      player.lastAbilityAt = now;
+      const damage = calculateAbilityDamage(player, ability, this.rng);
+      const result = this.enemySystem.damageEnemy({
+        zone: player.zone,
+        enemyInstanceId: target.enemy.id,
+        damage,
+        attackerId: player.id
+      });
+      const statusEffect = applyEnemyStatusEffect(target.enemy, createSlowStatusEffect(ability, now));
+      return {
+        ok: true,
+        abilityId: ability.id,
+        damage,
+        result,
+        statusEffect,
+        projectile: createProjectilePayload(ability.id, player.position, target.enemy.position, target.enemy.id, { knockback: ability.knockback || 0 })
+      };
+    }
     if (ability.id === "dark_punch") {
       const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.meleeRange);
       if (!target.ok) return target;
@@ -182,15 +206,36 @@ function calculateAbilityDamage(player, ability, rng = Math.random) {
   return Math.max(1, Math.round((base + scalingBonus) * (ability.damageScale || 1)));
 }
 
-function createProjectilePayload(type, from, to, targetId) {
-  return {
+function createProjectilePayload(type, from, to, targetId, options = {}) {
+  const isWaterBlast = type === "water_blast";
+  const payload = {
     type,
     targetId,
     from: { x: from?.x || 0, y: (from?.y || 0) + 1.2, z: from?.z || 0 },
     to: { x: to?.x || 0, y: (to?.y || 0) + 1, z: to?.z || 0 },
-    travelMs: 420,
-    impactEffect: type === "fireball" ? "burn" : "impact"
+    travelMs: isWaterBlast ? 360 : 420,
+    impactEffect: type === "fireball" ? "burn" : isWaterBlast ? "splash" : "impact"
   };
+  if (options.knockback) payload.knockback = options.knockback;
+  return payload;
+}
+
+function createSlowStatusEffect(ability, now) {
+  return {
+    type: "slow",
+    multiplier: ability.slowMultiplier ?? 0.55,
+    expiresAt: now + (ability.slowDurationMs ?? 3500),
+    sourceAbility: ability.id
+  };
+}
+
+function applyEnemyStatusEffect(enemy, effect) {
+  if (!enemy || !effect?.type) return null;
+  enemy.statusEffects = {
+    ...(enemy.statusEffects || {}),
+    [effect.type]: effect
+  };
+  return enemy.statusEffects[effect.type];
 }
 
 function createAreaEffectPayload(type, origin, ability) {

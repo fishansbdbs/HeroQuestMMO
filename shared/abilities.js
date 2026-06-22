@@ -93,6 +93,9 @@ export const ABILITIES = {
     manaCost: 25,
     range: 16,
     damageScale: 1,
+    slowMultiplier: 0.55,
+    slowDurationMs: 3500,
+    knockback: 1.2,
     description: "A water spell that damages and slows a hostile target."
   },
   healing_orb: {

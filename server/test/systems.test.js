@@ -161,6 +161,20 @@ test("client runtime animates Dark Punch melee acknowledgements", () => {
   assert.match(runtimeSource, /effect\.type === "dark_punch"/);
 });
 
+test("client runtime animates Water Blast projectile acknowledgements", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
+  const runtimeSource = runtimeParts
+    .map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8"))
+    .join("\n");
+  const combatAckSource = runtimeSource.match(/function handleCombatAck\([\s\S]*?\n}\r?\n\r?\nfunction damagePlayer/)?.[0] || "";
+
+  assert.ok(combatAckSource, "handleCombatAck runtime source should exist");
+  assert.match(combatAckSource, /projectileEffect\(result\.projectile\)/);
+  assert.match(runtimeSource, /projectile\.type === "water_blast"/);
+  assert.match(runtimeSource, /function waterBlastImpactEffect\(position\)/);
+});
+
 test("IceZero v2 title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
@@ -1735,6 +1749,69 @@ test("Dark Punch resolves close hostile targeting without projectile travel", ()
   });
   assert.equal(farResult.ok, false);
   assert.equal(farResult.reason, "range");
+});
+
+test("Water Blast damages a ranged hostile target and applies slow", () => {
+  const target = {
+    id: "enemy_water_target",
+    enemyId: "forest_wisp",
+    zone: ZONES.FIELD,
+    position: { x: 10, y: 0, z: 1 },
+    health: 55,
+    maxHealth: 55
+  };
+  const damageEvents = [];
+  const enemySystem = {
+    enemies: new Map([[target.id, target]]),
+    getZoneEnemies: () => [target],
+    damageEnemy(payload) {
+      damageEvents.push(payload);
+      target.health = Math.max(0, target.health - payload.damage);
+      return { hit: true, defeated: target.health <= 0, enemy: target };
+    }
+  };
+  const combat = new CombatSystem({ enemySystem, bossSystem: { damage: () => ({ defeated: false }) }, rng: () => 0.5 });
+  const player = applyEquipment({
+    ...STARTING_PLAYER,
+    id: "water_mage",
+    zone: ZONES.FIELD,
+    position: { x: 0, y: 0, z: 0 },
+    health: 100,
+    level: 5,
+    mana: 80,
+    learnedAbilities: ["water_blast"],
+    spentAttributes: { health: 0, strength: 0, magic: 8, defense: 0 },
+    lastAbilityAt: 0
+  });
+  const beforeMana = player.mana;
+  const beforeCast = Date.now();
+
+  const result = combat.ability(player, { abilityId: "water_blast", targetId: target.id });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.abilityId, "water_blast");
+  assert.equal(damageEvents.length, 1);
+  assert.equal(damageEvents[0].enemyInstanceId, target.id);
+  assert.ok(damageEvents[0].damage > 0);
+  assert.equal(player.mana, beforeMana - ABILITIES.water_blast.manaCost);
+  assert.ok(target.health < target.maxHealth);
+  assert.deepEqual(target.statusEffects?.slow, {
+    type: "slow",
+    multiplier: ABILITIES.water_blast.slowMultiplier,
+    expiresAt: target.statusEffects?.slow?.expiresAt,
+    sourceAbility: "water_blast"
+  });
+  assert.ok(target.statusEffects.slow.expiresAt >= beforeCast + ABILITIES.water_blast.slowDurationMs - 25);
+  assert.deepEqual(result.statusEffect, target.statusEffects.slow);
+  assert.deepEqual(result.projectile, {
+    type: "water_blast",
+    targetId: target.id,
+    from: { x: 0, y: 1.2, z: 0 },
+    to: { x: 10, y: 1, z: 1 },
+    travelMs: 360,
+    impactEffect: "splash",
+    knockback: ABILITIES.water_blast.knockback
+  });
 });
 
 test("loot claims validate alive state and range before deleting the bag", () => {
