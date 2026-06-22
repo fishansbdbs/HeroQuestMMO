@@ -900,7 +900,7 @@ test("server rejects underleveled Frostveil travel and unlocks the camp waypoint
   }
 });
 
-test("Frost Ward public event starts for Frostveil players and spawns event enemies", () => {
+test("Frost Ward public event waits for explicit activation before spawning enemies", () => {
   const enemies = new EnemySystem({ rng: () => 0 });
   const eventSystem = new PublicEventSystem({ enemySystem: enemies, rng: () => 0 });
   const player = createPlayerState("p1", {
@@ -908,8 +908,19 @@ test("Frost Ward public event starts for Frostveil players and spawns event enem
     zone: ZONES.FROSTVEIL,
     position: { x: 8, y: 0, z: -8 }
   });
+  const players = new Map([[player.id, player]]);
 
-  const events = eventSystem.update(new Map([[player.id, player]]), 1000);
+  const idleEvents = eventSystem.update(players, 1000);
+  assert.deepEqual(idleEvents, []);
+  assert.equal(eventSystem.snapshot(ZONES.FROSTVEIL).active, false);
+  assert.equal(enemies.getZoneEnemies(ZONES.FROSTVEIL).some((enemy) => enemy.eventId === "defend_frost_ward"), false);
+
+  const activation = eventSystem.activate(player, players, 1000);
+  assert.equal(activation.ok, true);
+  assert.ok(activation.events.some((event) => event.type === "public_event_starting" && event.eventId === "defend_frost_ward"));
+  assert.equal(enemies.getZoneEnemies(ZONES.FROSTVEIL).some((enemy) => enemy.eventId === "defend_frost_ward"), false);
+
+  const events = eventSystem.update(players, 6000);
   assert.ok(events.some((event) => event.type === "public_event_started" && event.eventId === "defend_frost_ward"));
   assert.equal(eventSystem.snapshot(ZONES.FROSTVEIL).active, true);
   assert.ok(enemies.getZoneEnemies(ZONES.FROSTVEIL).some((enemy) => enemy.eventId === "defend_frost_ward"));
@@ -932,30 +943,64 @@ test("Frost Ward public event advances three tracked waves and completes without
     }
   };
 
-  eventSystem.update(players);
+  const activation = eventSystem.activate(player, players, 1000);
+  assert.equal(activation.ok, true);
+  eventSystem.update(players, 6000);
   assert.equal(eventSystem.snapshot(ZONES.FROSTVEIL).wave, 1);
   assert.equal(eventSystem.snapshot(ZONES.FROSTVEIL).remaining, eventEnemies().length);
   assert.ok(eventEnemies().every((enemy) => ["frost_slime", "ice_goblin"].includes(enemy.enemyId)));
 
   defeatCurrentWave();
-  const waveTwo = eventSystem.update(players);
+  const waveTwo = eventSystem.update(players, 7000);
   assert.ok(waveTwo.some((event) => event.type === "public_event_wave" && event.wave === 2));
   assert.equal(eventSystem.snapshot(ZONES.FROSTVEIL).wave, 2);
   assert.ok(eventEnemies().every((enemy) => ["snow_wolf", "frost_wisp"].includes(enemy.enemyId)));
 
   defeatCurrentWave();
-  const waveThree = eventSystem.update(players);
+  const waveThree = eventSystem.update(players, 8000);
   assert.ok(waveThree.some((event) => event.type === "public_event_wave" && event.wave === 3));
   assert.equal(eventSystem.snapshot(ZONES.FROSTVEIL).wave, 3);
   assert.ok(eventEnemies().some((enemy) => enemy.enemyId === "ice_golem"));
 
   defeatCurrentWave();
-  const completed = eventSystem.update(players);
+  const completed = eventSystem.update(players, 9000);
   assert.ok(completed.some((event) => event.type === "public_event_completed" && event.eventId === "defend_frost_ward"));
   assert.equal(eventSystem.snapshot(ZONES.FROSTVEIL).active, false);
 
-  const cooldownAttempt = eventSystem.update(players);
-  assert.equal(cooldownAttempt.some((event) => event.type === "public_event_started"), false);
+  const cooldownAttempt = eventSystem.activate(player, players, 9000);
+  assert.equal(cooldownAttempt.ok, false);
+  assert.equal(cooldownAttempt.reason, "cooldown");
+});
+
+test("server validates Frost Ward activation intent before starting countdown", () => {
+  const emitted = [];
+  const io = { to: (zone) => ({ emit: (type, payload) => emitted.push({ zone, type, payload }) }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const player = createPlayerState("p1", {
+      xp: 420,
+      zone: ZONES.FROSTVEIL,
+      position: { x: 8, y: 0, z: -8 }
+    });
+    room.players.set(player.id, player);
+
+    const idleEvents = room.publicEvents.update(room.players, 1000);
+    assert.deepEqual(idleEvents, []);
+
+    const result = room.activatePublicEvent(player, "defend_frost_ward", 1000);
+    assert.equal(result.ok, true);
+    assert.ok(emitted.some((event) => event.type === NET.WORLD_EVENT && event.payload.type === "public_event_starting"));
+    assert.equal(room.enemies.getZoneEnemies(ZONES.FROSTVEIL).some((enemy) => enemy.eventId === "defend_frost_ward"), false);
+
+    room.handlePublicEvents(room.publicEvents.update(room.players, 6000));
+    assert.ok(emitted.some((event) => event.type === NET.WORLD_EVENT && event.payload.type === "public_event_started"));
+    assert.ok(room.enemies.getZoneEnemies(ZONES.FROSTVEIL).some((enemy) => enemy.eventId === "defend_frost_ward"));
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
 });
 
 test("Frost Ward completion credits participants once per event instance and awards Shattered Ward once", () => {

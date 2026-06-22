@@ -15,6 +15,7 @@ export const NET = {
   PLAYER_EQUIP_ITEM: "player:equip_item",
   WORLD_SNAPSHOT: "world:snapshot",
   WORLD_EVENT: "world:event",
+  PUBLIC_EVENT_ACTIVATE: "public_event:activate",
   COMBAT_ATTACK: "combat:attack",
   COMBAT_ABILITY: "combat:ability",
   LOOT_CLAIM: "loot:claim",

@@ -69,16 +69,25 @@ function handleWorldEvent(event) {
   if (event.type === "player_respawned" && event.playerId === game.socket?.id) {
     finishRespawn();
   }
+  if (event.type === "public_event_starting" && event.eventId === "defend_frost_ward") {
+    game.publicEvent = { ...game.publicEvent, ...event, active: false, phase: "starting" };
+    toast("Frost Ward awakening. Hold the line.");
+  }
   if (event.type === "public_event_started" && event.eventId === "defend_frost_ward") {
-    game.publicEvent = { ...game.publicEvent, ...event, active: true };
+    game.publicEvent = { ...game.publicEvent, ...event, active: true, phase: "active" };
     toast("Public event: Defend the Frost Ward.");
   }
   if (event.type === "public_event_wave" && event.eventId === "defend_frost_ward") {
+    game.publicEvent = { ...game.publicEvent, ...event, active: true, phase: "active" };
     toast(`Frost Ward wave ${event.wave} begins.`);
   }
   if (event.type === "public_event_completed" && event.eventId === "defend_frost_ward") {
-    game.publicEvent = { ...game.publicEvent, active: false };
+    game.publicEvent = { ...game.publicEvent, active: false, phase: "cooldown" };
     toast("Frost Ward secured.");
+  }
+  if (event.type === "public_event_failed" && event.eventId === "defend_frost_ward") {
+    game.publicEvent = { ...game.publicEvent, active: false, phase: "cooldown" };
+    toast("Frost Ward defense failed.");
   }
 }
 
@@ -514,6 +523,29 @@ function openChest(chestId) {
   }
   const reward = localChestReward(chestId);
   applyChestReward(chest, reward);
+}
+
+function activatePublicEvent(eventId) {
+  if (isLocallyDead()) return toast("You cannot activate events while defeated.");
+  if (eventId !== "defend_frost_ward") return;
+  if (!game.online) {
+    toast("Frost Ward defense requires the online server.");
+    return;
+  }
+  game.socket.emit(NET.PUBLIC_EVENT_ACTIVATE, { eventId }, (ack) => {
+    if (!ack?.ok) {
+      toast(publicEventActivationReason(ack?.reason));
+    }
+  });
+}
+
+function publicEventActivationReason(reason) {
+  if (reason === "active") return "The Frost Ward is already active.";
+  if (reason === "cooldown") return "The Frost Ward is recharging.";
+  if (reason === "range") return "Move closer to the Frost Ward.";
+  if (reason === "zone") return "The Frost Ward can only be activated in Frostveil.";
+  if (reason === "dead") return "You cannot activate events while defeated.";
+  return "The Frost Ward cannot be activated right now.";
 }
 
 function localChestReward(chestId) {

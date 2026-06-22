@@ -253,6 +253,21 @@ function updatePrompt() {
     ui.prompt.classList.remove("hidden");
     return;
   }
+  if (game.zone === ZONES.FROSTVEIL && distance2d(player, { x: 8, z: -8 }) < 5) {
+    const event = game.publicEvent || {};
+    if (event.phase === "starting") {
+      ui.prompt.textContent = "Frost Ward defense is starting.";
+    } else if (event.active) {
+      ui.prompt.textContent = `Frost Ward wave ${event.wave || 1}/${event.totalWaves || 3}`;
+    } else if (event.phase === "cooldown") {
+      ui.prompt.textContent = "Frost Ward is recharging.";
+    } else {
+      game.promptAction = () => activatePublicEvent("defend_frost_ward");
+      ui.prompt.textContent = "E: Activate Frost Ward";
+    }
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
   if (game.zone === ZONES.HUB && distance2d(player, { x: 16, z: -12 }) < 4) {
     game.promptAction = () => {
       selectTarget("training_dummy");

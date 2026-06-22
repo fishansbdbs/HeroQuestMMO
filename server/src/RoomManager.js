@@ -197,6 +197,13 @@ export class RoomManager {
       if (result.ok) this.broadcastSnapshots();
     });
 
+    socket.on(NET.PUBLIC_EVENT_ACTIVATE, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.activatePublicEvent(player, payload?.eventId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
     socket.on(NET.PLAYER_RESPAWN, (_payload, ack) => {
       const player = this.players.get(socket.id);
       if (!player) return;
@@ -522,7 +529,7 @@ export class RoomManager {
     this.handleBossEvents(bossEvents);
     const iceMageEvents = this.iceMage.update(this.players);
     this.handleIceMageEvents(iceMageEvents);
-    this.handlePublicEvents(this.publicEvents.update(this.players, dt));
+    this.handlePublicEvents(this.publicEvents.update(this.players));
     this.processDeaths();
     this.processRespawns();
     this.loot.cleanup();
@@ -645,6 +652,15 @@ export class RoomManager {
       if (event.type === "public_event_completed") this.awardPublicEventCompletion(event);
       this.io.to(event.zone || ZONES.FROSTVEIL).emit(NET.WORLD_EVENT, event);
     }
+  }
+
+  activatePublicEvent(player, eventId, now = Date.now()) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    if (eventId !== "defend_frost_ward") return { ok: false, reason: "event" };
+    const result = this.publicEvents.activate(player, this.players, now);
+    if (!result.ok) return result;
+    this.handlePublicEvents(result.events);
+    return { ok: true, event: result.events[0] || null };
   }
 
   awardPublicEventCompletion(event) {
