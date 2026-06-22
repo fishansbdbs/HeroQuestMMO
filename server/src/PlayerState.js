@@ -70,6 +70,8 @@ export function sanitizePlayer(player) {
     magicPower: player.magicPower,
     inventory: player.inventory,
     waypoints: player.waypoints,
+    openedChests: player.openedChests,
+    bestiaryProgress: player.bestiaryProgress,
     zoneCompletion: player.zoneCompletion,
     achievements: player.achievements,
     firstClearRewards: player.firstClearRewards,

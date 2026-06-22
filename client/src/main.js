@@ -14,6 +14,7 @@ import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from
 import { activateLoadout, purchaseSkillNode, saveLoadout, SKILL_NODES, SKILL_TREES } from "../../shared/skillTrees.js";
 import { applyQuestEvent, applyQuestKill, createQuestProgress, getQuestList } from "../../shared/quests.js";
 import { getZone, ZONE_DEFS, canEnterZone, unlockWaypoint } from "../../shared/zones.js";
+import { ACHIEVEMENTS, TITLES, calculateZoneCompletion, recordBestiaryKill, refreshMetaProgress, refreshZoneCompletion, setActiveTitle } from "../../shared/metaProgress.js";
 import {
   addInventoryItem,
   addProgressRewards,
@@ -88,6 +89,13 @@ const bootRuntime = new Function(
   "ZONE_DEFS",
   "canEnterZone",
   "unlockWaypoint",
+  "ACHIEVEMENTS",
+  "TITLES",
+  "calculateZoneCompletion",
+  "recordBestiaryKill",
+  "refreshMetaProgress",
+  "refreshZoneCompletion",
+  "setActiveTitle",
   "addInventoryItem",
   "addProgressRewards",
   "applyEquipment",
@@ -154,6 +162,13 @@ bootRuntime(
   ZONE_DEFS,
   canEnterZone,
   unlockWaypoint,
+  ACHIEVEMENTS,
+  TITLES,
+  calculateZoneCompletion,
+  recordBestiaryKill,
+  refreshMetaProgress,
+  refreshZoneCompletion,
+  setActiveTitle,
   addInventoryItem,
   addProgressRewards,
   applyEquipment,

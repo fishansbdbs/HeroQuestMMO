@@ -54,6 +54,8 @@ function defeatBoss() {
   game.save.title = "Wyrm-Touched";
   const questUpdate = applyQuestKill(game.save.questProgress, { id: BOSS.id, family: BOSS.family });
   game.save.questProgress = questUpdate.progress;
+  game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [BOSS.id]: true };
+  refreshLocalMetaProgress();
   const drop = rollLoot(BOSS);
   const lootId = `boss_loot_${game.localLootId++}`;
   game.loot.set(lootId, { id: lootId, zone: ZONES.BOSS, position: { x: 0, y: 0.25, z: 0 }, coins: 0, items: drop.items });
@@ -214,6 +216,8 @@ function finishRespawn(serverPlayer = null) {
 function completeBossQuestLocal(reward = { xp: BOSS.xp, coins: BOSS.coins }) {
   if (game.save.questProgress?.shadow_at_the_peak?.complete) {
     game.save.title = "Wyrm-Touched";
+    game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [BOSS.id]: true };
+    refreshLocalMetaProgress();
     saveGame();
     return;
   }
@@ -222,6 +226,8 @@ function completeBossQuestLocal(reward = { xp: BOSS.xp, coins: BOSS.coins }) {
   game.save.title = "Wyrm-Touched";
   const questUpdate = applyQuestKill(game.save.questProgress, { id: BOSS.id, family: BOSS.family });
   game.save.questProgress = questUpdate.progress;
+  game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [BOSS.id]: true };
+  refreshLocalMetaProgress();
   for (const quest of questUpdate.completed) toast(`Quest complete: ${quest.name}`);
   if (game.save.level > beforeLevel) {
     toast(`Level ${game.save.level}! Fully healed.`);
@@ -233,6 +239,8 @@ function completeBossQuestLocal(reward = { xp: BOSS.xp, coins: BOSS.coins }) {
 function completeIceMageQuestLocal(reward = { xp: ICE_MAGE_BOSS.xp, coins: ICE_MAGE_BOSS.coins }) {
   if (game.save.questProgress?.icezero?.complete) {
     game.save.title = "Icebreaker";
+    game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [ICE_MAGE_BOSS.id]: true };
+    refreshLocalMetaProgress();
     saveGame();
     return;
   }
@@ -251,6 +259,7 @@ function completeIceMageQuestLocal(reward = { xp: ICE_MAGE_BOSS.xp, coins: ICE_M
     if (rare.ok) game.save.inventory = rare.inventory;
     toast("First clear: Icebreaker earned.");
   }
+  refreshLocalMetaProgress();
   for (const quest of questUpdate.completed) toast(`Quest complete: ${quest.name}`);
   if (game.save.level > beforeLevel) {
     toast(`Level ${game.save.level}! Fully healed.`);

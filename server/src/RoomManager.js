@@ -1,5 +1,5 @@
 import { PLAYER_STATES, RESPAWN_DELAY_MS, SNAPSHOT_MS, SERVER_TICK_MS, ZONES } from "../../shared/constants.js";
-import { ICE_MAGE_BOSS } from "../../shared/enemies.js";
+import { BOSS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { NET } from "../../shared/netMessages.js";
 import { addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
 import { equipItemToSlot } from "../../shared/equipment.js";
@@ -9,6 +9,7 @@ import { assignHotbarAbility, purchaseTrainerAbility } from "../../shared/traine
 import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
 import { applyQuestEvent, applyQuestKill } from "../../shared/quests.js";
 import { canEnterZone, unlockWaypoint } from "../../shared/zones.js";
+import { recordBestiaryKill, refreshMetaProgress as refreshPlayerMetaProgress } from "../../shared/metaProgress.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
 import { LootSystem } from "./LootSystem.js";
 import { EnemySystem } from "./EnemySystem.js";
@@ -88,7 +89,11 @@ export class RoomManager {
         equippedArmor: payload.equippedArmor ?? player.equippedArmor,
         questProgress: payload.questProgress ?? player.questProgress,
         waypoints: payload.waypoints ?? player.waypoints,
+        openedChests: payload.openedChests ?? player.openedChests,
+        bestiaryProgress: payload.bestiaryProgress ?? player.bestiaryProgress,
         zoneCompletion: payload.zoneCompletion ?? player.zoneCompletion,
+        achievements: payload.achievements ?? player.achievements,
+        firstClearRewards: payload.firstClearRewards ?? player.firstClearRewards,
         title: payload.title ?? player.title
       });
     });
@@ -231,10 +236,16 @@ export class RoomManager {
   applyCombatRewards(player, result) {
     if (isPlayerDead(player)) return;
     const defeat = result?.result?.defeated ? result.result : null;
-    if (defeat?.reward) {
-      Object.assign(player, addProgressRewards(player, defeat.reward));
-      const questUpdate = applyQuestKill(player.questProgress, defeat.enemyDef);
-      player.questProgress = questUpdate.progress;
+    if (defeat) {
+      if (defeat.reward) Object.assign(player, addProgressRewards(player, defeat.reward));
+      const enemyDef = defeat.enemyDef || defeat.enemy;
+      if (enemyDef) {
+        const questUpdate = applyQuestKill(player.questProgress, enemyDef);
+        player.questProgress = questUpdate.progress;
+        const bestiary = recordBestiaryKill(player, enemyDef, { elite: defeat.enemy?.eliteModifier || enemyDef.elite });
+        if (bestiary.ok) Object.assign(player, bestiary.player);
+      }
+      this.refreshMetaProgress(player);
     }
     const boss = result?.boss || result?.result?.boss;
     if (boss?.defeated || boss?.boss?.defeated) {
@@ -244,6 +255,12 @@ export class RoomManager {
     if (iceMage?.defeated || iceMage?.boss?.defeated || iceMage?.iceMage?.defeated) {
       this.awardIceMageDefeat(iceMage, player);
     }
+  }
+
+  refreshMetaProgress(player) {
+    if (!player) return;
+    const result = refreshPlayerMetaProgress(player);
+    if (result?.player) Object.assign(player, result.player);
   }
 
   allocateAttribute(player, attributeId, count = 1) {
@@ -320,6 +337,7 @@ export class RoomManager {
       player.questProgress = questUpdate.progress;
       this.iceMage.start();
     }
+    this.refreshMetaProgress(player);
     return { ok: true };
   }
 
@@ -374,7 +392,10 @@ export class RoomManager {
       Object.assign(player, addProgressRewards(player, reward));
       const questUpdate = applyQuestKill(player.questProgress, { id: "shadow_wyrm", family: "dragon" });
       player.questProgress = questUpdate.progress;
+      player.firstClearRewards = player.firstClearRewards || {};
+      if (!player.firstClearRewards[BOSS.id]) player.firstClearRewards[BOSS.id] = true;
       player.title = "Wyrm-Touched";
+      this.refreshMetaProgress(player);
     }
     this.io.to(ZONES.BOSS).emit(NET.WORLD_EVENT, {
       type: "boss_defeated",
@@ -417,6 +438,7 @@ export class RoomManager {
         const rare = addInventoryStack(player.inventory || [], "frostspire_staff", 1);
         if (rare.ok) player.inventory = rare.inventory;
       }
+      this.refreshMetaProgress(player);
     }
 
     this.io.to(ZONES.PALACE).emit(NET.WORLD_EVENT, {
@@ -550,6 +572,8 @@ export class RoomManager {
     chest.openedBy.add(player.id);
     player.coins += reward.coins;
     player.inventory = inventoryResult.inventory;
+    player.openedChests = Array.from(new Set([...(player.openedChests || []), chestId]));
+    this.refreshMetaProgress(player);
     return { ok: true, chestId, reward, player: sanitizePlayer(player) };
   }
 

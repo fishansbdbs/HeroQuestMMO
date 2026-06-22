@@ -274,7 +274,35 @@ function updatePrompt() {
     ui.prompt.classList.remove("hidden");
     return;
   }
+  const breadcrumb = currentBreadcrumb();
+  if (breadcrumb) {
+    ui.prompt.textContent = breadcrumb;
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
   ui.prompt.classList.add("hidden");
+}
+
+function currentBreadcrumb() {
+  if (game.zone === ZONES.HUB && game.save.level >= 2 && !knowsAbility("hero_pulse")) {
+    return "Marker: Arcanist Mira trains magic near the plaza.";
+  }
+  if (game.zone === ZONES.HUB && game.save.level >= 5 && !(game.save.waypoints || []).includes("frostveil_camp")) {
+    return "Marker: Greenvale portal leads toward Frostveil.";
+  }
+  if (game.zone === ZONES.FIELD && game.save.level >= 5 && !game.save.questProgress?.frozen_road?.complete) {
+    return "Marker: Frostveil portal waits on the northwest ridge.";
+  }
+  if (game.zone === ZONES.FROSTVEIL && !game.save.questProgress?.shattered_ward?.complete) {
+    return "Marker: Frozen wards glow across Frostveil.";
+  }
+  if (game.zone === ZONES.FROSTVEIL && game.save.level >= 8 && !game.save.questProgress?.palace_of_zero?.complete) {
+    return "Marker: Palace gate rises northeast.";
+  }
+  if (game.zone === ZONES.PALACE && !game.save.questProgress?.icezero?.complete) {
+    return "Marker: Zero waits in the central chamber.";
+  }
+  return "";
 }
 
 function interact() {

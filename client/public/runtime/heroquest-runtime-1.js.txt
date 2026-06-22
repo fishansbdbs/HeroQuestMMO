@@ -207,6 +207,10 @@ function installDebugHooks() {
           slotCount: INVENTORY_SLOT_COUNT
         },
         waypoints: game.save.waypoints || [],
+        openedChests: game.save.openedChests || [],
+        bestiaryProgress: game.save.bestiaryProgress || {},
+        zoneCompletion: game.save.zoneCompletion || {},
+        achievements: game.save.achievements || [],
         publicEvent: game.publicEvent,
         iceMage: game.iceMage,
         telegraphCount: game.telegraphs.length,
@@ -254,6 +258,7 @@ function bootstrap() {
     const phase5Smoke = params.get("phase5") === "equipment";
     const phase6Smoke = params.get("phase6") === "frostveil" || smoke === "frostveil";
     const phase7Smoke = params.get("phase7") === "ice_mage" || smoke === "palace";
+    const phase8Smoke = params.get("phase8") === "meta";
     const smokeInventory = phase5Smoke
       ? [
           { itemId: "apprentice_staff", quantity: 1 },
@@ -275,9 +280,29 @@ function bootstrap() {
       skillTreeNodes: phase4Smoke ? {} : game.save.skillTreeNodes,
       savedBuilds: phase4Smoke ? {} : game.save.savedBuilds,
       activeLoadout: phase4Smoke ? null : game.save.activeLoadout,
+      bestiaryProgress: phase8Smoke ? {} : game.save.bestiaryProgress,
+      zoneCompletion: phase8Smoke ? {} : game.save.zoneCompletion,
+      achievements: phase8Smoke ? [] : game.save.achievements,
+      waypoints: phase8Smoke ? ["dawnrest", "frostveil_camp"] : game.save.waypoints,
+      openedChests: phase8Smoke ? ["frostveil_snow_cache"] : game.save.openedChests,
       zone,
       settings: { ...game.save.settings, showFps: true }
     });
+    if (phase8Smoke) {
+      game.save.learnedAbilities = ["hero_pulse"];
+      game.save.firstClearRewards = { ...(game.save.firstClearRewards || {}), [ICE_MAGE_BOSS.id]: true };
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "enter_frostveil").progress;
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "activate_frost_ward").progress;
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "activate_frost_ward").progress;
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "activate_frost_ward").progress;
+      game.save.questProgress = applyQuestEvent(game.save.questProgress, "enter_palace").progress;
+      game.save.questProgress = applyQuestKill(game.save.questProgress, ICE_MAGE_BOSS).progress;
+      for (const enemyId of ["frost_slime", "ice_goblin", "snow_wolf", "frost_wisp", "ice_golem", "frozen_knight"]) {
+        const bestiary = recordBestiaryKill(game.save, ENEMIES[enemyId], { elite: enemyId === "ice_golem" });
+        if (bestiary.ok) game.save = bestiary.player;
+      }
+      game.save = refreshMetaProgress(game.save).player;
+    }
     startGame();
     return;
   }
@@ -533,6 +558,9 @@ function buildHud() {
         <button class="icon" data-panel="loadouts" title="Loadouts (B)">B</button>
         <button class="icon" data-panel="party" title="Party (P)">P</button>
         <button class="icon" data-panel="quests" title="Quest Log (M)">M</button>
+        <button class="icon" data-panel="bestiary" title="Bestiary (Y)">Y</button>
+        <button class="icon" data-panel="achievements" title="Achievements (U)">U</button>
+        <button class="icon" data-panel="zones" title="Zone Completion (Z)">Z</button>
         <button class="icon" data-panel="settings" title="Settings (Esc)">S</button>
         <button class="icon" data-panel="help" title="Help (H)">H</button>
         <button class="icon" data-panel="patch" title="Patch Notes">?</button>
@@ -668,6 +696,9 @@ function setupInput() {
     if (key === "b") openPanel("loadouts");
     if (key === "p") openPanel("party");
     if (key === "m") openPanel("quests");
+    if (key === "y") openPanel("bestiary");
+    if (key === "u") openPanel("achievements");
+    if (key === "z") openPanel("zones");
     if (key === "h") openPanel("help");
     if (key === "escape") togglePanel("settings");
     if (key === "1") handleHotbarSlot(1);
@@ -769,6 +800,7 @@ function serializeForServer() {
     bestiaryProgress: game.save.bestiaryProgress,
     zoneCompletion: game.save.zoneCompletion,
     waypoints: game.save.waypoints,
+    openedChests: game.save.openedChests,
     achievements: game.save.achievements,
     firstClearRewards: game.save.firstClearRewards,
     restStones: game.save.restStones
@@ -839,6 +871,7 @@ function applyZoneEntryProgress(eventId, waypointId = null) {
   const questUpdate = applyQuestEvent(game.save.questProgress, eventId);
   game.save.questProgress = questUpdate.progress;
   for (const quest of questUpdate.completed) toast(`Quest complete: ${quest.name}`);
+  refreshLocalMetaProgress();
 }
 
 function buildHub() {

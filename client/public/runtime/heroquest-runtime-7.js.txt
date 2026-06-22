@@ -6,6 +6,86 @@
   }).join("");
 }
 
+function renderBestiaryPanel() {
+  refreshLocalMetaProgress();
+  ui.panelTitle.textContent = "Bestiary";
+  const entries = Object.values(ENEMIES).filter((enemy) => enemy.id !== "training_dummy");
+  ui.panelContent.innerHTML = entries.map((enemy) => {
+    const progress = game.save.bestiaryProgress?.[enemy.id] || {};
+    const discovered = Boolean(progress.discovered || progress.kills > 0);
+    const drops = (enemy.loot || []).slice(0, 3).map((drop) => getItem(drop.itemId)?.name || drop.itemId).join(", ");
+    return `<div class="item-row ${discovered ? "complete" : ""}">
+      <div>
+        <strong>${discovered ? enemy.name : "Undiscovered"}</strong>
+        <small>${getZone(enemy.zone).name} | Lv. ${enemy.level} | ${enemy.family}</small>
+        <small>${discovered ? `Common drops: ${drops || "none"}` : "Defeat this enemy to reveal its entry."}</small>
+      </div>
+      <div class="shop-actions">
+        <span>${progress.kills || 0} kills</span>
+        <span>${progress.eliteKills || 0} elite</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderAchievementsPanel() {
+  refreshLocalMetaProgress();
+  ui.panelTitle.textContent = "Achievements";
+  const unlocked = new Set(game.save.achievements || []);
+  ui.panelContent.innerHTML = `
+    <div class="stat-line"><span>Active Title</span><strong>${escapeHtml(game.save.title || "None")}</strong></div>
+    ${Object.values(ACHIEVEMENTS).map((achievement) => {
+      const complete = unlocked.has(achievement.id);
+      const title = TITLES[achievement.id] || achievement.title;
+      return `<div class="item-row ${complete ? "complete" : ""}">
+        <div>
+          <strong>${achievement.name}</strong>
+          <small>${achievement.description}</small>
+          <small>Title: ${title || "None"}</small>
+        </div>
+        <div class="shop-actions">
+          <span>${complete ? "Unlocked" : "Locked"}</span>
+          ${title ? `<button data-title="${achievement.id}" ${complete ? "" : "disabled"}>Use</button>` : ""}
+        </div>
+      </div>`;
+    }).join("")}
+  `;
+  ui.panelContent.querySelectorAll("[data-title]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const result = setActiveTitle(game.save, button.dataset.title);
+      if (!result.ok) return toast("That title is locked.");
+      game.save = result.player;
+      saveGame();
+      renderAchievementsPanel();
+    });
+  });
+}
+
+function renderZoneCompletionPanel() {
+  const refreshed = refreshZoneCompletion(game.save);
+  if (refreshed.player) game.save = refreshed.player;
+  ui.panelTitle.textContent = "Zone Completion";
+  ui.panelContent.innerHTML = Object.values(ZONE_DEFS).map((zone) => {
+    const completion = calculateZoneCompletion(game.save, zone.id);
+    const checklist = Object.values(completion.checklist || {});
+    return `<div class="quest-row ${completion.percent >= 100 ? "complete" : ""}">
+      <div>
+        <strong>${zone.name}</strong>
+        <small>${zone.subtitle}</small>
+        <small>${checklist.map((entry) => `${entry.label}: ${entry.current}/${entry.required}`).join(" | ") || "Explored"}</small>
+      </div>
+      <div>${completion.percent}%</div>
+    </div>`;
+  }).join("");
+  saveGame();
+}
+
+function refreshLocalMetaProgress() {
+  const result = refreshMetaProgress(game.save);
+  if (result?.player) game.save = result.player;
+  return result;
+}
+
 function renderSettingsPanel() {
   ui.panelTitle.textContent = "Settings";
   const settings = game.save.settings;
@@ -94,4 +174,4 @@ function createAudioManager() {
       const context = getContext();
       const osc = context.createOscillator();
       const gain = context.createGain();
-      const now = context.currentTime;
+      const now = context.currentTime;

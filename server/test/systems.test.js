@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment, addProgressRewards, calculateIncomingDamage } from "../../shared/combat.js";
-import { ENEMIES, FROSTVEIL_SPAWNS, ELITE_MODIFIERS } from "../../shared/enemies.js";
+import { ENEMIES, FROSTVEIL_SPAWNS, ELITE_MODIFIERS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { canEnterZone, getZone, unlockWaypoint } from "../../shared/zones.js";
 import {
   calculateDamageReduction,
@@ -74,6 +74,13 @@ test("client runtime chunks compile after concatenation", () => {
       "ZONE_DEFS",
       "canEnterZone",
       "unlockWaypoint",
+      "ACHIEVEMENTS",
+      "TITLES",
+      "calculateZoneCompletion",
+      "recordBestiaryKill",
+      "refreshMetaProgress",
+      "refreshZoneCompletion",
+      "setActiveTitle",
       "addInventoryItem",
       "addProgressRewards",
       "applyEquipment",
@@ -1121,6 +1128,124 @@ test("server grants Ice Mage quest and first-clear rewards once to eligible pala
     room.awardIceMageDefeat({ reward: { xp: 520, coins: 420 }, lootBag: null }, attacker);
     assert.equal(attacker.firstClearRewards.zero_ice_mage, true);
     assert.equal(attacker.xp, xpAfterFirstClear + 520);
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("IceZero meta progress records bestiary kills, achievements, and active titles", async () => {
+  const {
+    evaluateAchievements,
+    recordBestiaryKill,
+    setActiveTitle
+  } = await import("../../shared/metaProgress.js");
+
+  let player = {
+    ...STARTING_PLAYER,
+    learnedAbilities: ["hero_pulse"],
+    bestiaryProgress: {},
+    achievements: [],
+    firstClearRewards: {},
+    questProgress: createQuestProgress(),
+    waypoints: ["dawnrest", "frostveil_camp"],
+    title: ""
+  };
+
+  player = recordBestiaryKill(player, ENEMIES.frost_slime).player;
+  assert.equal(player.bestiaryProgress.frost_slime.discovered, true);
+  assert.equal(player.bestiaryProgress.frost_slime.kills, 1);
+  assert.equal(player.bestiaryProgress.frost_slime.zone, ZONES.FROSTVEIL);
+
+  player = recordBestiaryKill(player, ENEMIES.ice_golem, { elite: true }).player;
+  assert.equal(player.bestiaryProgress.ice_golem.eliteKills, 1);
+
+  const evaluated = evaluateAchievements({
+    ...player,
+    firstClearRewards: { [ICE_MAGE_BOSS.id]: true }
+  }).player;
+  assert.ok(evaluated.achievements.includes("first_spell"));
+  assert.ok(evaluated.achievements.includes("elite_hunter"));
+  assert.ok(evaluated.achievements.includes("icebreaker"));
+  assert.ok(evaluated.achievements.includes("frostveil_explorer"));
+
+  const titled = setActiveTitle(evaluated, "icebreaker");
+  assert.equal(titled.ok, true);
+  assert.equal(titled.player.title, "Icebreaker");
+
+  const invalid = setActiveTitle(evaluated, "wyrm_slayer");
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.reason, "locked");
+});
+
+test("zone completion summarizes quests, bestiary, bosses, waypoints, and chests", async () => {
+  const { calculateZoneCompletion, recordBestiaryKill, refreshZoneCompletion } = await import("../../shared/metaProgress.js");
+  let progress = createQuestProgress();
+  progress = applyQuestEvent(progress, "enter_frostveil").progress;
+  progress = applyQuestEvent(progress, "activate_frost_ward").progress;
+  progress = applyQuestEvent(progress, "activate_frost_ward").progress;
+  progress = applyQuestEvent(progress, "activate_frost_ward").progress;
+  progress = applyQuestEvent(progress, "enter_palace").progress;
+  progress = applyQuestKill(progress, ICE_MAGE_BOSS).progress;
+
+  let player = {
+    ...STARTING_PLAYER,
+    questProgress: progress,
+    waypoints: ["dawnrest", "frostveil_camp"],
+    openedChests: ["frostveil_snow_cache"],
+    bestiaryProgress: {},
+    firstClearRewards: { [ICE_MAGE_BOSS.id]: true },
+    zoneCompletion: {}
+  };
+  for (const enemyId of ["frost_slime", "ice_goblin", "snow_wolf", "frost_wisp", "ice_golem", "frozen_knight"]) {
+    player = recordBestiaryKill(player, ENEMIES[enemyId], { elite: enemyId === "ice_golem" }).player;
+  }
+
+  const frostveil = calculateZoneCompletion(player, ZONES.FROSTVEIL);
+  assert.equal(frostveil.checklist.waypoint.complete, true);
+  assert.equal(frostveil.checklist.chests.complete, true);
+  assert.ok(frostveil.percent >= 70);
+
+  const palace = calculateZoneCompletion(player, ZONES.PALACE);
+  assert.equal(palace.percent, 100);
+  assert.equal(palace.checklist.boss.complete, true);
+
+  const refreshed = refreshZoneCompletion(player).player;
+  assert.equal(refreshed.zoneCompletion[ZONES.PALACE].percent, 100);
+  assert.ok(refreshed.zoneCompletion[ZONES.FROSTVEIL].percent >= 70);
+});
+
+test("server records bestiary and zone completion when enemies and bosses are defeated", async () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const player = createPlayerState("p1", {
+      xp: 1300,
+      zone: ZONES.FROSTVEIL,
+      waypoints: ["dawnrest", "frostveil_camp"]
+    });
+    room.players.set(player.id, player);
+
+    room.applyCombatRewards(player, {
+      result: {
+        defeated: true,
+        reward: { xp: 150, coins: 80 },
+        enemyDef: ENEMIES.ice_golem
+      }
+    });
+
+    assert.equal(player.bestiaryProgress.ice_golem.kills, 1);
+    assert.ok(player.achievements.includes("elite_hunter"));
+    assert.ok(player.zoneCompletion[ZONES.FROSTVEIL].percent > 0);
+
+    room.changePlayerZone(player, ZONES.PALACE, { x: 0, y: 0, z: 18 });
+    room.iceMage.state.participants.add(player.id);
+    room.awardIceMageDefeat({ reward: { xp: ICE_MAGE_BOSS.xp, coins: ICE_MAGE_BOSS.coins }, lootBag: null }, player);
+
+    assert.ok(player.achievements.includes("icebreaker"));
+    assert.equal(player.zoneCompletion[ZONES.PALACE].percent, 100);
   } finally {
     clearInterval(room.tickTimer);
     clearInterval(room.snapshotTimer);

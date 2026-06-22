@@ -284,6 +284,8 @@ function awardEnemy(enemyDef) {
   logCombat(`Reward: ${loot.xp} XP and ${loot.coins} coins.`);
   const questUpdate = applyQuestKill(game.save.questProgress, enemyDef);
   game.save.questProgress = questUpdate.progress;
+  const bestiary = recordBestiaryKill(game.save, enemyDef, { elite: enemyDef.elite });
+  if (bestiary.ok) game.save = bestiary.player;
   if (game.save.level > beforeLevel) {
     toast(`Level ${game.save.level}! Fully healed.`);
     levelUpEffect();
@@ -299,6 +301,7 @@ function awardEnemy(enemyDef) {
     }
     if (quest.reward.title) game.save.title = quest.reward.title;
   }
+  refreshLocalMetaProgress();
   saveGame();
 }
 

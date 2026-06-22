@@ -133,7 +133,12 @@ function syncRemotePlayers(players) {
       game.save.savedBuilds = player.savedBuilds || game.save.savedBuilds;
       game.save.activeLoadout = player.activeLoadout || game.save.activeLoadout;
       game.save.waypoints = player.waypoints || game.save.waypoints;
+      game.save.openedChests = player.openedChests || game.save.openedChests;
+      game.save.bestiaryProgress = player.bestiaryProgress || game.save.bestiaryProgress;
       game.save.zoneCompletion = player.zoneCompletion || game.save.zoneCompletion;
+      game.save.achievements = player.achievements || game.save.achievements;
+      game.save.firstClearRewards = player.firstClearRewards || game.save.firstClearRewards;
+      game.save.title = player.title || game.save.title;
       game.save.state = player.state || game.save.state || "alive";
       if (player.respawnAt) {
         game.respawnAt = player.respawnAt;
@@ -283,6 +288,9 @@ function openPanel(panel) {
     character: renderCharacterPanel,
     party: renderPartyPanel,
     quests: renderQuestPanel,
+    bestiary: renderBestiaryPanel,
+    achievements: renderAchievementsPanel,
+    zones: renderZoneCompletionPanel,
     settings: renderSettingsPanel,
     shop: renderShopPanel,
     spellbook: renderSpellbookPanel,
@@ -517,6 +525,7 @@ function applyChestReward(chest, reward, serverPlayer = null) {
   if (serverPlayer) {
     applyServerPlayerUpdate(serverPlayer);
     setChestOpened(chest, true);
+    refreshLocalMetaProgress();
     saveGame();
     playUiSound("pickup");
     toast(`Chest opened: +${reward?.coins || 0} coins${reward?.items?.length ? " and item loot" : ""}.`);
@@ -530,6 +539,7 @@ function applyChestReward(chest, reward, serverPlayer = null) {
   setChestOpened(chest, true);
   game.save.inventory = inventoryResult.inventory;
   game.save.coins += reward?.coins || 0;
+  refreshLocalMetaProgress();
   saveGame();
   playUiSound("pickup");
   toast(`Chest opened: +${reward?.coins || 0} coins${reward?.items?.length ? " and item loot" : ""}.`);
@@ -836,6 +846,8 @@ function applyServerPlayerUpdate(player) {
     savedBuilds: player.savedBuilds || game.save.savedBuilds,
     activeLoadout: player.activeLoadout || game.save.activeLoadout,
     waypoints: player.waypoints || game.save.waypoints,
+    openedChests: player.openedChests || game.save.openedChests,
+    bestiaryProgress: player.bestiaryProgress || game.save.bestiaryProgress,
     zoneCompletion: player.zoneCompletion || game.save.zoneCompletion,
     achievements: player.achievements || game.save.achievements,
     firstClearRewards: player.firstClearRewards || game.save.firstClearRewards,
