@@ -1025,6 +1025,59 @@ test("Frost Ward activation uses stable ward IDs for event payloads and spawns",
   )));
 });
 
+test("Frost Ward event enemies have wave spawn IDs", () => {
+  const enemies = new EnemySystem({ rng: () => 0 });
+  const eventSystem = new PublicEventSystem({ enemySystem: enemies, rng: () => 0 });
+  const player = createPlayerState("p1", {
+    xp: 420,
+    zone: ZONES.FROSTVEIL,
+    position: { x: 8, y: 0, z: -8 }
+  });
+  const players = new Map([[player.id, player]]);
+
+  const activation = eventSystem.activate(player, players, 1000, "frost_ward");
+  assert.equal(activation.ok, true);
+  eventSystem.update(players, 6000);
+
+  const waveOneEnemies = enemies.getZoneEnemies(ZONES.FROSTVEIL).filter((enemy) => enemy.eventId === "defend_frost_ward");
+  assert.ok(waveOneEnemies.length > 0);
+  assert.ok(waveOneEnemies.every((enemy) => enemy.eventWave === 1));
+  assert.ok(waveOneEnemies.every((enemy) => enemy.eventSpawnId?.startsWith(`${enemy.eventInstanceId}:wave1:spawn`)));
+  const waveOneSnapshot = enemies.snapshot(ZONES.FROSTVEIL).filter((enemy) => enemy.eventId === "defend_frost_ward");
+  assert.ok(waveOneSnapshot.every((enemy) => enemy.eventWave === 1));
+  assert.ok(waveOneSnapshot.every((enemy) => enemy.eventSpawnId?.startsWith(`${enemy.eventInstanceId}:wave1:spawn`)));
+});
+
+test("Frost Ward out-of-bounds event enemies do not block waves", () => {
+  const enemies = new EnemySystem({ rng: () => 0 });
+  const eventSystem = new PublicEventSystem({ enemySystem: enemies, rng: () => 0 });
+  const player = createPlayerState("p1", {
+    xp: 420,
+    zone: ZONES.FROSTVEIL,
+    position: { x: 8, y: 0, z: -8 }
+  });
+  const players = new Map([[player.id, player]]);
+
+  const activation = eventSystem.activate(player, players, 1000, "frost_ward");
+  assert.equal(activation.ok, true);
+  eventSystem.update(players, 6000);
+
+  const waveOneEnemies = enemies.getZoneEnemies(ZONES.FROSTVEIL).filter((enemy) => enemy.eventId === "defend_frost_ward");
+  assert.ok(waveOneEnemies.length > 0);
+
+  const staleEnemy = waveOneEnemies[0];
+  staleEnemy.position = { x: 999, y: 0, z: 999 };
+  for (const enemy of waveOneEnemies.slice(1)) {
+    enemy.health = 0;
+    enemy.respawnAt = Number.MAX_SAFE_INTEGER;
+  }
+
+  const waveTwo = eventSystem.update(players, 7000);
+  assert.ok(waveTwo.some((event) => event.type === "public_event_wave" && event.wave === 2));
+  assert.equal(enemies.enemies.has(staleEnemy.id), false);
+  assert.equal(eventSystem.snapshot(ZONES.FROSTVEIL).wave, 2);
+});
+
 test("client Frost Ward activation asks for confirmation before starting defense", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const runtimeSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-3.js.txt"), "utf8");

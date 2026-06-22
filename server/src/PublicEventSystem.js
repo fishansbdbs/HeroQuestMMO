@@ -12,6 +12,7 @@ const EVENT_INTERACTION_RADIUS = 5;
 const EVENT_START_DELAY_MS = 5000;
 const EVENT_DURATION_MS = 90000;
 const EVENT_COOLDOWN_MS = 180000;
+const EVENT_ENEMY_MAX_DISTANCE = 42;
 const FROST_WARD_WAVES = [
   ["frost_slime", "ice_goblin"],
   ["snow_wolf", "frost_wisp"],
@@ -54,7 +55,7 @@ export class PublicEventSystem {
     }
 
     if (this.state.active) {
-      this.removeDefeatedEventEnemies();
+      this.auditTrackedEventEnemies();
       if (now >= this.state.endsAt) {
         this.reset(now);
         events.push({
@@ -231,6 +232,8 @@ export class PublicEventSystem {
       }, ZONES.FROSTVEIL, {
         eventId: this.state.eventId,
         eventInstanceId: this.state.eventInstanceId,
+        eventWave: this.state.wave,
+        eventSpawnId: `${this.state.eventInstanceId}:wave${this.state.wave}:spawn${i + 1}`,
         wardId: this.state.wardId,
         eliteModifier: this.state.wave === 3 && enemyId === "ice_golem" ? "chilling" : null
       });
@@ -239,10 +242,17 @@ export class PublicEventSystem {
     }
   }
 
-  removeDefeatedEventEnemies() {
-    for (const [id, enemy] of this.enemySystem.enemies.entries()) {
-      if (enemy.eventId === this.state.eventId && enemy.health <= 0) {
-        this.enemySystem.enemies.delete(id);
+  auditTrackedEventEnemies() {
+    const center = this.currentWard().position;
+    for (const enemyId of [...this.state.currentWaveEnemyIds]) {
+      const enemy = this.enemySystem.enemies.get(enemyId);
+      if (!enemy || !this.isCurrentWaveEnemy(enemy)) {
+        this.state.currentWaveEnemyIds.delete(enemyId);
+        continue;
+      }
+      if (enemy.health <= 0 || enemy.zone !== ZONES.FROSTVEIL || distance2d(enemy.position || {}, center) > EVENT_ENEMY_MAX_DISTANCE) {
+        this.enemySystem.enemies.delete(enemyId);
+        this.state.currentWaveEnemyIds.delete(enemyId);
       }
     }
   }
@@ -251,9 +261,19 @@ export class PublicEventSystem {
     let remaining = 0;
     for (const enemyId of this.state.currentWaveEnemyIds) {
       const enemy = this.enemySystem.enemies.get(enemyId);
-      if (enemy?.eventId === this.state.eventId && enemy.health > 0) remaining += 1;
+      if (this.isCurrentWaveEnemy(enemy) && enemy.health > 0) remaining += 1;
     }
     return remaining;
+  }
+
+  isCurrentWaveEnemy(enemy) {
+    return Boolean(
+      enemy &&
+        enemy.eventId === this.state.eventId &&
+        enemy.eventInstanceId === this.state.eventInstanceId &&
+        enemy.wardId === this.state.wardId &&
+        enemy.eventWave === this.state.wave
+    );
   }
 
   createWaveEvent() {

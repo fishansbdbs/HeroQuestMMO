@@ -53,6 +53,8 @@ export class EnemySystem {
       eliteModifier: modifier?.id || null,
       eventId: options.eventId || null,
       eventInstanceId: options.eventInstanceId || null,
+      eventWave: options.eventWave || null,
+      eventSpawnId: options.eventSpawnId || null,
       wardId: options.wardId || null,
       targetId: null,
       lastAttackAt: 0,
@@ -141,6 +143,8 @@ export class EnemySystem {
       eliteModifier: enemy.eliteModifier || null,
       eventId: enemy.eventId || null,
       eventInstanceId: enemy.eventInstanceId || null,
+      eventWave: enemy.eventWave || null,
+      eventSpawnId: enemy.eventSpawnId || null,
       wardId: enemy.wardId || null
     }));
   }
