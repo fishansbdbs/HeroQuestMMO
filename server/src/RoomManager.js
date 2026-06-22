@@ -2,7 +2,7 @@ import { PLAYER_STATES, RESPAWN_DELAY_MS, SNAPSHOT_MS, SERVER_TICK_MS, ZONES } f
 import { ABILITIES } from "../../shared/abilities.js";
 import { BOSS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { NET } from "../../shared/netMessages.js";
-import { addProgressRewards, consumeInventoryItem, distance2d, isPlayerDead } from "../../shared/combat.js";
+import { addProgressRewards, applyEquipment, consumeInventoryItem, distance2d, isPlayerDead } from "../../shared/combat.js";
 import { equipItemToSlot, normalizeEquipment } from "../../shared/equipment.js";
 import { addInventoryStack, removeInventoryItems } from "../../shared/inventory.js";
 import { getItem } from "../../shared/items.js";
@@ -18,6 +18,7 @@ import {
   normalizeBuyback,
   normalizeTradeQuantity
 } from "../../shared/shop.js";
+import { upgradeFrostforgeItem } from "../../shared/frostforge.js";
 import { canEnterZone, unlockWaypoint } from "../../shared/zones.js";
 import { recordBestiaryKill, refreshMetaProgress as refreshPlayerMetaProgress } from "../../shared/metaProgress.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
@@ -107,6 +108,7 @@ export class RoomManager {
         firstClearRewards: payload.firstClearRewards ?? player.firstClearRewards,
         publicEventClaims: payload.publicEventClaims ?? player.publicEventClaims,
         buyback: payload.buyback ?? player.buyback,
+        upgradeRanks: payload.upgradeRanks ?? player.upgradeRanks,
         title: payload.title ?? player.title
       });
     });
@@ -184,6 +186,13 @@ export class RoomManager {
     socket.on(NET.PLAYER_BUYBACK_ITEM, (payload, ack) => {
       const player = this.players.get(socket.id);
       const result = this.buyBackItem(player, payload?.buybackId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_UPGRADE_ITEM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.upgradeItem(player, payload?.itemId);
       ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
       if (result.ok) this.broadcastSnapshots();
     });
@@ -506,6 +515,14 @@ export class RoomManager {
     entries.splice(index, 1);
     player.buyback = entries;
     return { ok: true, itemId: entry.itemId, quantity: entry.quantity, cost };
+  }
+
+  upgradeItem(player, itemId) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = upgradeFrostforgeItem(player, itemId);
+    if (!result.ok) return result;
+    Object.assign(player, applyEquipment(result.player));
+    return { ok: true, itemId: result.itemId, rank: result.rank, cost: result.cost };
   }
 
   claimLoot(player, lootId) {

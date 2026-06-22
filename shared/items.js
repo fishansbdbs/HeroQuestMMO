@@ -376,6 +376,13 @@ export const ITEMS = {
     type: "material",
     rarity: RARITIES.RARE,
     description: "A sturdy scale used in future boss gear recipes."
+  },
+  runic_core: {
+    id: "runic_core",
+    name: "Runic Core",
+    type: "material",
+    rarity: RARITIES.RARE,
+    description: "A cold rune engine used for advanced Frostforge upgrades."
   }
 };
 

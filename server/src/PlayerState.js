@@ -79,6 +79,7 @@ export function sanitizePlayer(player) {
     firstClearRewards: player.firstClearRewards,
     publicEventClaims: player.publicEventClaims,
     buyback: player.buyback || [],
+    upgradeRanks: player.upgradeRanks || {},
     learnedAbilities: player.learnedAbilities,
     hotbar: player.hotbar,
     skillTreeNodes: player.skillTreeNodes,

@@ -2,6 +2,7 @@ import { STARTING_PLAYER, XP_TABLE } from "./constants.js";
 import { getItem } from "./items.js";
 import { applyProgressionStats, LEVEL_CAP } from "./progression.js";
 import { hasInventoryItem } from "./inventory.js";
+import { getFrostforgeRank, upgradedItemStats } from "./frostforge.js";
 
 export const EQUIPMENT_SLOTS = ["head", "chest", "hands", "legs", "boots", "weapon", "offhand", "accessory"];
 
@@ -53,7 +54,7 @@ export function equipItemToSlot(player, slot, itemId) {
   };
 }
 
-export function computeEquipmentBonuses(equipment) {
+export function computeEquipmentBonuses(equipment, upgradeRanks = {}) {
   let attack = 0;
   let defense = 0;
   let magicPower = 0;
@@ -61,7 +62,7 @@ export function computeEquipmentBonuses(equipment) {
   let speedMultiplier = 1;
 
   for (const itemId of Object.values(equipment)) {
-    const item = getItem(itemId);
+    const item = upgradedItemStats(getItem(itemId), getFrostforgeRank({ upgradeRanks }, itemId));
     if (!item) continue;
     attack += item.attack || 0;
     defense += item.defense || 0;
@@ -90,7 +91,7 @@ function normalizeXp(value) {
 
 export function applyEquipmentSlots(player) {
   const equipment = normalizeEquipment(player);
-  const bonuses = computeEquipmentBonuses(equipment);
+  const bonuses = computeEquipmentBonuses(equipment, player.upgradeRanks || {});
   const level = computeLevelFromXp(player.xp || 0);
   const maxHealth = STARTING_PLAYER.maxHealth + (level - 1) * 14 + bonuses.health;
   const attack = STARTING_PLAYER.attack + (level - 1) * 2 + bonuses.attack;

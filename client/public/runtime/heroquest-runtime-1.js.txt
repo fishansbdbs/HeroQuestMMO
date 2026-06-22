@@ -55,6 +55,13 @@ const NPC_DIALOGUES = {
       "Equip weapons from inventory or directly from the shop. Your hero's weapon updates in hand."
     ]
   },
+  frostforge_blacksmith: {
+    name: "Borin Frosthand",
+    lines: [
+      "I can temper suitable equipment to +5 with Ice Shards, Wyrm Scales, Runic Cores, and coin.",
+      "Every upgrade is predictable. No broken gear, no gambling."
+    ]
+  },
   portal_keeper: {
     name: "Portal Keeper",
     lines: [
@@ -316,6 +323,7 @@ function loadSave() {
     health: STARTING_PLAYER.health,
     inventory: clone(STARTER_INVENTORY),
     buyback: [],
+    upgradeRanks: {},
     equipment: createEquipmentState({
       weapon: STARTING_PLAYER.equippedWeapon,
       chest: STARTING_PLAYER.equippedArmor
@@ -392,6 +400,7 @@ function saveGame() {
     state: game.save.state || "alive",
     inventory: game.save.inventory,
     buyback: game.save.buyback || [],
+    upgradeRanks: game.save.upgradeRanks || {},
     equipment: game.save.equipment,
     equippedWeapon: game.save.equippedWeapon,
     equippedArmor: game.save.equippedArmor,
@@ -968,4 +977,5 @@ function buildHub() {
   addNpc(2, 8, "Mage Trainer", "mage_trainer", 0x7d7dff);
   addNpc(-2, 8, "Healer", "healer_trainer", 0xffe1a3);
   addNpc(-5, 15, "Shopkeeper", "shopkeeper", 0xc4473d);
+  addNpc(-13, 15, "Borin Frosthand", "frostforge_blacksmith", 0x9edcff);
   addNpc(24, 22, "Portal Keeper", "portal_keeper", 0x84bdff);

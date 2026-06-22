@@ -2,6 +2,7 @@ import { XP_TABLE, STARTING_PLAYER } from "./constants.js";
 import { getItem } from "./items.js";
 import { applyProgressionStats, calculateDamageReduction, LEVEL_CAP } from "./progression.js";
 import { normalizeEquipment } from "./equipment.js";
+import { getFrostforgeRank, upgradedItemStats } from "./frostforge.js";
 
 export function randomInt(min, max, rng = Math.random) {
   return Math.floor(rng() * (max - min + 1)) + min;
@@ -35,7 +36,9 @@ export function xpToNextLevel(level) {
 export function applyEquipment(basePlayer) {
   const player = { ...STARTING_PLAYER, ...basePlayer };
   const equipment = normalizeEquipment(player);
-  const equippedItems = Object.values(equipment).map(getItem).filter(Boolean);
+  const equippedItems = Object.values(equipment)
+    .map((itemId) => upgradedItemStats(getItem(itemId), getFrostforgeRank(player, itemId)))
+    .filter(Boolean);
   const level = computeLevelFromXp(player.xp || 0);
   const itemAttack = equippedItems.reduce((total, item) => total + (item.attack || 0), 0);
   const itemDefense = equippedItems.reduce((total, item) => total + (item.defense || 0), 0);

@@ -25,6 +25,15 @@ import {
   normalizeBuyback
 } from "../../shared/shop.js";
 import {
+  FROSTFORGE_MAX_RANK,
+  frostforgeUpgradeCost,
+  frostforgeUpgradePreview,
+  getFrostforgeRank,
+  isFrostforgeUpgradeable,
+  upgradeDisplayName,
+  upgradeFrostforgeItem
+} from "../../shared/frostforge.js";
+import {
   addInventoryItem,
   addProgressRewards,
   applyEquipment,
@@ -140,6 +149,13 @@ const bootRuntime = new Function(
   "itemSellUnitValue",
   "itemSellValue",
   "normalizeBuyback",
+  "FROSTFORGE_MAX_RANK",
+  "frostforgeUpgradeCost",
+  "frostforgeUpgradePreview",
+  "getFrostforgeRank",
+  "isFrostforgeUpgradeable",
+  "upgradeDisplayName",
+  "upgradeFrostforgeItem",
   "env",
   `"use strict";\n${runtimeSource}`
 );
@@ -221,5 +237,12 @@ bootRuntime(
   itemSellUnitValue,
   itemSellValue,
   normalizeBuyback,
+  FROSTFORGE_MAX_RANK,
+  frostforgeUpgradeCost,
+  frostforgeUpgradePreview,
+  getFrostforgeRank,
+  isFrostforgeUpgradeable,
+  upgradeDisplayName,
+  upgradeFrostforgeItem,
   import.meta.env
 );

@@ -139,6 +139,7 @@ function syncRemotePlayers(players) {
       game.save.spentAttributes = player.spentAttributes || game.save.spentAttributes;
       game.save.inventory = player.inventory || game.save.inventory;
       game.save.buyback = player.buyback || game.save.buyback || [];
+      game.save.upgradeRanks = player.upgradeRanks || game.save.upgradeRanks || {};
       game.save.equipment = player.equipment || game.save.equipment;
       game.save.equippedWeapon = player.equippedWeapon || game.save.equippedWeapon;
       game.save.equippedArmor = player.equippedArmor || game.save.equippedArmor;
@@ -355,6 +356,7 @@ function openPanel(panel) {
     zones: renderZoneCompletionPanel,
     settings: renderSettingsPanel,
     shop: renderShopPanel,
+    frostforge: renderFrostforgePanel,
     spellbook: renderSpellbookPanel,
     skillTree: renderSkillTreePanel,
     loadouts: renderLoadoutPanel,
@@ -709,6 +711,115 @@ function shopTradeReason(reason) {
   return "Shop action failed.";
 }
 
+function renderFrostforgePanel() {
+  ui.panelTitle.textContent = "Frostforge";
+  const items = frostforgeItemIds();
+  ui.panelContent.innerHTML = `
+    <div class="stat-line"><span>Coins</span><strong>${game.save.coins || 0}</strong></div>
+    <div class="panel-grid">
+      ${items.length ? items.map(renderFrostforgeRow).join("") : `<div class="quest-row"><strong>No eligible equipment</strong><small>Weapons, staffs, armor, and shields can be upgraded.</small></div>`}
+    </div>
+  `;
+  ui.panelContent.querySelectorAll("[data-frostforge-upgrade]").forEach((button) => {
+    button.addEventListener("click", () => upgradeFrostforgePanelItem(button.dataset.frostforgeUpgrade));
+  });
+}
+
+function frostforgeItemIds() {
+  const equipment = createEquipmentState({
+    ...(game.save.equipment || {}),
+    weapon: game.save.equipment?.weapon || game.save.equippedWeapon,
+    chest: game.save.equipment?.chest || game.save.equippedArmor
+  });
+  const itemIds = new Set([
+    ...Object.values(equipment).filter(Boolean),
+    ...normalizeInventory(game.save.inventory || []).map((entry) => entry.itemId)
+  ]);
+  return [...itemIds].filter((itemId) => isFrostforgeUpgradeable(itemId));
+}
+
+function renderFrostforgeRow(itemId) {
+  const rank = getFrostforgeRank(game.save, itemId);
+  const preview = frostforgeUpgradePreview(itemId, rank);
+  const item = getItem(itemId);
+  const atCap = rank >= FROSTFORGE_MAX_RANK;
+  const cost = preview?.cost;
+  return `<div class="item-row">
+    <div>
+      <strong>${upgradeDisplayName(itemId, rank)}</strong>
+      <small>${item?.rarity || ""} ${item?.slot || item?.type || ""}. ${frostforgeStatPreview(preview)}</small>
+      <small>${atCap ? "Max rank" : frostforgeCostText(cost)}</small>
+    </div>
+    <div class="shop-actions">
+      <span>+${rank}/${FROSTFORGE_MAX_RANK}</span>
+      <button data-frostforge-upgrade="${itemId}" ${atCap ? "disabled" : ""}>Upgrade</button>
+    </div>
+  </div>`;
+}
+
+function frostforgeStatPreview(preview) {
+  if (!preview?.current || !preview?.next || preview.rank >= FROSTFORGE_MAX_RANK) return "Fully tempered.";
+  const stats = ["attack", "defense", "magicPower", "health"];
+  const changes = stats
+    .map((stat) => {
+      const before = Number(preview.current[stat]) || 0;
+      const after = Number(preview.next[stat]) || 0;
+      return after > before ? `${statLabel(stat)} +${after - before}` : null;
+    })
+    .filter(Boolean);
+  return changes.length ? changes.join(", ") : "Recognizable form, cleaner temper.";
+}
+
+function statLabel(stat) {
+  if (stat === "magicPower") return "Magic";
+  return stat[0].toUpperCase() + stat.slice(1);
+}
+
+function frostforgeCostText(cost) {
+  if (!cost) return "";
+  const materials = Object.entries(cost.materials || {})
+    .map(([itemId, quantity]) => `${quantity} ${getItem(itemId)?.name || itemId}`)
+    .join(", ");
+  return `Cost ${cost.coins} coins${materials ? `, ${materials}` : ""}.`;
+}
+
+function upgradeFrostforgePanelItem(itemId) {
+  if (isLocallyDead()) return toast("You cannot upgrade equipment while defeated.");
+  const rank = getFrostforgeRank(game.save, itemId);
+  const cost = frostforgeUpgradeCost(rank + 1);
+  if (!window.confirm(`Upgrade ${upgradeDisplayName(itemId, rank)}?\n${frostforgeCostText(cost)}`)) return;
+
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_UPGRADE_ITEM, { itemId }, (ack) => {
+      if (!ack?.ok) return toast(frostforgeReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("equip");
+      toast(`Upgraded ${upgradeDisplayName(itemId, ack.rank)}.`);
+      renderFrostforgePanel();
+    });
+    return;
+  }
+
+  const result = upgradeFrostforgeItem(game.save, itemId);
+  if (!result.ok) return toast(frostforgeReason(result.reason));
+  game.save = applyEquipment(result.player);
+  saveGame();
+  playUiSound("equip");
+  toast(`Upgraded ${upgradeDisplayName(itemId, result.rank)}.`);
+  renderFrostforgePanel();
+}
+
+function frostforgeReason(reason) {
+  if (reason === "coins") return "Not enough coins.";
+  if (reason === "materials") return "Missing upgrade materials.";
+  if (reason === "missing") return "That item is not in your inventory or equipment.";
+  if (reason === "max_rank") return "That item is already +5.";
+  if (reason === "not_upgradeable" || reason === "item") return "That item cannot be upgraded.";
+  if (reason === "dead") return "You cannot upgrade equipment while defeated.";
+  return "Upgrade failed.";
+}
+
 function openChest(chestId) {
   if (isLocallyDead()) return toast("You cannot open chests while defeated.");
   const chest = game.chests.get(chestId);
@@ -792,6 +903,7 @@ function openDialogue(dialogueId, index = 0) {
     <div class="dialogue-actions">
       <button id="dialogue-next">${index < dialogue.lines.length - 1 ? "Next" : "Restart"}</button>
       ${dialogueId === "shopkeeper" ? `<button id="dialogue-shop" class="primary">Open Shop</button>` : ""}
+      ${dialogueId === "frostforge_blacksmith" ? `<button id="dialogue-frostforge" class="primary">Frostforge</button>` : ""}
       ${dialogueId === "mage_trainer" ? `<button id="dialogue-mage" class="primary">Train Magic</button>` : ""}
       ${dialogueId === "healer_trainer" ? `<button id="dialogue-healer" class="primary">Train Healing</button>` : ""}
       <button id="dialogue-close">Close</button>
@@ -800,6 +912,7 @@ function openDialogue(dialogueId, index = 0) {
   ui.panelContent.querySelector("#dialogue-next").addEventListener("click", () => openDialogue(dialogueId, index < dialogue.lines.length - 1 ? index + 1 : 0));
   ui.panelContent.querySelector("#dialogue-close").addEventListener("click", closePanel);
   ui.panelContent.querySelector("#dialogue-shop")?.addEventListener("click", () => openPanel("shop"));
+  ui.panelContent.querySelector("#dialogue-frostforge")?.addEventListener("click", () => openPanel("frostforge"));
   ui.panelContent.querySelector("#dialogue-mage")?.addEventListener("click", () => openPanel("mageTrainer"));
   ui.panelContent.querySelector("#dialogue-healer")?.addEventListener("click", () => openPanel("healerTrainer"));
 }
@@ -1113,6 +1226,7 @@ function applyServerPlayerUpdate(player) {
     firstClearRewards: player.firstClearRewards || game.save.firstClearRewards,
     publicEventClaims: player.publicEventClaims || game.save.publicEventClaims,
     buyback: player.buyback || game.save.buyback || [],
+    upgradeRanks: player.upgradeRanks || game.save.upgradeRanks || {},
     title: player.title || game.save.title
   });
   game.save = applyEquipment(game.save);

@@ -20,6 +20,7 @@ import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot } from "../../sh
 import { INVENTORY_SLOT_COUNT, addInventoryStack } from "../../shared/inventory.js";
 import { NET } from "../../shared/netMessages.js";
 import { applyQuestEvent, applyQuestKill, createQuestProgress } from "../../shared/quests.js";
+import { migrateFrostforgedSave } from "../../shared/saveMigration.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
 import { PartySystem } from "../src/PartySystem.js";
@@ -986,6 +987,105 @@ test("server shop buyback restores sold items once without duplicating inventory
     clearInterval(room.tickTimer);
     clearInterval(room.snapshotTimer);
   }
+});
+
+test("server Frostforge upgrades validate costs, materials, and rank cap", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const blocked = createPlayerState("blocked", {
+      xp: 420,
+      coins: 60,
+      inventory: [{ itemId: "ice_shard", quantity: 1 }],
+      equipment: createEquipmentState({ weapon: "frostbite_sword" }),
+      equippedWeapon: "frostbite_sword"
+    });
+
+    const missingMaterials = room.upgradeItem(blocked, "frostbite_sword");
+    assert.equal(missingMaterials.ok, false);
+    assert.equal(missingMaterials.reason, "materials");
+    assert.equal(blocked.coins, 60);
+    assert.equal(inventoryQuantity(blocked.inventory, "ice_shard"), 1);
+    assert.equal(blocked.upgradeRanks?.frostbite_sword || 0, 0);
+
+    const player = createPlayerState("smith", {
+      xp: 420,
+      coins: 1380,
+      inventory: [
+        { itemId: "ice_shard", quantity: 32 },
+        { itemId: "wyrm_scale", quantity: 6 },
+        { itemId: "runic_core", quantity: 3 }
+      ],
+      equipment: createEquipmentState({ weapon: "frostbite_sword" }),
+      equippedWeapon: "frostbite_sword"
+    });
+
+    const attackBefore = player.attack;
+    const expectedCosts = [
+      { coins: 60, ice_shard: 2 },
+      { coins: 120, ice_shard: 4 },
+      { coins: 220, ice_shard: 6, wyrm_scale: 1 },
+      { coins: 380, ice_shard: 8, wyrm_scale: 2, runic_core: 1 },
+      { coins: 600, ice_shard: 12, wyrm_scale: 3, runic_core: 2 }
+    ];
+
+    expectedCosts.forEach((cost, index) => {
+      const upgraded = room.upgradeItem(player, "frostbite_sword");
+      assert.equal(upgraded.ok, true);
+      assert.equal(upgraded.rank, index + 1);
+      assert.equal(upgraded.cost.coins, cost.coins);
+    });
+
+    assert.equal(player.coins, 0);
+    assert.equal(inventoryQuantity(player.inventory, "ice_shard"), 0);
+    assert.equal(inventoryQuantity(player.inventory, "wyrm_scale"), 0);
+    assert.equal(inventoryQuantity(player.inventory, "runic_core"), 0);
+    assert.equal(player.upgradeRanks.frostbite_sword, 5);
+    assert.equal(player.attack > attackBefore, true);
+
+    const capped = room.upgradeItem(player, "frostbite_sword");
+    assert.equal(capped.ok, false);
+    assert.equal(capped.reason, "max_rank");
+    assert.equal(player.coins, 0);
+    assert.equal(player.upgradeRanks.frostbite_sword, 5);
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("Frostforge upgrade ranks persist and apply to equipped stats", () => {
+  const base = createPlayerState("base", {
+    xp: 420,
+    equipment: createEquipmentState({ weapon: "frostbite_sword" }),
+    equippedWeapon: "frostbite_sword"
+  });
+  const upgraded = createPlayerState("upgraded", {
+    xp: 420,
+    equipment: createEquipmentState({ weapon: "frostbite_sword" }),
+    equippedWeapon: "frostbite_sword",
+    upgradeRanks: { frostbite_sword: 3 }
+  });
+
+  assert.equal(upgraded.upgradeRanks.frostbite_sword, 3);
+  assert.equal(upgraded.attack > base.attack, true);
+  assert.equal(upgraded.equippedWeapon, "frostbite_sword");
+
+  const saved = migrateFrostforgedSave(upgraded).save;
+  assert.equal(saved.upgradeRanks.frostbite_sword, 3);
+});
+
+test("client runtime includes Borin Frosthand and a Frostforge upgrade panel", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeOne = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
+  const runtimeSix = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-6.js.txt"), "utf8");
+
+  assert.match(runtimeOne, /Borin Frosthand/);
+  assert.match(runtimeOne, /frostforge_blacksmith/);
+  assert.match(runtimeSix, /renderFrostforgePanel/);
+  assert.match(runtimeSix, /PLAYER_UPGRADE_ITEM/);
 });
 
 test("Frostveil Reach is registered as a level 5 gated zone with a discoverable waypoint", () => {
