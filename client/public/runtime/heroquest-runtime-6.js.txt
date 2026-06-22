@@ -83,6 +83,10 @@ function syncRemotePlayers(players) {
       game.save.availableSkillPoints = player.availableSkillPoints ?? game.save.availableSkillPoints;
       game.save.spentAttributes = player.spentAttributes || game.save.spentAttributes;
       game.save.inventory = player.inventory || game.save.inventory;
+      game.save.equipment = player.equipment || game.save.equipment;
+      game.save.equippedWeapon = player.equippedWeapon || game.save.equippedWeapon;
+      game.save.equippedArmor = player.equippedArmor || game.save.equippedArmor;
+      game.save.magicPower = player.magicPower ?? game.save.magicPower;
       game.save.learnedAbilities = player.learnedAbilities || game.save.learnedAbilities;
       game.save.hotbar = player.hotbar || game.save.hotbar;
       game.save.skillTreeNodes = player.skillTreeNodes || game.save.skillTreeNodes;
@@ -95,6 +99,7 @@ function syncRemotePlayers(players) {
       } else if (game.save.state !== "dead") {
         game.respawnAt = null;
       }
+      applyVisualEquipment(game.playerGroup, game.save);
       continue;
     }
     seen.add(player.id);
@@ -260,20 +265,60 @@ function closePanel() {
 
 function renderInventoryPanel() {
   ui.panelTitle.textContent = "Inventory";
-  const inventory = game.save.inventory || [];
+  const inventory = normalizeInventory(game.save.inventory || []);
+  const equipment = createEquipmentState({
+    ...(game.save.equipment || {}),
+    weapon: game.save.equipment?.weapon || game.save.equippedWeapon,
+    chest: game.save.equipment?.chest || game.save.equippedArmor
+  });
+  const query = (game.inventorySearch || "").toLowerCase();
+  const filter = game.inventoryFilter || "all";
+  const slots = Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => inventory[index] || null);
   ui.panelContent.innerHTML = `
-    <div class="stat-line"><span>Weapon</span><strong>${getItem(game.save.equippedWeapon)?.name}</strong></div>
-    <div class="stat-line"><span>Armor</span><strong>${getItem(game.save.equippedArmor)?.name}</strong></div>
-    ${inventory.length ? inventory.map((entry) => {
+    <div class="inventory-tools">
+      <input id="inventory-search" maxlength="24" placeholder="Search items" value="${escapeHtml(game.inventorySearch || "")}" />
+      <select id="inventory-filter">
+        <option value="all" ${filter === "all" ? "selected" : ""}>All</option>
+        <option value="equipment" ${filter === "equipment" ? "selected" : ""}>Equipment</option>
+        <option value="consumable" ${filter === "consumable" ? "selected" : ""}>Consumables</option>
+        <option value="material" ${filter === "material" ? "selected" : ""}>Materials</option>
+      </select>
+    </div>
+    <div class="stat-line"><span>Slots</span><strong>${inventory.length} / ${INVENTORY_SLOT_COUNT}</strong></div>
+    <div class="equipment-grid">
+      ${EQUIPMENT_SLOTS.map((slot) => {
+        const item = getItem(equipment[slot]);
+        return `<div class="equipment-slot">
+          <span>${equipmentSlotLabel(slot)}</span>
+          <strong>${item?.name || "Empty"}</strong>
+          <small>${item?.rarity || ""}</small>
+        </div>`;
+      }).join("")}
+    </div>
+    <div class="inventory-grid">
+      ${slots.map((entry, index) => {
+        if (!entry) return `<div class="inventory-slot empty"><span>${index + 1}</span><small>Empty</small></div>`;
       const item = getItem(entry.itemId);
-      const canEquip = item?.type === "weapon" || item?.type === "armor";
+        if (!itemMatchesInventoryFilter(item, query, filter)) return `<div class="inventory-slot filtered"><span>${index + 1}</span><small>Hidden</small></div>`;
+      const canEquip = Boolean(slotForItem(item));
       const canUse = item?.type === "consumable" || entry.itemId === "rest_stone";
-      return `<div class="item-row">
-        <div><strong>${item?.name || entry.itemId}</strong> x${entry.quantity}<small>${item?.rarity || ""} ${item?.description || ""}</small></div>
-        <div>${canEquip ? `<button data-equip="${entry.itemId}">Equip</button>` : ""}${canUse ? `<button data-use="${entry.itemId}">Use</button>` : ""}</div>
+        return `<div class="inventory-slot filled">
+          <span>${index + 1}</span>
+          <strong>${item?.name || entry.itemId}</strong>
+          <small>x${entry.quantity} ${item?.rarity || ""}</small>
+          <div class="slot-actions">${canEquip ? `<button data-equip="${entry.itemId}">Equip</button>` : ""}${canUse ? `<button data-use="${entry.itemId}">Use</button>` : ""}</div>
       </div>`;
-    }).join("") : `<p class="intro">No loose items yet. Monsters drop glowing bags in the world.</p>`}
+      }).join("")}
+    </div>
   `;
+  ui.panelContent.querySelector("#inventory-search")?.addEventListener("input", (event) => {
+    game.inventorySearch = event.target.value;
+    renderInventoryPanel();
+  });
+  ui.panelContent.querySelector("#inventory-filter")?.addEventListener("change", (event) => {
+    game.inventoryFilter = event.target.value;
+    renderInventoryPanel();
+  });
   ui.panelContent.querySelectorAll("[data-equip]").forEach((button) => {
     button.addEventListener("click", () => equipItem(button.dataset.equip));
   });
@@ -289,9 +334,22 @@ function renderInventoryPanel() {
 function equipItem(itemId) {
   const item = getItem(itemId);
   if (!item) return;
-  if (item.type === "weapon") game.save.equippedWeapon = itemId;
-  if (item.type === "armor") game.save.equippedArmor = itemId;
-  game.save = applyEquipment(game.save);
+  const slot = slotForItem(item);
+  if (!slot) return toast("That item cannot be equipped.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_EQUIP_ITEM, { slot, itemId }, (ack) => {
+      if (!ack?.ok) return toast(equipReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("equip");
+      toast(`Equipped ${item.name}.`);
+      renderInventoryPanel();
+    });
+    return;
+  }
+  const result = equipItemToSlot(game.save, slot, itemId);
+  if (!result.ok) return toast(equipReason(result.reason));
+  game.save = result.player;
   applyVisualEquipment(game.playerGroup, game.save);
   saveGame();
   playUiSound("equip");
@@ -299,19 +357,42 @@ function equipItem(itemId) {
   renderInventoryPanel();
 }
 
+function equipmentSlotLabel(slot) {
+  return slot.charAt(0).toUpperCase() + slot.slice(1);
+}
+
+function itemMatchesInventoryFilter(item, query, filter) {
+  if (!item) return false;
+  const searchable = `${item.name || ""} ${item.id || ""} ${item.description || ""}`.toLowerCase();
+  if (query && !searchable.includes(query)) return false;
+  if (filter === "equipment") return Boolean(slotForItem(item));
+  if (filter === "consumable") return item.type === "consumable" || item.id === "rest_stone";
+  if (filter === "material") return item.type === "material";
+  return true;
+}
+
+function equipReason(reason) {
+  if (reason === "level") return "Your level is too low for that item.";
+  if (reason === "missing") return "That item is not in your inventory.";
+  if (reason === "slot") return "That item does not fit that slot.";
+  if (reason === "dead") return "You cannot equip items while defeated.";
+  return "That item cannot be equipped.";
+}
+
 function renderShopPanel() {
   ui.panelTitle.textContent = "Weapon Shop";
   ui.panelContent.innerHTML = SHOP_ITEMS.map((stock) => {
     const item = getItem(stock.itemId);
     const owned = ownsItem(stock.itemId);
-    const equipped = game.save.equippedWeapon === stock.itemId || game.save.equippedArmor === stock.itemId;
+    const equipped = equippedItemIds().has(stock.itemId);
+    const canEquip = Boolean(slotForItem(item));
     const stat = item?.attack ? `+${item.attack} attack` : item?.heal ? `Heals ${item.heal} HP` : "Starter item";
     const status = equipped ? "Equipped" : owned && item?.type !== "consumable" ? "Owned" : `${stock.price} coins`;
     return `<div class="item-row shop-row">
       <div><strong>${item?.name || stock.itemId}</strong><small>${item?.rarity || ""} ${stat}. ${item?.description || ""}</small></div>
       <div class="shop-actions">
         <span>${status}</span>
-        ${item?.type !== "consumable" ? `<button data-shop-equip="${stock.itemId}" ${owned ? "" : "disabled"}>Equip</button>` : ""}
+        ${canEquip ? `<button data-shop-equip="${stock.itemId}" ${owned ? "" : "disabled"}>Equip</button>` : ""}
         <button data-shop-buy="${stock.itemId}" ${equipped && item?.type !== "consumable" ? "disabled" : ""}>${owned && item?.type !== "consumable" ? "Owned" : "Buy"}</button>
       </div>
     </div>`;
@@ -329,7 +410,15 @@ function renderShopPanel() {
 }
 
 function ownsItem(itemId) {
-  return game.save.equippedWeapon === itemId || game.save.equippedArmor === itemId || countItem(itemId) > 0 || itemId === "wooden_sword";
+  return equippedItemIds().has(itemId) || countItem(itemId) > 0 || itemId === "wooden_sword";
+}
+
+function equippedItemIds() {
+  return new Set(Object.values(createEquipmentState({
+    ...(game.save.equipment || {}),
+    weapon: game.save.equipment?.weapon || game.save.equippedWeapon,
+    chest: game.save.equipment?.chest || game.save.equippedArmor
+  })).filter(Boolean));
 }
 
 function buyShopItem(itemId) {
@@ -345,8 +434,13 @@ function buyShopItem(itemId) {
     toast(`Need ${stock.price} coins for ${item.name}.`);
     return;
   }
+  const inventoryResult = addInventoryStack(game.save.inventory, itemId, 1);
+  if (!inventoryResult.ok) {
+    toast("Inventory full. Make space before buying.");
+    return renderShopPanel();
+  }
   game.save.coins -= stock.price;
-  game.save.inventory = addInventoryItem(game.save.inventory, itemId, 1);
+  game.save.inventory = inventoryResult.inventory;
   game.save = applyEquipment(game.save);
   saveGame();
   playUiSound("pickup");
@@ -362,7 +456,7 @@ function openChest(chestId) {
   if (game.online) {
     game.socket.emit(NET.CHEST_CLAIM, { chestId }, (ack) => {
       if (!ack?.ok) return toast(chestClaimReason(ack?.reason));
-      applyChestReward(chest, ack.reward);
+      applyChestReward(chest, ack.reward, ack.player);
     });
     return;
   }
@@ -376,15 +470,27 @@ function localChestReward(chestId) {
   return { coins: 18, items: [{ itemId: "small_health_potion", quantity: 1 }] };
 }
 
-function applyChestReward(chest, reward) {
-  setChestOpened(chest, true);
-  game.save.coins += reward?.coins || 0;
-  for (const item of reward?.items || []) {
-    game.save.inventory = addInventoryItem(game.save.inventory, item.itemId, item.quantity || 1);
+function applyChestReward(chest, reward, serverPlayer = null) {
+  if (serverPlayer) {
+    applyServerPlayerUpdate(serverPlayer);
+    setChestOpened(chest, true);
+    saveGame();
+    playUiSound("pickup");
+    toast(`Chest opened: +${reward?.coins || 0} coins${reward?.items?.length ? " and item loot" : ""}.`);
+    return true;
   }
+  const inventoryResult = applyRewardItemsToInventory(game.save.inventory, reward?.items || []);
+  if (!inventoryResult.ok) {
+    toast(inventoryResult.reason === "full" ? "Inventory full. Make space before opening this chest." : "That chest cannot be opened.");
+    return false;
+  }
+  setChestOpened(chest, true);
+  game.save.inventory = inventoryResult.inventory;
+  game.save.coins += reward?.coins || 0;
   saveGame();
   playUiSound("pickup");
   toast(`Chest opened: +${reward?.coins || 0} coins${reward?.items?.length ? " and item loot" : ""}.`);
+  return true;
 }
 
 function openDialogue(dialogueId, index = 0) {
@@ -651,6 +757,7 @@ function lootClaimReason(reason) {
   if (reason === "dead") return "You cannot collect loot while defeated.";
   if (reason === "range") return "Move closer to collect that loot.";
   if (reason === "owner") return "That loot belongs to another hero.";
+  if (reason === "inventory_full") return "Inventory full. Make space before collecting loot.";
   return "That loot cannot be collected.";
 }
 
@@ -658,6 +765,7 @@ function chestClaimReason(reason) {
   if (reason === "dead") return "You cannot open chests while defeated.";
   if (reason === "range") return "Move closer to open that chest.";
   if (reason === "opened") return "That chest is already empty.";
+  if (reason === "inventory_full") return "Inventory full. Make space before opening this chest.";
   return "That chest cannot be opened.";
 }
 
@@ -671,6 +779,10 @@ function applyServerPlayerUpdate(player) {
     level: player.level ?? game.save.level,
     xp: player.xp ?? game.save.xp,
     coins: player.coins ?? game.save.coins,
+    equipment: player.equipment || game.save.equipment,
+    equippedWeapon: player.equippedWeapon || game.save.equippedWeapon,
+    equippedArmor: player.equippedArmor || game.save.equippedArmor,
+    magicPower: player.magicPower ?? game.save.magicPower,
     spentAttributes: player.spentAttributes || game.save.spentAttributes,
     availableAttributePoints: player.availableAttributePoints ?? game.save.availableAttributePoints,
     availableSkillPoints: player.availableSkillPoints ?? game.save.availableSkillPoints,
@@ -682,6 +794,7 @@ function applyServerPlayerUpdate(player) {
     activeLoadout: player.activeLoadout || game.save.activeLoadout
   });
   game.save = applyEquipment(game.save);
+  if (game.playerGroup) applyVisualEquipment(game.playerGroup, game.save);
 }
 
 function allocateAttributePoint(attributeId) {
@@ -728,6 +841,10 @@ function useRestStoneItem() {
 
 function renderCharacterPanel() {
   const stats = applyEquipment(game.save);
+  const equipment = stats.equipment || createEquipmentState({
+    weapon: stats.equippedWeapon,
+    chest: stats.equippedArmor
+  });
   const attributeRows = [
     { id: "health", label: "Health", benefit: "+12 max HP, +1 potion healing" },
     { id: "strength", label: "Strength", benefit: "+2 physical power" },
@@ -750,6 +867,12 @@ function renderCharacterPanel() {
     <div class="stat-line"><span>Skill Points</span><strong>${stats.availableSkillPoints}</strong></div>
     <div class="stat-line"><span>Weapon</span><strong>${getItem(stats.equippedWeapon)?.name}</strong></div>
     <div class="stat-line"><span>Armor</span><strong>${getItem(stats.equippedArmor)?.name}</strong></div>
+    <div class="equipment-grid compact">
+      ${EQUIPMENT_SLOTS.map((slot) => {
+        const item = getItem(equipment[slot]);
+        return `<div class="equipment-slot"><span>${equipmentSlotLabel(slot)}</span><strong>${item?.name || "Empty"}</strong></div>`;
+      }).join("")}
+    </div>
     ${attributeRows.map((attribute) => `
       <div class="item-row">
         <div><strong>${attribute.label}</strong><small>${stats.spentAttributes?.[attribute.id] || 0} spent. Next point: ${attribute.benefit}.</small></div>

@@ -8,15 +8,31 @@
 }
 
 function applyLootBag(bag) {
+  const inventoryResult = applyRewardItemsToInventory(game.save.inventory, bag.items || []);
+  if (!inventoryResult.ok) {
+    toast(inventoryResult.reason === "full" ? "Inventory full. Make space before collecting loot." : "That loot cannot be collected.");
+    return false;
+  }
+  game.save.inventory = inventoryResult.inventory;
   game.save.coins += bag.coins || 0;
   if (bag.coins) toast(`Collected ${bag.coins} coins.`);
   for (const item of bag.items || []) {
-    game.save.inventory = addInventoryItem(game.save.inventory, item.itemId, item.quantity || 1);
     const found = getItem(item.itemId);
     toast(`${["Rare", "Epic"].includes(found?.rarity) ? "Rare drop: " : "Found "}${found?.name || item.itemId}.`);
   }
   playUiSound("pickup");
   saveGame();
+  return true;
+}
+
+function applyRewardItemsToInventory(inventory, items = []) {
+  let nextInventory = inventory || [];
+  for (const item of items) {
+    const result = addInventoryStack(nextInventory, item.itemId, item.quantity || 1);
+    if (!result.ok) return result;
+    nextInventory = result.inventory;
+  }
+  return { ok: true, inventory: nextInventory, overflow: [] };
 }
 
 function hitBoss(damage, kind = "auto") {

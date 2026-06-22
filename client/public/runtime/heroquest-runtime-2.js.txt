@@ -286,20 +286,61 @@ function createHumanoidMesh({ name, color, local = false, skin = 0xf7f4ec, accen
 function applyVisualEquipment(group, loadout = {}) {
   if (!group?.userData?.parts) return;
   const parts = group.userData.parts;
-  const weapon = getItem(loadout.equippedWeapon || "wooden_sword");
-  const armor = getItem(loadout.equippedArmor || "traveler_tunic");
-  const armorColor = armor?.rarity === "Epic" ? 0x6d5e8d : armor?.rarity === "Rare" ? 0x8a857b : armor?.rarity === "Uncommon" ? 0x7c8f76 : 0xd8d1bf;
+  const equipment = createEquipmentState({
+    ...(loadout.equipment || {}),
+    weapon: loadout.equipment?.weapon || loadout.equippedWeapon || "wooden_sword",
+    chest: loadout.equipment?.chest || loadout.equippedArmor || "traveler_tunic"
+  });
+  const weapon = getItem(equipment.weapon || "wooden_sword");
+  const armor = getItem(equipment.chest || "traveler_tunic");
+  const slotColor = (item, fallback) => {
+    if (!item) return fallback;
+    if (item.rarity === "Legendary") return 0x93fff1;
+    if (item.rarity === "Epic") return 0x6d5e8d;
+    if (item.rarity === "Rare") return 0x7d92a6;
+    if (item.rarity === "Uncommon") return 0x7c8f76;
+    return fallback;
+  };
+  const armorColor = slotColor(armor, 0xd8d1bf);
   [parts.chestPlate, parts.leftShoulder, parts.rightShoulder, parts.helmet].forEach((part) => {
     if (!part?.material) return;
     part.material.color.setHex(armorColor);
     part.visible = true;
   });
+  const helmet = getItem(equipment.head);
+  if (helmet && parts.helmet?.material) parts.helmet.material.color.setHex(slotColor(helmet, armorColor));
+  const hands = getItem(equipment.hands);
+  [parts.leftGlove, parts.rightGlove].forEach((part) => {
+    if (part?.material) part.material.color.setHex(slotColor(hands, loadout.color || 0x4da7ff));
+  });
+  const legs = getItem(equipment.legs);
+  [parts.leftUpperLeg, parts.rightUpperLeg].forEach((part) => {
+    if (legs && part?.material) part.material.color.setHex(slotColor(legs, 0xd8d1bf));
+  });
+  const boots = getItem(equipment.boots);
+  [parts.leftFoot, parts.rightFoot].forEach((part) => {
+    if (boots && part?.material) part.material.color.setHex(slotColor(boots, loadout.color || 0x4da7ff));
+  });
+  const offhand = getItem(equipment.offhand);
+  if (offhand && parts.backSash?.material) parts.backSash.material.color.setHex(slotColor(offhand, 0x8db2c7));
   if (parts.blade?.material) {
     const isClub = weapon?.id === "stone_club";
-    parts.blade.material.color.setHex(isClub ? 0x7b7365 : weapon?.rarity === "Epic" ? 0x3a243f : 0xd7d6ce);
-    parts.blade.scale.set(isClub ? 2.3 : 1, weapon?.id === "wooden_sword" ? 0.86 : weapon?.attack >= 7 ? 1.18 : 1, isClub ? 2.3 : 1);
+    const isStaff = weapon?.type === "staff";
+    parts.blade.material.color.setHex(isClub ? 0x7b7365 : isStaff ? 0x8ad9ff : weapon?.rarity === "Epic" ? 0x3a243f : 0xd7d6ce);
+    parts.blade.scale.set(isClub ? 2.3 : isStaff ? 0.58 : 1, isStaff ? 1.48 : weapon?.id === "wooden_sword" ? 0.86 : weapon?.attack >= 7 ? 1.18 : 1, isClub ? 2.3 : isStaff ? 0.58 : 1);
+    parts.blade.position.y = isStaff ? 0.48 : 0.56;
   }
-  if (parts.guard?.material) parts.guard.material.color.setHex(weapon?.rarity === "Epic" ? 0x9a76ff : 0xd1a64f);
+  if (parts.guard?.material) {
+    const isStaff = weapon?.type === "staff";
+    parts.guard.visible = !isStaff;
+    parts.guard.material.color.setHex(weapon?.rarity === "Epic" ? 0x9a76ff : 0xd1a64f);
+  }
+  if (parts.handle?.material) {
+    const isStaff = weapon?.type === "staff";
+    parts.handle.material.color.setHex(isStaff ? 0x5b402a : 0x4d3425);
+    parts.handle.scale.set(isStaff ? 0.8 : 1, isStaff ? 2.2 : 1, isStaff ? 0.8 : 1);
+    parts.handle.position.y = isStaff ? -0.24 : -0.42;
+  }
 }
 
 function populateGoblinMesh(group, def) {

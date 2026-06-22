@@ -1,6 +1,7 @@
 import { XP_TABLE, STARTING_PLAYER } from "./constants.js";
-import { getItem, ITEMS } from "./items.js";
+import { getItem } from "./items.js";
 import { applyProgressionStats, calculateDamageReduction, LEVEL_CAP } from "./progression.js";
+import { normalizeEquipment } from "./equipment.js";
 
 export function randomInt(min, max, rng = Math.random) {
   return Math.floor(rng() * (max - min + 1)) + min;
@@ -30,19 +31,28 @@ export function xpToNextLevel(level) {
 
 export function applyEquipment(basePlayer) {
   const player = { ...STARTING_PLAYER, ...basePlayer };
-  const weapon = getItem(player.equippedWeapon) || ITEMS.wooden_sword;
-  const armor = getItem(player.equippedArmor) || ITEMS.traveler_tunic;
+  const equipment = normalizeEquipment(player);
+  const equippedItems = Object.values(equipment).map(getItem).filter(Boolean);
   const level = computeLevelFromXp(player.xp || 0);
-  const maxHealth = STARTING_PLAYER.maxHealth + (level - 1) * 14;
-  const attack = STARTING_PLAYER.attack + (level - 1) * 2 + (weapon.attack || 0);
-  const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + (armor.defense || 0);
-  const speed = STARTING_PLAYER.speed * (weapon.speed || 1) * (armor.speed || 1);
+  const itemAttack = equippedItems.reduce((total, item) => total + (item.attack || 0), 0);
+  const itemDefense = equippedItems.reduce((total, item) => total + (item.defense || 0), 0);
+  const itemHealth = equippedItems.reduce((total, item) => total + (item.health || 0), 0);
+  const itemMagicPower = equippedItems.reduce((total, item) => total + (item.magicPower || 0), 0);
+  const itemSpeedMultiplier = equippedItems.reduce((total, item) => total * (item.speed || 1), 1);
+  const maxHealth = STARTING_PLAYER.maxHealth + (level - 1) * 14 + itemHealth;
+  const attack = STARTING_PLAYER.attack + (level - 1) * 2 + itemAttack;
+  const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + itemDefense;
+  const speed = STARTING_PLAYER.speed * itemSpeedMultiplier;
   return applyProgressionStats({
     ...player,
+    equipment,
+    equippedWeapon: equipment.weapon || STARTING_PLAYER.equippedWeapon,
+    equippedArmor: equipment.chest || STARTING_PLAYER.equippedArmor,
     level,
     baseMaxHealth: maxHealth,
     baseAttack: attack,
     baseDefense: defense,
+    itemMagicPower,
     maxHealth,
     health: Math.min(player.health ?? maxHealth, maxHealth),
     attack,

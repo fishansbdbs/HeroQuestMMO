@@ -283,7 +283,11 @@ function awardEnemy(enemyDef) {
   for (const quest of questUpdate.completed) {
     toast(`Quest complete: ${quest.name}`);
     game.save = addProgressRewards(game.save, quest.reward);
-    if (quest.reward.itemId) game.save.inventory = addInventoryItem(game.save.inventory, quest.reward.itemId, 1);
+    if (quest.reward.itemId) {
+      const inventoryResult = addInventoryStack(game.save.inventory, quest.reward.itemId, 1);
+      if (inventoryResult.ok) game.save.inventory = inventoryResult.inventory;
+      else toast("Inventory full. Quest item stayed pending.");
+    }
     if (quest.reward.title) game.save.title = quest.reward.title;
   }
   saveGame();
@@ -309,7 +313,8 @@ function claimLoot(lootId) {
   if (game.online) {
     game.socket.emit(NET.LOOT_CLAIM, { lootId }, (ack) => {
       if (ack?.ok) {
-        applyLootBag(ack.bag);
+        if (ack.player) applyServerPlayerUpdate(ack.player);
+        else applyLootBag(ack.bag);
         game.loot.delete(lootId);
         toast("Loot collected.");
       } else {
@@ -321,4 +326,4 @@ function claimLoot(lootId) {
   const bag = game.loot.get(lootId);
   if (!bag) return toast("That loot is no longer available.");
   if (distance2d(groupPosition(game.playerGroup), bag.position) > 4) return toast("Move closer to collect that loot.");
-  applyLootBag(bag);
+  if (!applyLootBag(bag)) return;

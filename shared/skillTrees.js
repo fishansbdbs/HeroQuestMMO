@@ -1,4 +1,5 @@
 import { STARTING_PLAYER } from "./constants.js";
+import { applyEquipmentSlots, createEquipmentState, normalizeEquipment } from "./equipment.js";
 import { applyProgressionStats } from "./progression.js";
 
 export const SKILL_TREES = {
@@ -149,6 +150,7 @@ function clone(value) {
 function ownsItem(player, itemId) {
   if (!itemId) return true;
   if (itemId === STARTING_PLAYER.equippedWeapon || itemId === STARTING_PLAYER.equippedArmor) return true;
+  if (Object.values(normalizeEquipment(player)).includes(itemId)) return true;
   return (player.inventory || []).some((entry) => entry.itemId === itemId && (entry.quantity || 0) > 0);
 }
 
@@ -186,12 +188,14 @@ export function purchaseSkillNode(player, nodeId) {
 export function saveLoadout(player, slot, label = "Build") {
   if (!["A", "B"].includes(slot)) return { ok: false, reason: "slot" };
   const savedBuilds = { ...(player.savedBuilds || {}) };
+  const equipment = normalizeEquipment(player);
   savedBuilds[slot] = {
     label: String(label || `Loadout ${slot}`).slice(0, 24),
     skillTreeNodes: clone(player.skillTreeNodes || {}),
     hotbar: clone(player.hotbar || []),
-    equippedWeapon: player.equippedWeapon,
-    equippedArmor: player.equippedArmor,
+    equipment,
+    equippedWeapon: equipment.weapon,
+    equippedArmor: equipment.chest,
     role: slot === "A" ? "Primary" : "Secondary"
   };
   return { ok: true, player: { ...player, savedBuilds } };
@@ -201,19 +205,25 @@ export function activateLoadout(player, slot) {
   if (player.inCombat) return { ok: false, reason: "combat" };
   const build = player.savedBuilds?.[slot];
   if (!build) return { ok: false, reason: "missing" };
-  if (!ownsItem(player, build.equippedWeapon) || !ownsItem(player, build.equippedArmor)) {
+  const equipment = createEquipmentState({
+    ...(build.equipment || {}),
+    weapon: build.equipment?.weapon || build.equippedWeapon,
+    chest: build.equipment?.chest || build.equippedArmor
+  });
+  if (Object.values(equipment).some((itemId) => !ownsItem(player, itemId))) {
     return { ok: false, reason: "item" };
   }
   const hotbar = clone(build.hotbar || []);
   if (!hotbarAbilitiesAreKnown(player, hotbar)) return { ok: false, reason: "ability" };
   return {
     ok: true,
-    player: applyProgressionStats({
+    player: applyEquipmentSlots({
       ...player,
       skillTreeNodes: clone(build.skillTreeNodes || {}),
       hotbar,
-      equippedWeapon: build.equippedWeapon,
-      equippedArmor: build.equippedArmor,
+      equipment,
+      equippedWeapon: equipment.weapon || STARTING_PLAYER.equippedWeapon,
+      equippedArmor: equipment.chest || STARTING_PLAYER.equippedArmor,
       activeLoadout: slot
     })
   };

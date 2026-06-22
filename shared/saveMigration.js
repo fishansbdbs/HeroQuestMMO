@@ -1,4 +1,5 @@
 import { STARTING_PLAYER } from "./constants.js";
+import { createEquipmentState } from "./equipment.js";
 import { STARTER_INVENTORY } from "./items.js";
 import { createQuestProgress } from "./quests.js";
 
@@ -92,6 +93,10 @@ function createDefaultIceZeroSave() {
     name: "",
     color: 0x4da7ff,
     inventory: clone(STARTER_INVENTORY),
+    equipment: createEquipmentState({
+      weapon: STARTING_PLAYER.equippedWeapon,
+      chest: STARTING_PLAYER.equippedArmor
+    }),
     openedChests: [],
     questProgress: createQuestProgress(),
     title: "",
@@ -140,6 +145,14 @@ export function migrateIceZeroSave(input) {
   const mana = Number.isFinite(Number(source.mana))
     ? Math.min(maxMana, Math.max(0, Number(source.mana)))
     : maxMana;
+  const sourceEquipment = asObject(source.equipment);
+  const equippedWeapon = typeof source.equippedWeapon === "string" ? source.equippedWeapon : base.equippedWeapon;
+  const equippedArmor = typeof source.equippedArmor === "string" ? source.equippedArmor : base.equippedArmor;
+  const equipment = createEquipmentState({
+    ...sourceEquipment,
+    weapon: typeof sourceEquipment.weapon === "string" ? sourceEquipment.weapon : equippedWeapon,
+    chest: typeof sourceEquipment.chest === "string" ? sourceEquipment.chest : equippedArmor
+  });
 
   if (removeLegacyHeroPulse) {
     messages.push(HERO_PULSE_REFUND_MESSAGE);
@@ -157,8 +170,9 @@ export function migrateIceZeroSave(input) {
     health: Math.min(health, maxHealth),
     maxHealth,
     inventory: normalizeInventory(source.inventory),
-    equippedWeapon: typeof source.equippedWeapon === "string" ? source.equippedWeapon : base.equippedWeapon,
-    equippedArmor: typeof source.equippedArmor === "string" ? source.equippedArmor : base.equippedArmor,
+    equipment,
+    equippedWeapon: equipment.weapon || base.equippedWeapon,
+    equippedArmor: equipment.chest || base.equippedArmor,
     openedChests: uniqueStrings(source.openedChests),
     questProgress: asObject(source.questProgress || base.questProgress),
     title: typeof source.title === "string" ? source.title : base.title,

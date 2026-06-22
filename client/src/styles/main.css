@@ -578,6 +578,92 @@ h1 {
   align-items: center;
 }
 
+.inventory-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 135px;
+  gap: 8px;
+}
+
+.equipment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.equipment-grid.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.equipment-slot,
+.inventory-slot {
+  border: 1px solid rgba(255, 230, 175, 0.14);
+  border-radius: 7px;
+  background: rgba(7, 10, 14, 0.36);
+}
+
+.equipment-slot {
+  min-height: 58px;
+  padding: 8px;
+  display: grid;
+  gap: 3px;
+}
+
+.equipment-slot span,
+.inventory-slot span {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.equipment-slot strong,
+.inventory-slot strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.equipment-slot small,
+.inventory-slot small {
+  color: var(--muted);
+  min-height: 16px;
+}
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inventory-slot {
+  min-height: 112px;
+  padding: 7px;
+  display: grid;
+  grid-template-rows: 13px minmax(30px, auto) 17px auto;
+  align-content: start;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.inventory-slot.empty,
+.inventory-slot.filtered {
+  opacity: 0.58;
+  place-items: center;
+  text-align: center;
+}
+
+.slot-actions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.slot-actions button {
+  min-height: 26px;
+  padding: 0 7px;
+  font-size: 11px;
+  box-shadow: none;
+}
+
 .boss-frame {
   left: 50%;
   top: 18px;
@@ -687,6 +773,13 @@ h1 {
     width: 58px;
     height: 58px;
     min-height: 58px;
+  }
+
+  .inventory-tools,
+  .equipment-grid,
+  .equipment-grid.compact,
+  .inventory-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .combat-log {

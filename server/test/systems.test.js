@@ -13,6 +13,8 @@ import {
 } from "../../shared/progression.js";
 import { assignHotbarAbility, purchaseTrainerAbility, validateAbilityTarget } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
+import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot } from "../../shared/equipment.js";
+import { INVENTORY_SLOT_COUNT, addInventoryStack } from "../../shared/inventory.js";
 import { applyQuestKill, createQuestProgress } from "../../shared/quests.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
@@ -52,6 +54,13 @@ test("client runtime chunks compile after concatenation", () => {
       "ITEMS",
       "STARTER_INVENTORY",
       "NET",
+      "EQUIPMENT_SLOTS",
+      "createEquipmentState",
+      "equipItemToSlot",
+      "slotForItem",
+      "INVENTORY_SLOT_COUNT",
+      "addInventoryStack",
+      "normalizeInventory",
       "applyQuestKill",
       "createQuestProgress",
       "getQuestList",
@@ -178,6 +187,8 @@ test("IceZero save migration preserves legacy progress and grants retroactive po
   assert.equal(result.save.title, legacySave.title);
   assert.equal(result.save.settings.sensitivity, 1.1);
   assert.equal(result.save.health > 0, true);
+  assert.equal(result.save.equipment.weapon, legacySave.equippedWeapon);
+  assert.equal(result.save.equipment.chest, legacySave.equippedArmor);
   assert.equal(result.save.availableAttributePoints, 9);
   assert.equal(result.save.availableSkillPoints, 3);
   assert.deepEqual(result.save.spentAttributes, { health: 0, strength: 0, magic: 0, defense: 0 });
@@ -223,6 +234,8 @@ test("IceZero save migration keeps a backup and falls back safely for corrupted 
   assert.equal(Number.isNaN(result.save.maxMana), false);
   assert.equal(Number.isNaN(result.save.mana), false);
   assert.deepEqual(result.save.inventory, [{ itemId: "small_health_potion", quantity: 2 }]);
+  assert.equal(result.save.equipment.weapon, STARTING_PLAYER.equippedWeapon);
+  assert.equal(result.save.equipment.chest, STARTING_PLAYER.equippedArmor);
 });
 
 test("equipment and XP rewards update player stats", () => {
@@ -402,7 +415,15 @@ test("loadouts save and activate owned abilities and equipment without duplicati
     ...STARTING_PLAYER,
     level: 5,
     xp: 420,
-    inventory: [{ itemId: "stone_club", quantity: 1 }],
+    inventory: [
+      { itemId: "stone_club", quantity: 1 },
+      { itemId: "snowhide_helmet", quantity: 1 }
+    ],
+    equipment: createEquipmentState({
+      weapon: "stone_club",
+      chest: "traveler_tunic",
+      head: "snowhide_helmet"
+    }),
     equippedWeapon: "stone_club",
     equippedArmor: "traveler_tunic",
     learnedAbilities: ["hero_pulse"],
@@ -414,9 +435,14 @@ test("loadouts save and activate owned abilities and equipment without duplicati
   const saved = saveLoadout(player, "A", "Pulse Might");
   assert.equal(saved.ok, true);
   assert.equal(saved.player.savedBuilds.A.label, "Pulse Might");
+  assert.equal(saved.player.savedBuilds.A.equipment.head, "snowhide_helmet");
 
   const changed = {
     ...saved.player,
+    equipment: createEquipmentState({
+      weapon: "wooden_sword",
+      chest: "traveler_tunic"
+    }),
     equippedWeapon: "wooden_sword",
     hotbar: ["auto", "slash", null, "guard", "potion", "dash", null, null],
     skillTreeNodes: {}
@@ -424,13 +450,153 @@ test("loadouts save and activate owned abilities and equipment without duplicati
   const activated = activateLoadout(changed, "A");
   assert.equal(activated.ok, true);
   assert.equal(activated.player.equippedWeapon, "stone_club");
+  assert.equal(activated.player.equipment.head, "snowhide_helmet");
   assert.equal(activated.player.hotbar[2], "hero_pulse");
   assert.equal(activated.player.skillTreeNodes.might_training, 2);
-  assert.deepEqual(activated.player.inventory, [{ itemId: "stone_club", quantity: 1 }]);
+  assert.deepEqual(activated.player.inventory, [
+    { itemId: "stone_club", quantity: 1 },
+    { itemId: "snowhide_helmet", quantity: 1 }
+  ]);
 
   const missingAbility = activateLoadout({ ...changed, learnedAbilities: [] }, "A");
   assert.equal(missingAbility.ok, false);
   assert.equal(missingAbility.reason, "ability");
+});
+
+test("IceZero inventory stacks items to limits and refuses overflow without deleting loot", () => {
+  const potions = addInventoryStack([], "small_health_potion", 23);
+  assert.equal(potions.ok, true);
+  assert.deepEqual(potions.inventory, [
+    { itemId: "small_health_potion", quantity: 20 },
+    { itemId: "small_health_potion", quantity: 3 }
+  ]);
+
+  const fullInventory = Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => ({
+    itemId: index === 0 ? "small_health_potion" : `full_slot_${index}`,
+    quantity: 1
+  }));
+  const stacked = addInventoryStack(fullInventory, "small_health_potion", 19);
+  assert.equal(stacked.ok, true);
+  assert.equal(stacked.inventory[0].quantity, 20);
+
+  const overflow = addInventoryStack(stacked.inventory, "rusty_blade", 1);
+  assert.equal(overflow.ok, false);
+  assert.equal(overflow.reason, "full");
+  assert.deepEqual(overflow.inventory, stacked.inventory);
+  assert.deepEqual(overflow.overflow, [{ itemId: "rusty_blade", quantity: 1 }]);
+});
+
+test("equipment slots validate ownership, level requirements, and item categories", () => {
+  assert.deepEqual(EQUIPMENT_SLOTS, ["head", "chest", "hands", "legs", "boots", "weapon", "offhand", "accessory"]);
+
+  const player = applyEquipment({
+    ...STARTING_PLAYER,
+    xp: 260,
+    inventory: [
+      { itemId: "apprentice_staff", quantity: 1 },
+      { itemId: "frostspire_staff", quantity: 1 },
+      { itemId: "snowhide_helmet", quantity: 1 }
+    ],
+    equipment: createEquipmentState()
+  });
+
+  const staff = equipItemToSlot(player, "weapon", "apprentice_staff");
+  assert.equal(staff.ok, true);
+  assert.equal(staff.player.equipment.weapon, "apprentice_staff");
+  assert.equal(staff.player.equippedWeapon, "apprentice_staff");
+  assert.equal(staff.player.magicPower >= 3, true);
+
+  const highLevel = equipItemToSlot(player, "weapon", "frostspire_staff");
+  assert.equal(highLevel.ok, false);
+  assert.equal(highLevel.reason, "level");
+
+  const wrongSlot = equipItemToSlot(player, "weapon", "snowhide_helmet");
+  assert.equal(wrongSlot.ok, false);
+  assert.equal(wrongSlot.reason, "slot");
+});
+
+test("server loot and chest rewards do not delete rewards when inventory is full", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const fullInventory = Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => ({
+      itemId: `full_slot_${index}`,
+      quantity: 1
+    }));
+    const player = createPlayerState("p1", {
+      zone: ZONES.HUB,
+      position: { x: -12, y: 0, z: 12 },
+      coins: 5,
+      inventory: fullInventory
+    });
+    room.players.set(player.id, player);
+
+    const chestBlocked = room.claimChest(player, "hub_weapon_cache");
+    assert.equal(chestBlocked.ok, false);
+    assert.equal(chestBlocked.reason, "inventory_full");
+    assert.equal(room.chests.get("hub_weapon_cache").openedBy.has(player.id), false);
+    assert.equal(player.coins, 5);
+
+    const lootBag = {
+      id: "loot_full",
+      zone: ZONES.HUB,
+      position: { x: -12, y: 0.25, z: 12 },
+      ownerId: null,
+      coins: 12,
+      xp: 0,
+      items: [{ itemId: "rusty_blade", quantity: 1 }],
+      createdAt: Date.now()
+    };
+    room.loot.lootBags.set(lootBag.id, lootBag);
+    const lootBlocked = room.claimLoot(player, lootBag.id);
+    assert.equal(lootBlocked.ok, false);
+    assert.equal(lootBlocked.reason, "inventory_full");
+    assert.equal(room.loot.lootBags.has(lootBag.id), true);
+    assert.equal(player.coins, 5);
+
+    player.inventory = [];
+    const lootClaimed = room.claimLoot(player, lootBag.id);
+    assert.equal(lootClaimed.ok, true);
+    assert.equal(room.loot.lootBags.has(lootBag.id), false);
+    assert.equal(player.coins, 17);
+    assert.deepEqual(player.inventory, [{ itemId: "rusty_blade", quantity: 1 }]);
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("server equipment changes validate slots and update authoritative player state", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const player = createPlayerState("p1", {
+      xp: 260,
+      inventory: [
+        { itemId: "apprentice_staff", quantity: 1 },
+        { itemId: "snowhide_helmet", quantity: 1 }
+      ],
+      equipment: createEquipmentState()
+    });
+
+    const equipped = room.equipItem(player, "weapon", "apprentice_staff");
+    assert.equal(equipped.ok, true);
+    assert.equal(player.equipment.weapon, "apprentice_staff");
+    assert.equal(player.equippedWeapon, "apprentice_staff");
+    assert.equal(player.magicPower >= 3, true);
+
+    const wrongSlot = room.equipItem(player, "weapon", "snowhide_helmet");
+    assert.equal(wrongSlot.ok, false);
+    assert.equal(wrongSlot.reason, "slot");
+    assert.equal(player.equipment.weapon, "apprentice_staff");
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
 });
 
 test("enemy defeat produces rewards and marks quest progress", () => {

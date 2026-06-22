@@ -6,6 +6,8 @@ import { BOSS, ENEMIES, FIELD_SPAWNS, getEnemy } from "../../shared/enemies.js";
 import { GAME_VERSION, PATCH_NOTES, PLAYER_LIMITS, STARTING_PLAYER, XP_TABLE, ZONES } from "../../shared/constants.js";
 import { getItem, ITEMS, STARTER_INVENTORY } from "../../shared/items.js";
 import { NET } from "../../shared/netMessages.js";
+import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot, slotForItem } from "../../shared/equipment.js";
+import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory } from "../../shared/inventory.js";
 import { ICEZERO_MIGRATION_ID, migrateIceZeroSave } from "../../shared/saveMigration.js";
 import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from "../../shared/trainers.js";
@@ -69,6 +71,13 @@ const bootRuntime = new Function(
   "ITEMS",
   "STARTER_INVENTORY",
   "NET",
+  "EQUIPMENT_SLOTS",
+  "createEquipmentState",
+  "equipItemToSlot",
+  "slotForItem",
+  "INVENTORY_SLOT_COUNT",
+  "addInventoryStack",
+  "normalizeInventory",
   "applyQuestKill",
   "createQuestProgress",
   "getQuestList",
@@ -123,6 +132,13 @@ bootRuntime(
   ITEMS,
   STARTER_INVENTORY,
   NET,
+  EQUIPMENT_SLOTS,
+  createEquipmentState,
+  equipItemToSlot,
+  slotForItem,
+  INVENTORY_SLOT_COUNT,
+  addInventoryStack,
+  normalizeInventory,
   applyQuestKill,
   createQuestProgress,
   getQuestList,

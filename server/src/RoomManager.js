@@ -1,6 +1,8 @@
 import { PLAYER_STATES, RESPAWN_DELAY_MS, SNAPSHOT_MS, SERVER_TICK_MS, ZONES } from "../../shared/constants.js";
 import { NET } from "../../shared/netMessages.js";
-import { addInventoryItem, addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
+import { addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
+import { equipItemToSlot } from "../../shared/equipment.js";
+import { addInventoryStack } from "../../shared/inventory.js";
 import { spendAttributePoint, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, purchaseTrainerAbility } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
@@ -68,6 +70,7 @@ export class RoomManager {
         coins: payload.coins ?? player.coins,
         mana: payload.mana ?? player.mana,
         inventory: payload.inventory ?? player.inventory,
+        equipment: payload.equipment ?? player.equipment,
         equippedWeapon: payload.equippedWeapon ?? player.equippedWeapon,
         equippedArmor: payload.equippedArmor ?? player.equippedArmor,
         questProgress: payload.questProgress ?? player.questProgress,
@@ -124,6 +127,13 @@ export class RoomManager {
       if (result.ok) this.broadcastSnapshots();
     });
 
+    socket.on(NET.PLAYER_EQUIP_ITEM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.equipItem(player, payload?.slot, payload?.itemId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
     socket.on(NET.COMBAT_ATTACK, (payload, ack) => {
       const player = this.players.get(socket.id);
       if (!player) return;
@@ -144,18 +154,9 @@ export class RoomManager {
 
     socket.on(NET.LOOT_CLAIM, (payload, ack) => {
       const player = this.players.get(socket.id);
-      const claim = payload?.lootId ? this.loot.claimForPlayer({ lootId: payload.lootId, player, range: 4 }) : { ok: false, reason: "missing" };
-      if (!claim.ok) {
-        ack?.({ ok: false, reason: claim.reason });
-        return;
-      }
-      const bag = claim.bag;
-      player.coins += bag.coins || 0;
-      for (const item of bag.items || []) {
-        player.inventory = addInventoryItem(player.inventory, item.itemId, item.quantity || 1);
-      }
-      ack?.({ ok: true, bag, player: sanitizePlayer(player) });
-      this.broadcastSnapshots();
+      const result = this.claimLoot(player, payload?.lootId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
     });
 
     socket.on(NET.CHEST_CLAIM, (payload, ack) => {
@@ -280,6 +281,35 @@ export class RoomManager {
     if (!result.ok) return result;
     Object.assign(player, result.player);
     return { ok: true };
+  }
+
+  equipItem(player, slot, itemId) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = equipItemToSlot(player, slot, itemId);
+    if (!result.ok) return result;
+    Object.assign(player, result.player);
+    return { ok: true };
+  }
+
+  claimLoot(player, lootId) {
+    const inspected = lootId ? this.loot.inspectForPlayer({ lootId, player, range: 4 }) : { ok: false, reason: "missing" };
+    if (!inspected.ok) return { ok: false, reason: inspected.reason };
+
+    const inventoryResult = applyRewardItems(player.inventory, inspected.bag.items || []);
+    if (!inventoryResult.ok) {
+      return {
+        ok: false,
+        reason: inventoryResult.reason === "full" ? "inventory_full" : inventoryResult.reason,
+        overflow: inventoryResult.overflow
+      };
+    }
+
+    const claim = this.loot.claimForPlayer({ lootId, player, range: 4 });
+    if (!claim.ok) return { ok: false, reason: claim.reason };
+    const bag = claim.bag;
+    player.coins += bag.coins || 0;
+    player.inventory = inventoryResult.inventory;
+    return { ok: true, bag };
   }
 
   awardBossDefeat(bossResult, triggeringPlayer) {
@@ -407,12 +437,18 @@ export class RoomManager {
     if (chest.zone !== player.zone) return { ok: false, reason: "zone" };
     if (chest.openedBy.has(player.id)) return { ok: false, reason: "opened" };
     if (distance2d(player.position, chest.position) > 4) return { ok: false, reason: "range" };
-    chest.openedBy.add(player.id);
     const reward = { coins: chest.coins, items: [...chest.items] };
-    player.coins += reward.coins;
-    for (const item of reward.items) {
-      player.inventory = addInventoryItem(player.inventory, item.itemId, item.quantity || 1);
+    const inventoryResult = applyRewardItems(player.inventory, reward.items);
+    if (!inventoryResult.ok) {
+      return {
+        ok: false,
+        reason: inventoryResult.reason === "full" ? "inventory_full" : inventoryResult.reason,
+        overflow: inventoryResult.overflow
+      };
     }
+    chest.openedBy.add(player.id);
+    player.coins += reward.coins;
+    player.inventory = inventoryResult.inventory;
     return { ok: true, chestId, reward, player: sanitizePlayer(player) };
   }
 
@@ -447,6 +483,16 @@ export class RoomManager {
         openedBy: [...chest.openedBy]
       }));
   }
+}
+
+function applyRewardItems(inventory, items = []) {
+  let nextInventory = inventory || [];
+  for (const item of items) {
+    const result = addInventoryStack(nextInventory, item.itemId, item.quantity || 1);
+    if (!result.ok) return result;
+    nextInventory = result.inventory;
+  }
+  return { ok: true, inventory: nextInventory, overflow: [] };
 }
 
 function clampPosition(position, zone) {

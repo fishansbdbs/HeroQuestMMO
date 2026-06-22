@@ -122,6 +122,8 @@ const game = {
   guardUntil: 0,
   lastCombatAt: 0,
   combatLog: [],
+  inventorySearch: "",
+  inventoryFilter: "all",
   lastPingMs: null,
   questCollapsed: false,
   hotbarPressed: null,
@@ -195,6 +197,11 @@ function installDebugHooks() {
           availableAttributePoints: game.save.availableAttributePoints,
           availableSkillPoints: game.save.availableSkillPoints,
           spentAttributes: game.save.spentAttributes
+        },
+        equipment: game.save.equipment,
+        inventory: {
+          slotsUsed: normalizeInventory(game.save.inventory || []).length,
+          slotCount: INVENTORY_SLOT_COUNT
         }
       };
     },
@@ -236,13 +243,23 @@ function bootstrap() {
     const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : ZONES.HUB;
     const phase2Smoke = params.get("phase2") === "progression";
     const phase4Smoke = params.get("phase4") === "trees";
+    const phase5Smoke = params.get("phase5") === "equipment";
+    const smokeInventory = phase5Smoke
+      ? [
+          { itemId: "apprentice_staff", quantity: 1 },
+          { itemId: "snowhide_helmet", quantity: 1 },
+          { itemId: "frostguard_chestplate", quantity: 1 },
+          { itemId: "small_health_potion", quantity: 5 }
+        ]
+      : game.save.inventory;
     game.save = applyEquipment({
       ...game.save,
       name: "SmokeTester",
       color: COLORS[1],
-      xp: phase2Smoke ? 260 : game.save.xp,
-      coins: phase2Smoke ? 150 : game.save.coins,
-      inventory: phase2Smoke ? addInventoryItem(game.save.inventory || [], "rest_stone", 1) : game.save.inventory,
+      xp: phase2Smoke || phase5Smoke ? 260 : game.save.xp,
+      coins: phase2Smoke || phase5Smoke ? 150 : game.save.coins,
+      inventory: phase2Smoke ? addInventoryItem(game.save.inventory || [], "rest_stone", 1) : smokeInventory,
+      equipment: phase5Smoke ? createEquipmentState() : game.save.equipment,
       learnedAbilities: phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
       hotbar: phase4Smoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null] : phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
       skillTreeNodes: phase4Smoke ? {} : game.save.skillTreeNodes,
@@ -266,6 +283,10 @@ function loadSave() {
     coins: STARTING_PLAYER.coins,
     health: STARTING_PLAYER.health,
     inventory: clone(STARTER_INVENTORY),
+    equipment: createEquipmentState({
+      weapon: STARTING_PLAYER.equippedWeapon,
+      chest: STARTING_PLAYER.equippedArmor
+    }),
     equippedWeapon: STARTING_PLAYER.equippedWeapon,
     equippedArmor: STARTING_PLAYER.equippedArmor,
     openedChests: [],
@@ -299,7 +320,11 @@ function loadSave() {
       settings: { ...base.settings, ...(result.save.settings || {}) },
       questProgress: { ...base.questProgress, ...(result.save.questProgress || {}) },
       openedChests: result.save.openedChests || [],
-      inventory: result.save.inventory || base.inventory
+      inventory: normalizeInventory(result.save.inventory || base.inventory),
+      equipment: result.save.equipment || createEquipmentState({
+        weapon: result.save.equippedWeapon || base.equippedWeapon,
+        chest: result.save.equippedArmor || base.equippedArmor
+      })
     }));
     loaded.migrationMessages = result.messages || [];
     return loaded;
@@ -333,6 +358,7 @@ function saveGame() {
     health: game.save.health,
     state: game.save.state || "alive",
     inventory: game.save.inventory,
+    equipment: game.save.equipment,
     equippedWeapon: game.save.equippedWeapon,
     equippedArmor: game.save.equippedArmor,
     openedChests: game.save.openedChests || [],
@@ -710,6 +736,7 @@ function serializeForServer() {
     mana: game.save.mana,
     maxMana: game.save.maxMana,
     state: game.save.state || "alive",
+    equipment: game.save.equipment,
     equippedWeapon: game.save.equippedWeapon,
     equippedArmor: game.save.equippedArmor,
     inventory: game.save.inventory,

@@ -11,6 +11,7 @@ export const NET = {
   PLAYER_BUY_SKILL_NODE: "player:buy_skill_node",
   PLAYER_SAVE_LOADOUT: "player:save_loadout",
   PLAYER_ACTIVATE_LOADOUT: "player:activate_loadout",
+  PLAYER_EQUIP_ITEM: "player:equip_item",
   WORLD_SNAPSHOT: "world:snapshot",
   WORLD_EVENT: "world:event",
   COMBAT_ATTACK: "combat:attack",
