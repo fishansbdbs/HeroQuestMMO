@@ -34,12 +34,16 @@ const nearlyEqual = (actual, expected, epsilon = 0.000001) => {
 const inventoryQuantity = (inventory, itemId) =>
   (inventory || []).filter((entry) => entry?.itemId === itemId).reduce((total, entry) => total + (entry.quantity || 0), 0);
 
-test("client runtime chunks compile after concatenation", () => {
+const RUNTIME_PARTS = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
+const RECENT_INTERACTION_DECLARATIONS = ["chest", "shop", "npc", "dialogue", "boss", "telegraph", "loot", "reward", "dummy"];
+
+function readClientRuntimeSource() {
   const root = path.resolve(import.meta.dirname, "../..");
-  const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
-  const runtimeSource = runtimeParts
-    .map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8"))
-    .join("\n");
+  return RUNTIME_PARTS.map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8")).join("\n");
+}
+
+test("client runtime chunks compile after concatenation", () => {
+  const runtimeSource = readClientRuntimeSource();
 
   assert.doesNotThrow(() => {
     new Function(
@@ -115,6 +119,19 @@ test("client runtime chunks compile after concatenation", () => {
       `"use strict";\n${runtimeSource}`
     );
   });
+});
+
+test("client runtime keeps v1.2.3 chest declarations split after duplicate scan", () => {
+  const runtimeSource = readClientRuntimeSource();
+  const watchedDeclarationPattern = new RegExp(`\\b(?:const|let)\\s+(${RECENT_INTERACTION_DECLARATIONS.join("|")})\\b`, "g");
+  const watchedDeclarations = [...runtimeSource.matchAll(watchedDeclarationPattern)].map((match) => match[1]);
+  const addChestSource = runtimeSource.match(/function addChest\([\s\S]*?\n}\r?\n/)?.[0] || "";
+
+  assert.ok(watchedDeclarations.includes("chest"), "duplicate declaration scan should cover chest declarations");
+  assert.ok(addChestSource, "addChest runtime source should exist");
+  assert.doesNotMatch(addChestSource, /\b(?:const|let)\s+chest\s*=/, "addChest must not reuse `chest` for both mesh and state");
+  assert.match(addChestSource, /\bconst\s+chestMesh\s*=/);
+  assert.match(addChestSource, /\bconst\s+chestState\s*=/);
 });
 
 test("IceZero v2 title presentation and patch notes are registered", () => {
