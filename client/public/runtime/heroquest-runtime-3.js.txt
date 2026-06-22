@@ -227,6 +227,15 @@ function findNearestFrostWard(player, range = 5) {
   return nearest;
 }
 
+function confirmFrostWardActivation(ward) {
+  const accepted = window.confirm(`Begin the defense?\n\n${ward.label} will awaken in 5 seconds.`);
+  if (!accepted) {
+    toast("Frost Ward defense canceled.");
+    return;
+  }
+  activatePublicEvent("defend_frost_ward", ward.id);
+}
+
 function updatePrompt() {
   game.promptAction = null;
   if (isLocallyDead()) {
@@ -282,7 +291,7 @@ function updatePrompt() {
     } else if (event.phase === "cooldown") {
       ui.prompt.textContent = `${wardLabel} is recharging.`;
     } else {
-      game.promptAction = () => activatePublicEvent("defend_frost_ward", nearestWard.id);
+      game.promptAction = () => confirmFrostWardActivation(nearestWard);
       ui.prompt.textContent = `E: Activate ${nearestWard.label}`;
     }
     ui.prompt.classList.remove("hidden");

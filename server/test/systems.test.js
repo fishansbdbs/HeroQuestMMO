@@ -1025,6 +1025,15 @@ test("Frost Ward activation uses stable ward IDs for event payloads and spawns",
   )));
 });
 
+test("client Frost Ward activation asks for confirmation before starting defense", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-3.js.txt"), "utf8");
+
+  assert.match(runtimeSource, /Begin the defense\?/);
+  assert.match(runtimeSource, /confirmFrostWardActivation/);
+  assert.match(runtimeSource, /confirmFrostWardActivation\(nearestWard\)/);
+});
+
 test("Frost Ward completion credits participants once per stable ward and awards Shattered Ward once", () => {
   const emitted = [];
   const io = { to: (zone) => ({ emit: (type, payload) => emitted.push({ zone, type, payload }) }) };
