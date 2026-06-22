@@ -18,6 +18,7 @@ export const NET = {
   PUBLIC_EVENT_ACTIVATE: "public_event:activate",
   COMBAT_ATTACK: "combat:attack",
   COMBAT_ABILITY: "combat:ability",
+  HEALING_ORB_CLAIM: "healing_orb:claim",
   LOOT_CLAIM: "loot:claim",
   CHEST_CLAIM: "chest:claim",
   PARTY_CREATE: "party:create",

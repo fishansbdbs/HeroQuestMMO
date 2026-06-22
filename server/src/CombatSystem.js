@@ -10,6 +10,8 @@ export class CombatSystem {
     this.bossSystem = bossSystem;
     this.iceMageSystem = iceMageSystem;
     this.rng = rng;
+    this.healingOrbs = new Map();
+    this.nextHealingOrbId = 1;
   }
 
   attack(player, targetId, options = {}) {
@@ -62,8 +64,19 @@ export class CombatSystem {
     if (now - player.lastAbilityAt < ability.cooldownMs) {
       return { ok: false, reason: "cooldown" };
     }
-    if (ability.id === "mend_ally" || ability.id === "healing_orb") {
-      const target = resolveFriendlyTarget(player, payload?.targetId, players, ability.id === "healing_orb" ? 4 : ability.range || 15);
+    if (ability.id === "healing_orb") {
+      const manaSpend = spendMana(player, ability.manaCost || 0);
+      if (!manaSpend.ok) return { ok: false, reason: "mana" };
+      Object.assign(player, manaSpend.player);
+      player.lastAbilityAt = now;
+      return {
+        ok: true,
+        abilityId: ability.id,
+        healingOrb: this.createHealingOrb(player, ability, now)
+      };
+    }
+    if (ability.id === "mend_ally") {
+      const target = resolveFriendlyTarget(player, payload?.targetId, players, ability.range || 15);
       if (!target.ok) return target;
       if ((target.player.health ?? 0) >= (target.player.maxHealth ?? 1)) return { ok: false, reason: "full" };
       const manaSpend = spendMana(player, ability.manaCost || 0);
@@ -189,6 +202,64 @@ export class CombatSystem {
     }
     return { ok: true, abilityId: ability.id, damage, hits };
   }
+
+  createHealingOrb(caster, ability, now) {
+    const id = `healing_orb_${caster.id}_${this.nextHealingOrbId++}`;
+    const orb = {
+      id,
+      abilityId: ability.id,
+      casterId: caster.id,
+      zone: caster.zone,
+      position: { x: caster.position?.x || 0, y: 0.55, z: caster.position?.z || 0 },
+      radius: ability.pickupRadius || 3.2,
+      amount: calculateHealingAmount(caster, ability),
+      createdAt: now,
+      expiresAt: now + (ability.durationMs || 10000)
+    };
+    this.healingOrbs.set(id, orb);
+    return healingOrbSnapshot(orb);
+  }
+
+  consumeHealingOrb(player, orbId, players = new Map(), now = Date.now()) {
+    if (!player) return { ok: false, reason: "missing_player" };
+    const orb = this.healingOrbs.get(orbId);
+    if (!orb) return { ok: false, reason: "missing" };
+    if (now >= orb.expiresAt) {
+      this.healingOrbs.delete(orb.id);
+      return { ok: false, reason: "expired", healingOrb: { ...healingOrbSnapshot(orb), expired: true } };
+    }
+    if (isPlayerDead(player)) return { ok: false, reason: "dead" };
+    if (player.zone !== orb.zone) return { ok: false, reason: "zone" };
+    if (distance2d(player.position, orb.position) > orb.radius) return { ok: false, reason: "range" };
+    if ((player.health ?? 0) >= (player.maxHealth ?? 1)) return { ok: false, reason: "full" };
+
+    const caster = players.get(orb.casterId);
+    const heal = applyHealingToTarget(caster, player, orb.amount, orb.abilityId);
+    this.healingOrbs.delete(orb.id);
+    return {
+      ok: true,
+      abilityId: orb.abilityId,
+      healingOrb: { ...healingOrbSnapshot(orb), consumed: true },
+      heals: [heal]
+    };
+  }
+
+  expireHealingOrbs(now = Date.now()) {
+    const expired = [];
+    for (const orb of this.healingOrbs.values()) {
+      if (now < orb.expiresAt) continue;
+      this.healingOrbs.delete(orb.id);
+      expired.push({ ...healingOrbSnapshot(orb), expired: true });
+    }
+    return expired;
+  }
+
+  snapshotHealingOrbs(zone, now = Date.now()) {
+    this.expireHealingOrbs(now);
+    return [...this.healingOrbs.values()]
+      .filter((orb) => orb.zone === zone)
+      .map(healingOrbSnapshot);
+  }
 }
 
 function resolveHostileEnemy(enemySystem, player, targetId, range) {
@@ -258,6 +329,20 @@ function createMeleeEffectPayload(type, from, to, targetId) {
   };
 }
 
+function healingOrbSnapshot(orb) {
+  return {
+    id: orb.id,
+    abilityId: orb.abilityId,
+    casterId: orb.casterId,
+    zone: orb.zone,
+    position: { ...orb.position },
+    radius: orb.radius,
+    amount: orb.amount,
+    createdAt: orb.createdAt,
+    expiresAt: orb.expiresAt
+  };
+}
+
 function resolveFriendlyTarget(player, targetId, players, range) {
   const target = targetId ? players.get(targetId) : player;
   if (!target || isPlayerDead(target)) return { ok: false, reason: "target" };
@@ -268,25 +353,34 @@ function resolveFriendlyTarget(player, targetId, players, range) {
   return { ok: true, player: target };
 }
 
-function applyFriendlyHeal(caster, target, ability) {
+function calculateHealingAmount(caster, ability) {
   const healingPower = Math.max(0, Number(caster.healingPower ?? caster.spellPower) || 0);
   const base = ability.id === "healing_orb" ? 24 : 32;
-  const amount = Math.max(8, Math.round(base + healingPower * 0.8));
+  return Math.max(8, Math.round(base + healingPower * 0.8));
+}
+
+function applyHealingToTarget(caster, target, amount, sourceAbility) {
   const before = Math.max(0, Number(target.health) || 0);
   const maxHealth = Math.max(1, Number(target.maxHealth) || 1);
   target.health = Math.min(maxHealth, before + amount);
   const actual = Math.max(0, Math.round(target.health - before));
-  caster.healingDone = Math.max(0, Number(caster.healingDone) || 0) + actual;
+  if (caster) caster.healingDone = Math.max(0, Number(caster.healingDone) || 0) + actual;
+  return {
+    playerId: target.id,
+    amount: actual,
+    health: target.health,
+    maxHealth,
+    sourceAbility
+  };
+}
+
+function applyFriendlyHeal(caster, target, ability) {
+  const heal = applyHealingToTarget(caster, target, calculateHealingAmount(caster, ability), ability.id);
   return {
     ok: true,
     abilityId: ability.id,
     heals: [
-      {
-        playerId: target.id,
-        amount: actual,
-        health: target.health,
-        maxHealth
-      }
+      heal
     ]
   };
 }

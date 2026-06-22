@@ -183,6 +183,23 @@ export class RoomManager {
       this.broadcastSnapshots();
     });
 
+    socket.on(NET.HEALING_ORB_CLAIM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.combat.consumeHealingOrb(player, payload?.orbId, this.players);
+      if (result.ok) {
+        this.refreshMetaProgress(player);
+        const caster = this.players.get(result.healingOrb?.casterId);
+        if (caster && caster.id !== player.id) this.refreshMetaProgress(caster);
+        this.io.to(player.zone).emit(NET.WORLD_EVENT, {
+          type: "healing_orb_consumed",
+          healingOrb: result.healingOrb,
+          heals: result.heals
+        });
+      }
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      this.broadcastSnapshots();
+    });
+
     socket.on(NET.LOOT_CLAIM, (payload, ack) => {
       const player = this.players.get(socket.id);
       const result = this.claimLoot(player, payload?.lootId);
@@ -532,6 +549,7 @@ export class RoomManager {
     this.handlePublicEvents(this.publicEvents.update(this.players));
     this.processDeaths();
     this.processRespawns();
+    this.handleHealingOrbExpirations(this.combat.expireHealingOrbs(now));
     this.loot.cleanup();
   }
 
@@ -546,6 +564,15 @@ export class RoomManager {
     for (const event of events || []) {
       if (event.type === "ice_mage_summon") this.spawnIceMageServants(event.attack?.shape?.points);
       this.io.to(ZONES.PALACE).emit(NET.WORLD_EVENT, event);
+    }
+  }
+
+  handleHealingOrbExpirations(orbs = []) {
+    for (const orb of orbs) {
+      this.io.to(orb.zone).emit(NET.WORLD_EVENT, {
+        type: "healing_orb_expired",
+        healingOrb: orb
+      });
     }
   }
 
@@ -714,6 +741,7 @@ export class RoomManager {
       players: [...this.players.values()].filter((player) => player.zone === zone).map(sanitizePlayer),
       enemies: this.enemies.snapshot(zone),
       loot: this.loot.snapshot(zone),
+      healingOrbs: this.combat.snapshotHealingOrbs(zone),
       chests: this.snapshotChests(zone),
       boss: this.boss.snapshot(),
       iceMage: this.iceMage.snapshot(),

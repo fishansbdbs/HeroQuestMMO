@@ -7,6 +7,28 @@
   toast("Loot collected.");
 }
 
+function claimHealingOrb(orbId) {
+  if (isLocallyDead()) {
+    toast("You cannot absorb healing while defeated.");
+    return;
+  }
+  const orb = game.healingOrbs.get(orbId);
+  if (!orb) return toast("That healing orb has faded.");
+  if (game.online) {
+    game.socket.emit(NET.HEALING_ORB_CLAIM, { orbId }, (ack) => {
+      if (!ack?.ok) return toast(healingOrbClaimReason(ack?.reason));
+      if (ack.player) applyServerPlayerUpdate(ack.player);
+      for (const heal of ack.heals || []) {
+        if (heal.playerId === game.socket?.id) floatingText(`+${heal.amount}`, groupPosition(game.playerGroup), "#6df08a");
+      }
+      game.healingOrbs.delete(orbId);
+      toast("Healing Orb absorbed.");
+    });
+    return;
+  }
+  toast("Healing Orb needs the online combat server.");
+}
+
 function applyLootBag(bag) {
   const inventoryResult = applyRewardItemsToInventory(game.save.inventory, bag.items || []);
   if (!inventoryResult.ok) {
@@ -97,6 +119,7 @@ function handleCombatAck(result) {
   if (result.projectile) projectileEffect(result.projectile);
   if (result.areaEffect) areaEffect(result.areaEffect);
   if (result.meleeEffect) meleeEffect(result.meleeEffect);
+  if (result.healingOrb) healingOrbEffect(result.healingOrb);
   if (result.damage) {
     const target = result.result?.enemy || getCurrentTarget();
     if (target?.position) {
@@ -630,6 +653,10 @@ function applySnapshot(snapshot) {
   if (snapshot.loot) {
     game.loot.clear();
     snapshot.loot.forEach((bag) => game.loot.set(bag.id, bag));
+  }
+  if (snapshot.healingOrbs) {
+    game.healingOrbs.clear();
+    snapshot.healingOrbs.forEach((orb) => game.healingOrbs.set(orb.id, orb));
   }
   if (snapshot.boss) {
     game.boss = { ...game.boss, ...snapshot.boss };

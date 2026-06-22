@@ -175,6 +175,21 @@ test("client runtime animates Water Blast projectile acknowledgements", () => {
   assert.match(runtimeSource, /function waterBlastImpactEffect\(position\)/);
 });
 
+test("client runtime animates Healing Orb pickup acknowledgements", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
+  const runtimeSource = runtimeParts
+    .map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8"))
+    .join("\n");
+  const combatAckSource = runtimeSource.match(/function handleCombatAck\([\s\S]*?\n}\r?\n\r?\nfunction damagePlayer/)?.[0] || "";
+
+  assert.ok(combatAckSource, "handleCombatAck runtime source should exist");
+  assert.match(combatAckSource, /healingOrbEffect\(result\.healingOrb\)/);
+  assert.match(runtimeSource, /function healingOrbEffect\(orb\)/);
+  assert.match(runtimeSource, /function createHealingOrbMesh\(orb\)/);
+  assert.match(runtimeSource, /NET\.HEALING_ORB_CLAIM/);
+});
+
 test("IceZero v2 title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
@@ -2092,6 +2107,81 @@ test("server Mend Ally heals a friendly player and spends mana", () => {
   assert.ok(ally.health > 45);
   assert.ok(healer.mana < 80);
   assert.ok(healer.healingDone >= result.heals[0].amount);
+});
+
+test("Healing Orb creates a pickup that heals once or expires", () => {
+  const combat = new CombatSystem({
+    enemySystem: { enemies: new Map(), getZoneEnemies: () => [] },
+    bossSystem: { damage: () => ({ defeated: false }) },
+    rng: () => 0.5
+  });
+  const healer = applyEquipment({
+    ...STARTING_PLAYER,
+    id: "orb_healer",
+    zone: ZONES.FIELD,
+    position: { x: 0, y: 0, z: 0 },
+    health: 100,
+    level: 5,
+    mana: 80,
+    learnedAbilities: ["healing_orb"],
+    spentAttributes: { health: 0, strength: 0, magic: 8, defense: 0 },
+    lastAbilityAt: 0
+  });
+  const ally = applyEquipment({
+    ...STARTING_PLAYER,
+    id: "orb_ally",
+    zone: ZONES.FIELD,
+    position: { x: 1.2, y: 0, z: 0.6 },
+    health: 42,
+    level: 5,
+    mana: 50,
+    learnedAbilities: [],
+    spentAttributes: { health: 0, strength: 0, magic: 0, defense: 0 },
+    lastAbilityAt: 0
+  });
+  const players = new Map([[healer.id, healer], [ally.id, ally]]);
+  const beforeMana = healer.mana;
+  const beforeHealerHealth = healer.health;
+  const beforeCast = Date.now();
+
+  const cast = combat.ability(healer, { abilityId: "healing_orb" }, players);
+
+  assert.equal(cast.ok, true);
+  assert.equal(cast.abilityId, "healing_orb");
+  assert.equal(cast.heals, undefined);
+  assert.equal(healer.mana, beforeMana - ABILITIES.healing_orb.manaCost);
+  assert.equal(healer.health, beforeHealerHealth);
+  assert.equal(cast.healingOrb.casterId, healer.id);
+  assert.equal(cast.healingOrb.zone, ZONES.FIELD);
+  assert.equal(cast.healingOrb.radius, ABILITIES.healing_orb.pickupRadius);
+  assert.ok(cast.healingOrb.amount > 0);
+  assert.ok(cast.healingOrb.expiresAt >= beforeCast + ABILITIES.healing_orb.durationMs - 25);
+  assert.equal(combat.healingOrbs.has(cast.healingOrb.id), true);
+
+  const claim = combat.consumeHealingOrb(ally, cast.healingOrb.id, players);
+  const healthAfterClaim = ally.health;
+
+  assert.equal(claim.ok, true);
+  assert.equal(claim.abilityId, "healing_orb");
+  assert.equal(claim.healingOrb.id, cast.healingOrb.id);
+  assert.equal(claim.healingOrb.consumed, true);
+  assert.equal(claim.heals[0].playerId, ally.id);
+  assert.ok(claim.heals[0].amount > 0);
+  assert.ok(healthAfterClaim > 42);
+  assert.ok(healer.healingDone >= claim.heals[0].amount);
+  assert.equal(combat.healingOrbs.has(cast.healingOrb.id), false);
+
+  const secondClaim = combat.consumeHealingOrb(ally, cast.healingOrb.id, players);
+  assert.equal(secondClaim.ok, false);
+  assert.equal(secondClaim.reason, "missing");
+  assert.equal(ally.health, healthAfterClaim);
+
+  healer.lastAbilityAt = 0;
+  const expiringCast = combat.ability(healer, { abilityId: "healing_orb" }, players);
+  assert.equal(expiringCast.ok, true);
+  const expired = combat.expireHealingOrbs(expiringCast.healingOrb.expiresAt + 1);
+  assert.deepEqual(expired.map((orb) => orb.id), [expiringCast.healingOrb.id]);
+  assert.equal(combat.healingOrbs.has(expiringCast.healingOrb.id), false);
 });
 
 test("Palace of Zero is registered as a level 8 gated zone from Frostveil", () => {

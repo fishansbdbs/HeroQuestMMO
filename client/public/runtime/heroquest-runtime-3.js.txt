@@ -273,6 +273,13 @@ function updatePrompt() {
     ui.prompt.classList.remove("hidden");
     return;
   }
+  const nearestHealingOrb = findNearestHealingOrb(3.2);
+  if (nearestHealingOrb) {
+    game.promptAction = () => claimHealingOrb(nearestHealingOrb.id);
+    ui.prompt.textContent = "E: Absorb Healing Orb";
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
   const nearestChest = findNearestChest(3.4);
   if (nearestChest) {
     game.promptAction = () => openChest(nearestChest.id);

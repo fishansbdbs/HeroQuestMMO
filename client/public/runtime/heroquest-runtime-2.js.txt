@@ -882,6 +882,7 @@ function updateBoss(dt, now) {
 function updateMeshes(now) {
   syncEnemyMeshes();
   syncLootMeshes();
+  syncHealingOrbMeshes();
   animateHumanoid(game.playerGroup, now, game.playerVelocity.length());
   for (const [id, mesh] of game.enemyMeshes.entries()) {
     const enemy = game.enemies.get(id);
@@ -898,6 +899,10 @@ function updateMeshes(now) {
   for (const mesh of game.lootMeshes.values()) {
     mesh.rotation.y += 0.025;
     mesh.position.y = 0.25 + Math.sin(now * 0.004 + (mesh.userData.lootId || "").length) * 0.12;
+  }
+  for (const mesh of game.healingOrbMeshes.values()) {
+    mesh.rotation.y += 0.018;
+    mesh.position.y = 0.55 + Math.sin(now * 0.004 + (mesh.userData.healingOrbId || "").length) * 0.18;
   }
   for (const player of game.remotePlayers.values()) {
     if (player.target) {

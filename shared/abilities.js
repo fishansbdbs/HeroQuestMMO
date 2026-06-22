@@ -110,6 +110,7 @@ export const ABILITIES = {
     cooldownMs: 12000,
     manaCost: 25,
     durationMs: 10000,
+    pickupRadius: 3.2,
     description: "Creates a healing orb that damaged friendly players can consume."
   },
   mend_ally: {

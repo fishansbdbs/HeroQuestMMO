@@ -56,6 +56,25 @@ function levelUpEffect() {
   animate();
 }
 
+function healingOrbEffect(orb) {
+  if (!orb?.id || !game.scene) return;
+  game.healingOrbs.set(orb.id, orb);
+  syncHealingOrbMeshes();
+  const pulse = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.62, 32), mat(0x90ff9a, 0.58, true));
+  pulse.rotation.x = -Math.PI / 2;
+  pulse.position.set(orb.position?.x || 0, 0.1, orb.position?.z || 0);
+  game.scene.add(pulse);
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 520;
+    pulse.scale.setScalar(1 + t * 3.2);
+    pulse.material.opacity = Math.max(0, 0.58 - t * 0.58);
+    if (t < 1) requestAnimationFrame(animate);
+    else game.scene.remove(pulse);
+  };
+  animate();
+}
+
 function projectileEffect(projectile) {
   if (!projectile || !game.scene) return;
   if (projectile.type === "fireball") {

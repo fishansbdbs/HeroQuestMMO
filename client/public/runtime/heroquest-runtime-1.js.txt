@@ -93,6 +93,8 @@ const game = {
   enemyMeshes: new Map(),
   loot: new Map(),
   lootMeshes: new Map(),
+  healingOrbs: new Map(),
+  healingOrbMeshes: new Map(),
   chests: new Map(),
   portals: [],
   npcs: [],
@@ -886,6 +888,7 @@ function loadZone(zoneId, moveToSpawn = false) {
   game.blockers = [];
   game.enemies.clear();
   game.loot.clear();
+  game.healingOrbs.clear();
   game.targetId = null;
   game.autoAttack = false;
   if (game.targetRing) {
@@ -894,6 +897,7 @@ function loadZone(zoneId, moveToSpawn = false) {
   }
   clearMeshes(game.enemyMeshes);
   clearMeshes(game.lootMeshes);
+  clearMeshes(game.healingOrbMeshes);
   game.telegraphs.forEach((mesh) => game.scene.remove(mesh));
   game.telegraphs = [];
   if (game.world) game.scene.remove(game.world);

@@ -69,6 +69,12 @@ function handleWorldEvent(event) {
   if (event.type === "player_respawned" && event.playerId === game.socket?.id) {
     finishRespawn();
   }
+  if (event.type === "healing_orb_expired" && event.healingOrb?.id) {
+    game.healingOrbs.delete(event.healingOrb.id);
+  }
+  if (event.type === "healing_orb_consumed" && event.healingOrb?.id) {
+    game.healingOrbs.delete(event.healingOrb.id);
+  }
   if (event.type === "public_event_starting" && event.eventId === "defend_frost_ward") {
     game.publicEvent = { ...game.publicEvent, ...event, active: false, phase: "starting" };
     toast(`${event.wardLabel || "Frost Ward"} awakening. Hold the line.`);
@@ -224,6 +230,22 @@ function syncLootMeshes() {
   }
 }
 
+function syncHealingOrbMeshes() {
+  for (const [id, orb] of game.healingOrbs.entries()) {
+    if (!game.healingOrbMeshes.has(id)) {
+      const mesh = createHealingOrbMesh(orb);
+      game.scene.add(mesh);
+      game.healingOrbMeshes.set(id, mesh);
+    }
+  }
+  for (const [id, mesh] of game.healingOrbMeshes.entries()) {
+    if (!game.healingOrbs.has(id)) {
+      game.scene.remove(mesh);
+      game.healingOrbMeshes.delete(id);
+    }
+  }
+}
+
 function createLootMesh(bag) {
   const group = new THREE.Group();
   const rare = bag.items?.some((item) => ["shadow_fang", "wyrm_scale_shield", "wisp_wand", "stoneguard_plate"].includes(item.itemId));
@@ -233,6 +255,20 @@ function createLootMesh(bag) {
   group.add(body, beam);
   group.position.set(bag.position.x, bag.position.y || 0.25, bag.position.z);
   group.userData.lootId = bag.id;
+  return group;
+}
+
+function createHealingOrbMesh(orb) {
+  const group = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12), mat(0x68f58d, 0.78, true));
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(0.54, 16, 10), mat(0xffdf72, 0.22, true));
+  const radius = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.2, orb.radius - 0.08), orb.radius, 48), mat(0x8effaa, 0.28, true));
+  const light = new THREE.PointLight(0x8effaa, 1.1, 5);
+  radius.rotation.x = -Math.PI / 2;
+  radius.position.y = -0.42;
+  group.add(radius, core, halo, light);
+  group.position.set(orb.position.x, orb.position.y || 0.55, orb.position.z);
+  group.userData.healingOrbId = orb.id;
   return group;
 }
 
@@ -258,6 +294,20 @@ function findNearestLoot(range) {
     const dist = distance2d(player, bag.position);
     if (dist < range && dist < best) {
       nearest = bag;
+      best = dist;
+    }
+  }
+  return nearest;
+}
+
+function findNearestHealingOrb(range) {
+  const player = groupPosition(game.playerGroup);
+  let nearest = null;
+  let best = Infinity;
+  for (const orb of game.healingOrbs.values()) {
+    const dist = distance2d(player, orb.position);
+    if (dist < range && dist < best) {
+      nearest = orb;
       best = dist;
     }
   }
@@ -863,6 +913,14 @@ function lootClaimReason(reason) {
   if (reason === "owner") return "That loot belongs to another hero.";
   if (reason === "inventory_full") return "Inventory full. Make space before collecting loot.";
   return "That loot cannot be collected.";
+}
+
+function healingOrbClaimReason(reason) {
+  if (reason === "dead") return "You cannot absorb healing while defeated.";
+  if (reason === "range") return "Move closer to the Healing Orb.";
+  if (reason === "full") return "Health is already full.";
+  if (reason === "expired" || reason === "missing") return "That Healing Orb has faded.";
+  return "That Healing Orb cannot be absorbed.";
 }
 
 function chestClaimReason(reason) {
