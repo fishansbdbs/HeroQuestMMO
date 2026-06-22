@@ -1,6 +1,6 @@
 ﻿const SERVER_URL = env.VITE_SERVER_URL || "http://localhost:3000";
 const STORAGE_KEY = "heroquest-mmo-v1-save";
-const SAVE_BACKUP_KEY = `${STORAGE_KEY}-backup-${ICEZERO_MIGRATION_ID}`;
+const SAVE_BACKUP_KEY = `${STORAGE_KEY}-backup-${FROSTFORGED_MIGRATION_ID}`;
 const COLORS = [0x4da7ff, 0x55d07a, 0xf2c867, 0xe86e58, 0xb38cff, 0x70e4d2];
 const HOTBAR_DEFS = [
   { slot: 1, action: "auto", name: "Auto Attack", key: "1", icon: "A", cooldownMs: ABILITIES.auto_attack.cooldownMs, tooltip: "Toggle auto attacks against your selected target." },
@@ -253,7 +253,7 @@ function bootstrap() {
   const smoke = params.get("smoke");
   game.debugDemo = params.get("demo");
   if (smoke) {
-    const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : smoke === "frostveil" ? ZONES.FROSTVEIL : smoke === "palace" ? ZONES.PALACE : ZONES.HUB;
+    const zone = smoke === "boss" ? ZONES.BOSS : smoke === "field" ? ZONES.FIELD : smoke === "frostveil" ? ZONES.FROSTVEIL : smoke === "palace" ? ZONES.PALACE : smoke === "vault" ? ZONES.FROSTBOUND_VAULT : ZONES.HUB;
     const phase2Smoke = params.get("phase2") === "progression";
     const phase4Smoke = params.get("phase4") === "trees";
     const phase5Smoke = params.get("phase5") === "equipment";
@@ -342,7 +342,7 @@ function loadSave() {
     title: ""
   };
   const finalizeSave = (incoming) => {
-    const result = migrateIceZeroSave(incoming);
+    const result = migrateFrostforgedSave(incoming);
     if (result.migrated) {
       try {
         localStorage.setItem(SAVE_BACKUP_KEY, JSON.stringify(result.backup));
@@ -906,6 +906,7 @@ function loadZone(zoneId, moveToSpawn = false) {
   if (zoneId === ZONES.HUB) buildHub();
   if (zoneId === ZONES.FIELD) buildField();
   if (zoneId === ZONES.FROSTVEIL) buildFrostveil();
+  if (zoneId === ZONES.FROSTBOUND_VAULT) buildFrostboundVault();
   if (zoneId === ZONES.PALACE) buildPalace();
   if (zoneId === ZONES.BOSS) buildBossArena();
 

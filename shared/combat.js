@@ -18,15 +18,18 @@ export function isPlayerDead(player) {
 }
 
 export function computeLevelFromXp(xp) {
+  const safeXp = normalizeXp(xp);
   let level = 1;
   for (let i = 1; i < XP_TABLE.length; i += 1) {
-    if (xp >= XP_TABLE[i]) level = i + 1;
+    if (safeXp >= XP_TABLE[i]) level = i + 1;
   }
   return Math.min(level, LEVEL_CAP);
 }
 
 export function xpToNextLevel(level) {
-  return XP_TABLE[level] ?? XP_TABLE[XP_TABLE.length - 1];
+  const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+  if (safeLevel >= LEVEL_CAP) return null;
+  return XP_TABLE[safeLevel] ?? null;
 }
 
 export function applyEquipment(basePlayer) {
@@ -74,8 +77,8 @@ export function calculateIncomingDamage(rawDamage, player) {
 
 export function addProgressRewards(player, reward) {
   const before = applyEquipment(player);
-  const xp = (before.xp || 0) + (reward.xp || 0);
-  const coins = (before.coins || 0) + (reward.coins || 0);
+  const xp = normalizeXp(normalizeXp(before.xp) + normalizeXp(reward.xp));
+  const coins = Math.max(0, Math.floor((Number(before.coins) || 0) + (Number(reward.coins) || 0)));
   const afterLevel = computeLevelFromXp(xp);
   const leveledUp = afterLevel > before.level;
   const after = applyEquipment({
@@ -89,6 +92,12 @@ export function addProgressRewards(player, reward) {
     health: leveledUp ? after.maxHealth : after.health,
     mana: leveledUp ? after.maxMana : after.mana
   };
+}
+
+function normalizeXp(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.floor(number));
 }
 
 export function addInventoryItem(inventory, itemId, quantity = 1) {

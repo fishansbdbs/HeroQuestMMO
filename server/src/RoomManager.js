@@ -691,7 +691,7 @@ function applyRewardItems(inventory, items = []) {
 }
 
 function clampPosition(position, zone) {
-  const bounds = zone === ZONES.FIELD ? 54 : zone === ZONES.FROSTVEIL ? 58 : zone === ZONES.PALACE ? 32 : zone === ZONES.BOSS ? 30 : 42;
+  const bounds = zone === ZONES.FIELD ? 54 : zone === ZONES.FROSTVEIL ? 58 : zone === ZONES.FROSTBOUND_VAULT ? 34 : zone === ZONES.PALACE ? 32 : zone === ZONES.BOSS ? 30 : 42;
   return {
     x: Math.max(-bounds, Math.min(bounds, Number(position.x) || 0)),
     y: 0,
@@ -703,6 +703,7 @@ function clampPosition(position, zone) {
 function defaultZonePosition(zone) {
   if (zone === ZONES.FIELD) return { x: 0, y: 0, z: 31, rot: Math.PI };
   if (zone === ZONES.FROSTVEIL) return { x: 0, y: 0, z: 24, rot: Math.PI };
+  if (zone === ZONES.FROSTBOUND_VAULT) return { x: 0, y: 0, z: 18, rot: Math.PI };
   if (zone === ZONES.PALACE) return { x: 0, y: 0, z: 18, rot: Math.PI };
   if (zone === ZONES.BOSS) return { x: 0, y: 0, z: 22, rot: Math.PI };
   return { x: 0, y: 0, z: 6, rot: 0 };

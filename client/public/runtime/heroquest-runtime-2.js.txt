@@ -47,7 +47,37 @@ function buildFrostveil() {
   addChest(-10, -12, "frostveil_snow_cache");
   addPortal(0, 32, "Greenvale Outskirts", ZONES.FIELD, 0x75ff99);
   addPortal(34, -34, "Palace of Zero", ZONES.PALACE, 0x9ae8ff, 8, "The palace gate is sealed. Reach Level 8 to enter.");
+  addPortal(-36, 34, "Frostbound Vault", ZONES.FROSTBOUND_VAULT, 0xb8fbff, 15, "Frostbound Vault requires Level 15.");
   addWorldLabel("Frostveil Camp", 2, 3.1, 22);
+}
+
+function buildFrostboundVault() {
+  game.scene.background = new THREE.Color(0x09131f);
+  game.scene.fog = new THREE.Fog(0x8bb8d8, 18, 74);
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(58, 0.7, 58), mat(0x25394d, 0.98));
+  floor.position.y = -0.35;
+  floor.receiveShadow = true;
+  game.world.add(floor);
+  const innerRing = new THREE.Mesh(new THREE.TorusGeometry(18, 0.16, 8, 96), mat(0x8be6ff, 0.62, true));
+  innerRing.rotation.x = Math.PI / 2;
+  innerRing.position.y = 0.08;
+  game.world.add(innerRing);
+  addPath([{ x: 0, z: 22 }, { x: 0, z: 4 }, { x: -10, z: -12 }], 4.4, 0x7ea8bd);
+  addPath([{ x: 8, z: 8 }, { x: 16, z: -8 }, { x: 6, z: -20 }], 3, 0x647f95);
+  for (let i = 0; i < 12; i += 1) {
+    const angle = (i / 12) * Math.PI * 2;
+    const x = Math.cos(angle) * 23;
+    const z = Math.sin(angle) * 23;
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.95, 5.5, 7), mat(0xbde8f4));
+    pillar.position.set(x, 2.65, z);
+    pillar.castShadow = true;
+    game.world.add(pillar);
+    game.blockers.push({ x, z, halfX: 0.9, halfZ: 0.9 });
+  }
+  for (let i = 0; i < 16; i += 1) addCrystal(randomRange(-24, 24), randomRange(-24, 12), i % 2 ? 0x8bdfff : 0xd9fbff);
+  addPortal(0, 24, "Frostveil Reach", ZONES.FROSTVEIL, 0x75ff99);
+  addWorldLabel("Frostbound Vault", 0, 4.6, -18);
+  addWorldLabel("Recommended Level 15+", -12, 2.8, -10);
 }
 
 function buildPalace() {
@@ -939,10 +969,11 @@ function updateHud(now = performance.now()) {
   ui.coinsText.textContent = `${game.save.coins} coins`;
   const prevXp = XP_TABLE[game.save.level - 2] || 0;
   const nextXp = xpToNextLevel(game.save.level);
-  const xpPct = game.save.level >= XP_TABLE.length ? 100 : ((game.save.xp - prevXp) / Math.max(1, nextXp - prevXp)) * 100;
+  const atLevelCap = nextXp == null || game.save.level >= XP_TABLE.length;
+  const xpPct = atLevelCap ? 100 : ((game.save.xp - prevXp) / Math.max(1, nextXp - prevXp)) * 100;
   ui.xpBar.style.width = `${THREE.MathUtils.clamp(xpPct, 0, 100)}%`;
   ui.levelText.textContent = `Level ${game.save.level}`;
-  ui.xpText.textContent = `${game.save.xp} XP`;
+  ui.xpText.textContent = atLevelCap ? "MAX" : `${game.save.xp} XP`;
   const guardLeft = Math.max(0, game.guardUntil - now);
   ui.guardText.textContent = guardLeft > 0 ? `Guard ${Math.ceil(guardLeft / 1000)}s` : "Guard ready";
   ui.guardText.className = guardLeft > 0 ? "active-guard" : "";

@@ -74,11 +74,18 @@ export function computeEquipmentBonuses(equipment) {
 }
 
 function computeLevelFromXp(xp) {
+  const safeXp = normalizeXp(xp);
   let level = 1;
   for (let i = 1; i < XP_TABLE.length; i += 1) {
-    if ((xp || 0) >= XP_TABLE[i]) level = i + 1;
+    if (safeXp >= XP_TABLE[i]) level = i + 1;
   }
   return Math.min(level, LEVEL_CAP);
+}
+
+function normalizeXp(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.floor(number));
 }
 
 export function applyEquipmentSlots(player) {

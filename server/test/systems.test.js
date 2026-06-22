@@ -97,8 +97,8 @@ test("client runtime chunks compile after concatenation", () => {
       "createCameraRelativeMove",
       "smoothAngleToward",
       "visualYawForMoveDirection",
-      "ICEZERO_MIGRATION_ID",
-      "migrateIceZeroSave",
+      "FROSTFORGED_MIGRATION_ID",
+      "migrateFrostforgedSave",
       "applyProgressionStats",
       "regenerateMana",
       "spendAttributePoint",
@@ -270,6 +270,163 @@ test("IceZero save migration keeps a backup and falls back safely for corrupted 
   assert.deepEqual(result.save.inventory, [{ itemId: "small_health_potion", quantity: 2 }]);
   assert.equal(result.save.equipment.weapon, STARTING_PLAYER.equippedWeapon);
   assert.equal(result.save.equipment.chest, STARTING_PLAYER.equippedArmor);
+});
+
+test("Frostforged Paths progression supports level cap 100 and max-level XP display", async () => {
+  const { XP_TABLE } = await import("../../shared/constants.js");
+  const { LEVEL_CAP, calculateEarnedAttributePoints, calculateEarnedSkillPoints } = await import("../../shared/progression.js");
+  const { addProgressRewards, applyEquipment, xpToNextLevel } = await import("../../shared/combat.js");
+
+  assert.equal(LEVEL_CAP, 100);
+  assert.equal(XP_TABLE.length, LEVEL_CAP);
+  assert.equal(XP_TABLE[0], 0);
+  assert.ok(XP_TABLE.every((xp, index) => index === 0 || xp > XP_TABLE[index - 1]));
+
+  const level100 = applyEquipment({ ...STARTING_PLAYER, xp: XP_TABLE[99] });
+  assert.equal(level100.level, 100);
+  assert.equal(level100.availableAttributePoints, calculateEarnedAttributePoints(100));
+  assert.equal(level100.availableSkillPoints, calculateEarnedSkillPoints(100));
+  assert.equal(xpToNextLevel(100), null);
+
+  const rewarded = addProgressRewards({ ...level100, coins: 11 }, { xp: Number.MAX_SAFE_INTEGER, coins: 9 });
+  assert.equal(rewarded.level, 100);
+  assert.equal(rewarded.coins, 20);
+  assert.equal(Number.isFinite(rewarded.xp), true);
+  assert.equal(Number.isNaN(rewarded.xp), false);
+});
+
+test("Frostforged v2.1 save migration adds scaffold fields once without duplicating points", async () => {
+  const { XP_TABLE } = await import("../../shared/constants.js");
+  const { ICEZERO_MIGRATION_ID, FROSTFORGED_MIGRATION_ID, FROSTFORGED_SAVE_SCHEMA_VERSION, migrateFrostforgedSave } =
+    await import("../../shared/saveMigration.js");
+
+  const migrated = migrateFrostforgedSave({
+    name: "Vault Runner",
+    level: 20,
+    xp: XP_TABLE[19],
+    coins: 333,
+    migrations: [ICEZERO_MIGRATION_ID],
+    spentAttributes: { health: 1, strength: 2, magic: 3, defense: 4 },
+    skillTreeNodes: { might_1: 2, arcana_1: 1 },
+    inventory: [{ itemId: "small_health_potion", quantity: 3 }],
+    learnedAbilities: ["fireball"],
+    hotbar: ["auto", "slash", "fireball", "guard", "potion", "dash", null, null]
+  }).save;
+
+  assert.equal(migrated.saveSchemaVersion, FROSTFORGED_SAVE_SCHEMA_VERSION);
+  assert.equal(migrated.level, 20);
+  assert.equal(migrated.availableAttributePoints, 47);
+  assert.equal(migrated.availableSkillPoints, 16);
+  assert.equal(migrated.migrations.filter((id) => id === FROSTFORGED_MIGRATION_ID).length, 1);
+  assert.deepEqual(migrated.itemInstances, {});
+  assert.deepEqual(migrated.upgradeRanks, {});
+  assert.deepEqual(migrated.buyback, []);
+  assert.equal(migrated.spellbookHotbarVersion, 2);
+  assert.equal(migrated.dungeonProgress.frostbound_vault.bestEncounterLevel, 0);
+  assert.deepEqual(migrated.bounties.active, []);
+
+  const remigrated = migrateFrostforgedSave(migrated).save;
+
+  assert.equal(remigrated.migrations.filter((id) => id === FROSTFORGED_MIGRATION_ID).length, 1);
+  assert.equal(remigrated.availableAttributePoints, migrated.availableAttributePoints);
+  assert.equal(remigrated.availableSkillPoints, migrated.availableSkillPoints);
+  assert.deepEqual(remigrated.inventory, migrated.inventory);
+});
+
+test("Frostbound Vault is a level 15 gate with clamped party encounter scaling", async () => {
+  const { XP_TABLE, ZONES } = await import("../../shared/constants.js");
+  const { canEnterZone, calculateDungeonEncounterScale, getZone } = await import("../../shared/zones.js");
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeOne = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
+  const runtimeTwo = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-2.js.txt"), "utf8");
+
+  assert.equal(ZONES.FROSTBOUND_VAULT, "frostbound_vault");
+
+  const vault = getZone(ZONES.FROSTBOUND_VAULT);
+  assert.equal(vault.minLevel, 15);
+  assert.equal(vault.recommendedLevel, "15+");
+  assert.equal(vault.scaling.minimumLevel, 15);
+  assert.equal(vault.scaling.maximumLevel, 100);
+  assert.equal(canEnterZone({ level: 14 }, ZONES.FROSTBOUND_VAULT).message, "Frostbound Vault requires Level 15.");
+  assert.equal(canEnterZone({ level: 15 }, ZONES.FROSTBOUND_VAULT).ok, true);
+
+  const solo = calculateDungeonEncounterScale(ZONES.FROSTBOUND_VAULT, [{ level: 15 }]);
+  assert.equal(solo.encounterLevel, 15);
+  assert.equal(solo.partySize, 1);
+  assert.equal(solo.healthMultiplier, 1);
+  assert.equal(solo.damageMultiplier, 1);
+
+  const party = calculateDungeonEncounterScale(ZONES.FROSTBOUND_VAULT, [{ level: 100 }, { level: 80 }, { level: 90 }]);
+  assert.equal(party.encounterLevel, 90);
+  assert.equal(party.partySize, 3);
+  nearlyEqual(party.healthMultiplier, 1.9);
+  nearlyEqual(party.damageMultiplier, 1.2);
+
+  const clamped = calculateDungeonEncounterScale(ZONES.FROSTBOUND_VAULT, [{ level: 140 }, { level: 120 }]);
+  assert.equal(clamped.encounterLevel, 100);
+
+  assert.match(runtimeOne, /buildFrostboundVault/);
+  assert.match(runtimeTwo, /"Frostbound Vault", ZONES\.FROSTBOUND_VAULT/);
+  assert.match(runtimeTwo, /"Frostbound Vault requires Level 15\."/);
+
+  const io = { to: () => ({ emit: () => {} }), sockets: { sockets: new Map() } };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const underleveled = createPlayerState("p1", { name: "Too Soon", level: 14, xp: XP_TABLE[13], zone: ZONES.FROSTVEIL });
+    const blocked = room.changePlayerZone(underleveled, ZONES.FROSTBOUND_VAULT);
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.message, "Frostbound Vault requires Level 15.");
+    assert.equal(underleveled.zone, ZONES.FROSTVEIL);
+
+    const eligible = createPlayerState("p2", { name: "Vault Ready", level: 15, xp: XP_TABLE[14], zone: ZONES.FROSTVEIL });
+    const entered = room.changePlayerZone(eligible, ZONES.FROSTBOUND_VAULT);
+    assert.equal(entered.ok, true);
+    assert.equal(eligible.zone, ZONES.FROSTBOUND_VAULT);
+    assert.deepEqual(eligible.position, { x: 0, y: 0, z: 18, rot: Math.PI });
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("client and server boot through the Frostforged v2.1 save migration", async () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const mainSource = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
+  const runtimeSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
+  const { FROSTFORGED_MIGRATION_ID, FROSTFORGED_SAVE_SCHEMA_VERSION } = await import("../../shared/saveMigration.js");
+
+  assert.match(mainSource, /FROSTFORGED_MIGRATION_ID/);
+  assert.match(mainSource, /migrateFrostforgedSave/);
+  assert.match(runtimeSource, /FROSTFORGED_MIGRATION_ID/);
+  assert.match(runtimeSource, /migrateFrostforgedSave/);
+
+  const player = createPlayerState("p1", {
+    name: "Frost Runner",
+    level: 20,
+    xp: 5000,
+    migrations: [],
+    skillTreeNodes: { might_1: 2 },
+    spentAttributes: { health: 1, strength: 1, magic: 1, defense: 1 }
+  });
+
+  assert.equal(player.saveSchemaVersion, FROSTFORGED_SAVE_SCHEMA_VERSION);
+  assert.ok(player.migrations.includes(FROSTFORGED_MIGRATION_ID));
+  assert.deepEqual(player.dungeonProgress.frostbound_vault, {
+    clears: 0,
+    firstClear: false,
+    bestEncounterLevel: 0,
+    personalChestClaims: []
+  });
+});
+
+test("client HUD displays MAX instead of raw XP at the level cap", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-2.js.txt"), "utf8");
+
+  assert.match(runtimeSource, /atLevelCap/);
+  assert.match(runtimeSource, /ui\.xpText\.textContent\s*=\s*atLevelCap\s*\?\s*"MAX"/);
 });
 
 test("equipment and XP rewards update player stats", () => {
