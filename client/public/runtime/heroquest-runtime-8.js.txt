@@ -75,6 +75,46 @@ function healingOrbEffect(orb) {
   animate();
 }
 
+function healingBeamEffect(effect) {
+  if (!effect || !game.scene) return;
+  if (effect.type === "mend_ally") {
+    const from = new THREE.Vector3(effect.from?.x || 0, effect.from?.y || 1.2, effect.from?.z || 0);
+    const to = new THREE.Vector3(effect.to?.x || 0, effect.to?.y || 1.2, effect.to?.z || 0);
+    const direction = to.clone().sub(from);
+    const length = Math.max(0.2, direction.length());
+    if (direction.lengthSq() > 0.001) direction.normalize();
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, length, 10), mat(0x8cff9d, 0.48, true));
+    beam.position.copy(from).lerp(to, 0.5);
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.lengthSq() > 0.001 ? direction : new THREE.Vector3(0, 1, 0));
+    const pulse = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.55, 32), mat(0xffdd7a, 0.58, true));
+    pulse.rotation.x = -Math.PI / 2;
+    pulse.position.copy(to);
+    pulse.position.y = Math.max(0.1, to.y - 1.05);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), mat(0xb8ff9c, 0.2, true));
+    glow.position.copy(to);
+    game.scene.add(beam, pulse, glow);
+    if (effect.amount) floatingText(`+${effect.amount}`, to, "#6df08a");
+    const started = performance.now();
+    const duration = Math.max(160, effect.beamMs || 420);
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / duration);
+      beam.material.opacity = Math.max(0, 0.48 - t * 0.48);
+      beam.scale.set(1 + Math.sin(t * Math.PI) * 0.12, 1, 1 + Math.sin(t * Math.PI) * 0.12);
+      pulse.scale.setScalar(1 + t * 2.6);
+      pulse.material.opacity = Math.max(0, 0.58 - t * 0.58);
+      glow.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.35);
+      glow.material.opacity = Math.max(0, 0.2 - t * 0.2);
+      if (t < 1) requestAnimationFrame(animate);
+      else {
+        game.scene.remove(beam);
+        game.scene.remove(pulse);
+        game.scene.remove(glow);
+      }
+    };
+    animate();
+  }
+}
+
 function projectileEffect(projectile) {
   if (!projectile || !game.scene) return;
   if (projectile.type === "fireball") {

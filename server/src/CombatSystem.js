@@ -83,7 +83,11 @@ export class CombatSystem {
       if (!manaSpend.ok) return { ok: false, reason: "mana" };
       Object.assign(player, manaSpend.player);
       player.lastAbilityAt = now;
-      return applyFriendlyHeal(player, target.player, ability);
+      const healResult = applyFriendlyHeal(player, target.player, ability);
+      return {
+        ...healResult,
+        healingEffect: createHealingEffectPayload(ability.id, player, target.player, healResult.heals[0]?.amount || 0)
+      };
     }
     if (ability.id === "fireball") {
       const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.abilityRange);
@@ -326,6 +330,19 @@ function createMeleeEffectPayload(type, from, to, targetId) {
     to: { x: to?.x || 0, y: (to?.y || 0) + 1, z: to?.z || 0 },
     lungeMs: 220,
     impactEffect: type === "dark_punch" ? "dark_burst" : "impact"
+  };
+}
+
+function createHealingEffectPayload(type, caster, target, amount) {
+  return {
+    type,
+    casterId: caster.id,
+    targetId: target.id,
+    from: { x: caster.position?.x || 0, y: (caster.position?.y || 0) + 1.2, z: caster.position?.z || 0 },
+    to: { x: target.position?.x || 0, y: (target.position?.y || 0) + 1.2, z: target.position?.z || 0 },
+    beamMs: 420,
+    pulseEffect: type === "mend_ally" ? "gold_heal" : "heal",
+    amount
   };
 }
 

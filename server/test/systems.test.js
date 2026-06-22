@@ -190,6 +190,20 @@ test("client runtime animates Healing Orb pickup acknowledgements", () => {
   assert.match(runtimeSource, /NET\.HEALING_ORB_CLAIM/);
 });
 
+test("client runtime animates Mend Ally healing acknowledgements", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
+  const runtimeSource = runtimeParts
+    .map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8"))
+    .join("\n");
+  const combatAckSource = runtimeSource.match(/function handleCombatAck\([\s\S]*?\n}\r?\n\r?\nfunction damagePlayer/)?.[0] || "";
+
+  assert.ok(combatAckSource, "handleCombatAck runtime source should exist");
+  assert.match(combatAckSource, /healingBeamEffect\(result\.healingEffect\)/);
+  assert.match(runtimeSource, /function healingBeamEffect\(effect\)/);
+  assert.match(runtimeSource, /effect\.type === "mend_ally"/);
+});
+
 test("IceZero v2 title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
@@ -2107,6 +2121,16 @@ test("server Mend Ally heals a friendly player and spends mana", () => {
   assert.ok(ally.health > 45);
   assert.ok(healer.mana < 80);
   assert.ok(healer.healingDone >= result.heals[0].amount);
+  assert.deepEqual(result.healingEffect, {
+    type: "mend_ally",
+    casterId: healer.id,
+    targetId: ally.id,
+    from: { x: 0, y: 1.2, z: 0 },
+    to: { x: 4, y: 1.2, z: 0 },
+    beamMs: 420,
+    pulseEffect: "gold_heal",
+    amount: result.heals[0].amount
+  });
 });
 
 test("Healing Orb creates a pickup that heals once or expires", () => {

@@ -120,6 +120,7 @@ function handleCombatAck(result) {
   if (result.areaEffect) areaEffect(result.areaEffect);
   if (result.meleeEffect) meleeEffect(result.meleeEffect);
   if (result.healingOrb) healingOrbEffect(result.healingOrb);
+  if (result.healingEffect) healingBeamEffect(result.healingEffect);
   if (result.damage) {
     const target = result.result?.enemy || getCurrentTarget();
     if (target?.position) {
