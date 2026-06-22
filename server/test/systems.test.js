@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { STARTING_PLAYER, ZONES } from "../../shared/constants.js";
+import { GAME_VERSION, PATCH_NOTES, STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment, addProgressRewards, calculateIncomingDamage } from "../../shared/combat.js";
 import { ENEMIES, FROSTVEIL_SPAWNS, ELITE_MODIFIERS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { canEnterZone, getZone, unlockWaypoint } from "../../shared/zones.js";
@@ -112,6 +112,21 @@ test("client runtime chunks compile after concatenation", () => {
       `"use strict";\n${runtimeSource}`
     );
   });
+});
+
+test("IceZero v2 title presentation and patch notes are registered", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
+
+  assert.equal(GAME_VERSION, "2.0.0");
+  assert.equal(PATCH_NOTES.versions[0].version, "2.0.0");
+  assert.equal(PATCH_NOTES.versions[0].title, "ICEZERO");
+  assert.match(menuSource, /HeroQuest MMO[\s\S]*ICEZERO/);
+  assert.match(menuSource, /Continue Game/);
+  assert.match(menuSource, /Character/);
+  assert.match(menuSource, /Settings/);
+  assert.match(menuSource, /Server status/);
+  assert.match(menuSource, /Current character level/);
 });
 
 test("camera-relative movement maps WASD to flattened camera forward and right", async () => {

@@ -424,36 +424,65 @@ function saveGame() {
 
 function renderMainMenu() {
   const selectedColor = Number(game.save.color || COLORS[0]);
+  const currentLevel = game.save.level || 1;
+  const latestNotes = PATCH_NOTES.versions[0];
   uiRoot.innerHTML = `
-    <section class="menu-screen">
+    <section class="menu-screen icezero-menu">
+      <div class="snowfield" aria-hidden="true"></div>
       <div class="menu-panel">
         <div class="brand-row">
           <div>
             <div class="kicker">Version ${GAME_VERSION}</div>
-            <h1>HeroQuest MMO</h1>
+            <h1 class="ice-title">HeroQuest MMO</h1>
+            <div class="ice-subtitle">ICEZERO</div>
           </div>
-          <div class="status-pill">Movement & Weapon Hold Fix</div>
+          <div class="status-pill">Major Expansion</div>
         </div>
-        <p class="intro">
-          The old kingdoms fell when shadow rifts opened across the world. From those rifts came slimes, goblins, wolves, wisps, golems, and greater beasts of darkness. Now new heroes gather in the town of Dawnrest, taking up simple weapons to push back the shadows one quest at a time.
-        </p>
-        <div class="setup-grid">
+        <div class="menu-status-grid">
+          <div><span>Server status</span><strong id="menu-server-status">Checking...</strong></div>
+          <div><span>Current character level</span><strong>${currentLevel}</strong></div>
+        </div>
+        <div class="news-card">
+          <strong>Expansion News</strong>
+          <small>Frostveil Reach is open. Train new abilities, build with attributes and skill trees, push into the Palace of Zero, and challenge Zero, the Ice Mage.</small>
+        </div>
+        <details class="menu-patch" open>
+          <summary>v${latestNotes.version} Patch Notes - ${latestNotes.title}</summary>
+          <p>${latestNotes.summary}</p>
+          <div class="patch-section-grid">
+            ${latestNotes.sections.map((section) => `
+              <section class="patch-card compact">
+                <h3>${section.title}</h3>
+                ${section.items.map((item) => `<div class="patch-item">${item}</div>`).join("")}
+              </section>
+            `).join("")}
+          </div>
+        </details>
+        <div class="menu-actions">
+          <button class="primary" id="continue-game">Continue Game</button>
+          <button id="character-menu">Character</button>
+          <button id="settings-menu">Settings</button>
+        </div>
+        <div class="menu-subpanel" id="menu-character">
           <label class="field">
             Hero name
             <input id="hero-name" maxlength="18" value="${escapeHtml(game.save.name || "")}" placeholder="New Hero" />
           </label>
-          <button class="primary" id="start-game">Enter Dawnrest</button>
-        </div>
-        <div class="field" style="margin-top:16px">
-          Hero color
-          <div class="swatches">
-            ${COLORS.map((color) => `
-              <button class="swatch ${color === selectedColor ? "selected" : ""}" data-color="${color}" style="background:#${color.toString(16).padStart(6, "0")}" aria-label="Select hero color"></button>
-            `).join("")}
+          <div class="field">
+            Hero color
+            <div class="swatches">
+              ${COLORS.map((color) => `
+                <button class="swatch ${color === selectedColor ? "selected" : ""}" data-color="${color}" style="background:#${color.toString(16).padStart(6, "0")}" aria-label="Select hero color"></button>
+              `).join("")}
+            </div>
           </div>
         </div>
-        <div class="setup-grid">
-          <button id="patch-notes-menu">Patch Notes</button>
+        <div class="menu-subpanel hidden" id="menu-settings-panel">
+          <label class="setting-row"><span>Master Volume</span><input data-menu-setting="master" type="range" min="0" max="1" step="0.05" value="${game.save.settings.master}" /></label>
+          <label class="setting-row"><span>SFX Volume</span><input data-menu-setting="sfx" type="range" min="0" max="1" step="0.05" value="${game.save.settings.sfx}" /></label>
+          <label class="setting-row"><span>Show FPS</span><input data-menu-setting="showFps" type="checkbox" ${game.save.settings.showFps ? "checked" : ""} /></label>
+        </div>
+        <div class="menu-secondary">
           <button id="reset-save">Reset Save</button>
         </div>
       </div>
@@ -470,15 +499,29 @@ function renderMainMenu() {
     });
   });
 
-  uiRoot.querySelector("#start-game").addEventListener("click", () => {
+  uiRoot.querySelector("#continue-game").addEventListener("click", () => {
     const name = uiRoot.querySelector("#hero-name").value.trim() || "New Hero";
     game.save = applyEquipment({ ...game.save, name, color: pickedColor });
     saveGame();
     startGame();
   });
 
-  uiRoot.querySelector("#patch-notes-menu").addEventListener("click", () => {
-    alert(formatPatchNotesPlainText());
+  uiRoot.querySelector("#character-menu").addEventListener("click", () => {
+    uiRoot.querySelector("#menu-character").classList.toggle("hidden");
+    playUiSound("tick");
+  });
+
+  uiRoot.querySelector("#settings-menu").addEventListener("click", () => {
+    uiRoot.querySelector("#menu-settings-panel").classList.toggle("hidden");
+    playUiSound("tick");
+  });
+
+  uiRoot.querySelectorAll("[data-menu-setting]").forEach((control) => {
+    control.addEventListener("input", () => {
+      const key = control.dataset.menuSetting;
+      game.save.settings[key] = control.type === "checkbox" ? control.checked : Number(control.value);
+      saveGame();
+    });
   });
 
   uiRoot.querySelector("#reset-save").addEventListener("click", () => {
@@ -487,6 +530,21 @@ function renderMainMenu() {
     playUiSound("low");
     renderMainMenu();
   });
+  refreshMenuServerStatus();
+}
+
+function refreshMenuServerStatus() {
+  const status = uiRoot.querySelector("#menu-server-status");
+  if (!status) return;
+  fetch(`${SERVER_URL}/health`)
+    .then((response) => {
+      status.textContent = response.ok ? "Online" : "Solo ready";
+      status.className = response.ok ? "online" : "offline";
+    })
+    .catch(() => {
+      status.textContent = "Solo ready";
+      status.className = "offline";
+    });
 }
 
 function startGame() {
