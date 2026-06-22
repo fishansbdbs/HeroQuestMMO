@@ -96,6 +96,38 @@ function projectileEffect(projectile) {
   }
 }
 
+function meleeEffect(effect) {
+  if (!effect || !game.scene) return;
+  if (effect.type === "dark_punch") {
+    const from = new THREE.Vector3(effect.from?.x || 0, effect.from?.y || 1.1, effect.from?.z || 0);
+    const to = new THREE.Vector3(effect.to?.x || 0, effect.to?.y || 1, effect.to?.z || 0);
+    const direction = to.clone().sub(from);
+    if (direction.lengthSq() > 0.001) direction.normalize();
+    const lungeEnd = from.clone().add(direction.multiplyScalar(0.9));
+    const fist = new THREE.Group();
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), mat(0x24112f, 0.86, true));
+    const aura = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 8), mat(0x8a4dff, 0.22, true));
+    fist.add(core, aura);
+    fist.position.copy(from);
+    game.scene.add(fist);
+    const started = performance.now();
+    const duration = Math.max(120, effect.lungeMs || 220);
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / duration);
+      const arc = Math.sin(t * Math.PI);
+      fist.position.lerpVectors(from, lungeEnd, arc);
+      fist.scale.setScalar(1 + arc * 0.35);
+      aura.material.opacity = Math.max(0, 0.22 - t * 0.18);
+      if (t < 1) requestAnimationFrame(animate);
+      else {
+        game.scene.remove(fist);
+        darkPunchImpactEffect(to);
+      }
+    };
+    animate();
+  }
+}
+
 function fireballImpactEffect(position) {
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.62, 28), mat(0xff7a24, 0.66, true));
   ring.rotation.x = -Math.PI / 2;
@@ -126,6 +158,39 @@ function fireballImpactEffect(position) {
       sparks.forEach((spark) => game.scene.remove(spark));
     }
   };
+  animate();
+}
+
+function darkPunchImpactEffect(position) {
+  const burst = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 8), mat(0x5b2c87, 0.5, true));
+  burst.position.copy(position);
+  game.scene.add(burst);
+  const shards = [];
+  for (let i = 0; i < 8; i += 1) {
+    const shard = new THREE.Mesh(new THREE.TetrahedronGeometry(0.08, 0), mat(i % 2 ? 0xa06cff : 0x1a1024, 0.66, true));
+    const angle = (i / 8) * Math.PI * 2;
+    shard.position.copy(position);
+    shard.userData.velocity = new THREE.Vector3(Math.cos(angle) * 0.045, 0.025 + (i % 3) * 0.008, Math.sin(angle) * 0.045);
+    shards.push(shard);
+    game.scene.add(shard);
+  }
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 320;
+    burst.scale.setScalar(1 + t * 2.8);
+    burst.material.opacity = Math.max(0, 0.5 - t * 0.5);
+    for (const shard of shards) {
+      shard.position.add(shard.userData.velocity);
+      shard.rotation.y += 0.1;
+      shard.material.opacity = Math.max(0, 0.66 - t * 0.66);
+    }
+    if (t < 1) requestAnimationFrame(animate);
+    else {
+      game.scene.remove(burst);
+      shards.forEach((shard) => game.scene.remove(shard));
+    }
+  };
+  screenShake(0.06);
   animate();
 }
 

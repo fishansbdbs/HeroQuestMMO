@@ -94,6 +94,28 @@ export class CombatSystem {
         projectile: createProjectilePayload(ability.id, player.position, target.enemy.position, target.enemy.id)
       };
     }
+    if (ability.id === "dark_punch") {
+      const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.meleeRange);
+      if (!target.ok) return target;
+      const manaSpend = spendMana(player, ability.manaCost || 0);
+      if (!manaSpend.ok) return { ok: false, reason: "mana" };
+      Object.assign(player, manaSpend.player);
+      player.lastAbilityAt = now;
+      const damage = calculateAbilityDamage(player, ability, this.rng);
+      const result = this.enemySystem.damageEnemy({
+        zone: player.zone,
+        enemyInstanceId: target.enemy.id,
+        damage,
+        attackerId: player.id
+      });
+      return {
+        ok: true,
+        abilityId: ability.id,
+        damage,
+        result,
+        meleeEffect: createMeleeEffectPayload(ability.id, player.position, target.enemy.position, target.enemy.id)
+      };
+    }
     if (ability.id === "ground_pound") {
       const manaSpend = spendMana(player, ability.manaCost || 0);
       if (!manaSpend.ok) return { ok: false, reason: "mana" };
@@ -177,6 +199,17 @@ function createAreaEffectPayload(type, origin, ability) {
     origin: { x: origin?.x || 0, y: origin?.y || 0, z: origin?.z || 0 },
     radius: ability.radius || PLAYER_LIMITS.abilityRange,
     knockback: ability.knockback || 0
+  };
+}
+
+function createMeleeEffectPayload(type, from, to, targetId) {
+  return {
+    type,
+    targetId,
+    from: { x: from?.x || 0, y: (from?.y || 0) + 1.1, z: from?.z || 0 },
+    to: { x: to?.x || 0, y: (to?.y || 0) + 1, z: to?.z || 0 },
+    lungeMs: 220,
+    impactEffect: type === "dark_punch" ? "dark_burst" : "impact"
   };
 }
 

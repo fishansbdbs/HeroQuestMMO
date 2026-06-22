@@ -147,6 +147,20 @@ test("client runtime animates Ground Pound area acknowledgements", () => {
   assert.match(runtimeSource, /effect\.type === "ground_pound"/);
 });
 
+test("client runtime animates Dark Punch melee acknowledgements", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
+  const runtimeSource = runtimeParts
+    .map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8"))
+    .join("\n");
+  const combatAckSource = runtimeSource.match(/function handleCombatAck\([\s\S]*?\n}\r?\n\r?\nfunction damagePlayer/)?.[0] || "";
+
+  assert.ok(combatAckSource, "handleCombatAck runtime source should exist");
+  assert.match(combatAckSource, /meleeEffect\(result\.meleeEffect\)/);
+  assert.match(runtimeSource, /function meleeEffect\(effect\)/);
+  assert.match(runtimeSource, /effect\.type === "dark_punch"/);
+});
+
 test("IceZero v2 title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
@@ -1654,6 +1668,73 @@ test("Ground Pound resolves circular area hits once per cast", () => {
     radius: ABILITIES.ground_pound.radius,
     knockback: ABILITIES.ground_pound.knockback
   });
+});
+
+test("Dark Punch resolves close hostile targeting without projectile travel", () => {
+  const close = {
+    id: "enemy_dark_close",
+    enemyId: "goblin_cutter",
+    zone: ZONES.FIELD,
+    position: { x: 2.4, y: 0, z: 0 },
+    health: 60,
+    maxHealth: 60
+  };
+  const far = {
+    id: "enemy_dark_far",
+    enemyId: "forest_wisp",
+    zone: ZONES.FIELD,
+    position: { x: 5.2, y: 0, z: 0 },
+    health: 50,
+    maxHealth: 50
+  };
+  const damageEvents = [];
+  const enemySystem = {
+    enemies: new Map([
+      [close.id, close],
+      [far.id, far]
+    ]),
+    getZoneEnemies: () => [close, far],
+    damageEnemy(payload) {
+      damageEvents.push(payload);
+      const target = this.enemies.get(payload.enemyInstanceId);
+      target.health = Math.max(0, target.health - payload.damage);
+      return { hit: true, defeated: target.health <= 0, enemy: target };
+    }
+  };
+  const combat = new CombatSystem({ enemySystem, bossSystem: { damage: () => ({ defeated: false }) }, rng: () => 0.5 });
+  const makePlayer = () => applyEquipment({
+    ...STARTING_PLAYER,
+    id: "striker",
+    zone: ZONES.FIELD,
+    position: { x: 0, y: 0, z: 0 },
+    health: 100,
+    level: 5,
+    learnedAbilities: ["dark_punch"],
+    spentAttributes: { health: 0, strength: 8, magic: 0, defense: 0 },
+    lastAbilityAt: 0
+  });
+
+  const result = combat.ability(makePlayer(), { abilityId: "dark_punch", targetId: close.id });
+  const farResult = combat.ability(makePlayer(), { abilityId: "dark_punch", targetId: far.id });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.abilityId, "dark_punch");
+  assert.equal(damageEvents.length, 1);
+  assert.equal(damageEvents[0].enemyInstanceId, close.id);
+  assert.ok(damageEvents[0].damage > 0);
+  assert.equal(close.health < close.maxHealth, true);
+  assert.equal(far.health, far.maxHealth);
+  assert.equal(result.projectile, undefined);
+  assert.deepEqual(result.meleeEffect, {
+    type: "dark_punch",
+    targetId: close.id,
+    from: { x: 0, y: 1.1, z: 0 },
+    to: { x: 2.4, y: 1, z: 0 },
+    lungeMs: 220,
+    impactEffect: "dark_burst"
+  });
+  assert.equal(farResult.ok, false);
+  assert.equal(farResult.reason, "range");
 });
 
 test("loot claims validate alive state and range before deleting the bag", () => {
