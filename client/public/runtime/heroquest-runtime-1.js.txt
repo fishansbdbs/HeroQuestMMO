@@ -136,6 +136,7 @@ const game = {
   defeatedAt: null,
   respawnAt: null,
   respawnRequested: false,
+  potionRequestPending: false,
   lastMoveSent: 0,
   fps: { frames: 0, last: performance.now(), value: 0 },
   audio: null,
@@ -703,6 +704,16 @@ function buildHud() {
   });
   uiRoot.querySelectorAll("[data-hotbar-action]").forEach((button) => {
     button.addEventListener("click", () => handleHotbarSlot(Number(button.dataset.hotbarSlot)));
+    button.addEventListener("dragover", (event) => {
+      if ([3, 7, 8].includes(Number(button.dataset.hotbarSlot))) event.preventDefault();
+    });
+    button.addEventListener("drop", (event) => {
+      const slot = Number(button.dataset.hotbarSlot);
+      if (![3, 7, 8].includes(slot)) return;
+      event.preventDefault();
+      const abilityId = event.dataTransfer?.getData("text/plain");
+      if (abilityId) assignAbilityToHotbar(slot, abilityId);
+    });
   });
   uiRoot.querySelectorAll("[data-panel]").forEach((button) => {
     button.addEventListener("click", () => openPanel(button.dataset.panel));

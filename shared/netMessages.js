@@ -6,6 +6,7 @@ export const NET = {
   PLAYER_RESPAWN: "player:respawn",
   PLAYER_SPEND_ATTRIBUTE: "player:spend_attribute",
   PLAYER_USE_REST_STONE: "player:use_rest_stone",
+  PLAYER_USE_CONSUMABLE: "player:use_consumable",
   PLAYER_BUY_ABILITY: "player:buy_ability",
   PLAYER_ASSIGN_HOTBAR: "player:assign_hotbar",
   PLAYER_BUY_SKILL_NODE: "player:buy_skill_node",

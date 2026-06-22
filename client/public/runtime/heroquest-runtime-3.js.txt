@@ -76,12 +76,12 @@ function updateHotbar(now) {
     button.classList.toggle("active", slot.action === "auto" && game.autoAttack);
     button.classList.toggle("pressed", game.hotbarPressed === slot.action);
     button.classList.toggle("locked", Boolean(slot.locked) || notLearned);
-    button.title = notLearned ? "Learn Hero Pulse from the Mage Trainer." : slot.tooltip;
+    button.title = notLearned ? `Learn ${slot.name} before using it.` : slot.tooltip;
     button.disabled = isLocallyDead() || Boolean(slot.locked) || notLearned || (slot.action !== "auto" && cooldown > 0) || (slot.action === "potion" && countItem("small_health_potion") <= 0);
     if (overlay) overlay.style.height = cooldown > 0 ? `${Math.min(100, (cooldown / Math.max(1, slot.cooldownMs)) * 100)}%` : "0%";
     if (count) {
       if (slot.action === "potion") count.textContent = `x${countItem("small_health_potion")}`;
-      else if (slot.action === "pulse" && !notLearned) count.textContent = game.save.mana < ABILITIES.hero_pulse.manaCost ? "Mana" : "";
+      else if (ABILITIES[slot.action]?.manaCost && !notLearned) count.textContent = game.save.mana < ABILITIES[slot.action].manaCost ? "Mana" : "";
       else if (cooldown > 0) count.textContent = `${Math.ceil(cooldown / 1000)}`;
       else count.textContent = "";
     }
@@ -95,7 +95,7 @@ function knowsAbility(abilityId) {
 function cooldownLeft(slot, now) {
   if (!slot || slot.locked || !slot.cooldownMs) return 0;
   const key = slot.action === "auto" ? "attack" : slot.action;
-  if (slot.action === "pulse") {
+  if (slot.action === "hero_pulse") {
     const weapon = getItem(game.save.equippedWeapon);
     return game.cooldowns.pulse ? Math.max(0, ABILITIES.hero_pulse.cooldownMs * (weapon?.pulseCooldownBonus || 1) - (now - game.cooldowns.pulse)) : 0;
   }

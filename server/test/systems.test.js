@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { ABILITIES } from "../../shared/abilities.js";
 import { GAME_VERSION, PATCH_NOTES, STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment, addProgressRewards, calculateIncomingDamage } from "../../shared/combat.js";
-import { ENEMIES, FROSTVEIL_SPAWNS, ELITE_MODIFIERS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
+import { BOSS, ENEMIES, FROSTVEIL_SPAWNS, ELITE_MODIFIERS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { canEnterZone, getZone, unlockWaypoint } from "../../shared/zones.js";
 import {
   calculateDamageReduction,
@@ -411,6 +412,26 @@ test("ability targeting and hotbar assignment reject invalid friendly or hostile
   assert.equal(invalid.reason, "not_learned");
 });
 
+test("learned active abilities can be assigned, replaced, and removed from active hotbar slots", () => {
+  const player = {
+    ...STARTING_PLAYER,
+    learnedAbilities: ["hero_pulse", "fireball", "mend_ally"],
+    hotbar: ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null]
+  };
+
+  const fireball = assignHotbarAbility(player, 7, "fireball");
+  assert.equal(fireball.ok, true);
+  assert.equal(fireball.player.hotbar[6], "fireball");
+
+  const replaced = assignHotbarAbility(fireball.player, 7, "mend_ally");
+  assert.equal(replaced.ok, true);
+  assert.equal(replaced.player.hotbar[6], "mend_ally");
+
+  const cleared = assignHotbarAbility(replaced.player, 7, null);
+  assert.equal(cleared.ok, true);
+  assert.equal(cleared.player.hotbar[6], null);
+});
+
 test("skill trees enforce prerequisites, ranks, and skill point spending", () => {
   const player = applyEquipment({
     ...STARTING_PLAYER,
@@ -789,6 +810,37 @@ test("slash attack uses the authoritative 150 percent damage scale", () => {
   assert.equal(result.result.payload.damage, 17);
 });
 
+test("enemy attacks deal damage at every player health threshold", () => {
+  const realNow = Date.now;
+  let now = 20000;
+  Date.now = () => now;
+  try {
+    for (const health of [100, 75, 50, 25, 9, 1]) {
+      const enemies = new EnemySystem({ rng: () => 0.5 });
+      enemies.enemies.clear();
+      const slime = enemies.spawnEnemy("green_slime", { x: 0, y: 0, z: 0 }, ZONES.FIELD);
+      slime.lastAttackAt = 0;
+      const player = {
+        id: `threshold-${health}`,
+        zone: ZONES.FIELD,
+        health,
+        maxHealth: 100,
+        defense: 0,
+        state: "alive",
+        position: { x: 0.5, y: 0, z: 0.5 }
+      };
+
+      enemies.update(new Map([[player.id, player]]), 100);
+
+      assert.ok(player.health < health, `expected damage at ${health} HP`);
+      assert.ok(player.health >= 0, `expected non-negative health at ${health} HP`);
+      now += ENEMIES.green_slime.attackCooldownMs + 1;
+    }
+  } finally {
+    Date.now = realNow;
+  }
+});
+
 test("party codes support create, join, and leave", () => {
   const parties = new PartySystem(() => "abcd");
   const created = parties.createParty("leader");
@@ -882,6 +934,151 @@ test("dead players cannot attack, cast abilities, or spend cooldowns", () => {
   assert.deepEqual(combat.ability(player), { ok: false, reason: "dead" });
   assert.equal(player.lastAttackAt, 0);
   assert.equal(player.lastAbilityAt, 0);
+});
+
+test("server potion use heals, decrements inventory, and starts cooldown", () => {
+  const realNow = Date.now;
+  let now = 1000;
+  Date.now = () => now;
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const player = createPlayerState("potion-user", {
+      health: 65,
+      maxHealth: 100,
+      inventory: [{ itemId: "small_health_potion", quantity: 2 }]
+    });
+
+    const used = room.usePotion(player);
+
+    assert.equal(used.ok, true);
+    assert.equal(used.heal.amount, 30);
+    assert.equal(player.health, 95);
+    assert.equal(inventoryQuantity(player.inventory, "small_health_potion"), 1);
+    assert.equal(player.lastPotionAt, now);
+
+    now += ABILITIES.potion.cooldownMs - 1;
+    const cooldown = room.usePotion(player);
+
+    assert.equal(cooldown.ok, false);
+    assert.equal(cooldown.reason, "cooldown");
+    assert.equal(player.health, 95);
+    assert.equal(inventoryQuantity(player.inventory, "small_health_potion"), 1);
+  } finally {
+    Date.now = realNow;
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("server potion use rejects full health, missing potions, and dead players without consuming", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const full = createPlayerState("full-potion-user", {
+      health: 100,
+      maxHealth: 100,
+      inventory: [{ itemId: "small_health_potion", quantity: 1 }]
+    });
+    const fullResult = room.usePotion(full);
+    assert.equal(fullResult.ok, false);
+    assert.equal(fullResult.reason, "full");
+    assert.equal(inventoryQuantity(full.inventory, "small_health_potion"), 1);
+
+    const missing = createPlayerState("missing-potion-user", {
+      health: 50,
+      maxHealth: 100,
+      inventory: []
+    });
+    const missingResult = room.usePotion(missing);
+    assert.equal(missingResult.ok, false);
+    assert.equal(missingResult.reason, "missing");
+
+    const dead = createPlayerState("dead-potion-user", {
+      inventory: [{ itemId: "small_health_potion", quantity: 1 }]
+    });
+    dead.health = 0;
+    dead.state = "dead";
+    const deadResult = room.usePotion(dead);
+    assert.equal(deadResult.ok, false);
+    assert.equal(deadResult.reason, "dead");
+    assert.equal(inventoryQuantity(dead.inventory, "small_health_potion"), 1);
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("server respawn request restores HP and mana at Dawnrest with protection", () => {
+  const realNow = Date.now;
+  let now = 5000;
+  Date.now = () => now;
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const player = createPlayerState("respawn-user", {
+      zone: ZONES.BOSS,
+      position: { x: 12, y: 0, z: -3, rot: 1 },
+      spentAttributes: { health: 0, strength: 0, magic: 4, defense: 0 }
+    });
+    player.state = "dead";
+    player.health = 0;
+    player.mana = 0;
+    player.respawnAt = now;
+
+    const respawned = room.requestRespawn(player);
+
+    assert.equal(respawned.ok, true);
+    assert.equal(player.state, "alive");
+    assert.equal(player.zone, ZONES.HUB);
+    assert.equal(player.health, player.maxHealth);
+    assert.equal(player.mana, player.maxMana);
+    assert.deepEqual(player.position, { x: 0, y: 0, z: 6, rot: 0 });
+    assert.ok(player.respawnProtectionUntil >= now + 3000);
+  } finally {
+    Date.now = realNow;
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("server respawn request rejects early and duplicate respawns", () => {
+  const realNow = Date.now;
+  let now = 10000;
+  Date.now = () => now;
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const player = createPlayerState("early-respawn-user", { zone: ZONES.BOSS });
+    player.state = "dead";
+    player.health = 0;
+    player.respawnAt = now + 1000;
+
+    const early = room.requestRespawn(player);
+    assert.equal(early.ok, false);
+    assert.equal(early.reason, "not_ready");
+    assert.equal(player.state, "dead");
+
+    now = player.respawnAt;
+    const first = room.requestRespawn(player);
+    assert.equal(first.ok, true);
+
+    const duplicate = room.requestRespawn(player);
+    assert.equal(duplicate.ok, false);
+    assert.equal(duplicate.reason, "not_dead");
+  } finally {
+    Date.now = realNow;
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
 });
 
 test("server validates Hero Pulse ownership and mana before casting", () => {
@@ -986,6 +1183,119 @@ test("boss telegraphs include target slams, resolve after the warning, and keep 
     now = boss.state.nextAttackAt + 1;
     const next = boss.update(players);
     assert.ok(next.some((event) => event.type === "boss_telegraph"));
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("Shadow Wyrm enters aggro immediately when damaged and tracks attacker threat", () => {
+  const realNow = Date.now;
+  let now = 2000;
+  Date.now = () => now;
+  try {
+    const boss = new BossSystem({ rng: () => 0.1 });
+    const damaged = boss.damage(21, "p1");
+    assert.equal(damaged.defeated, false);
+    assert.equal(boss.state.active, true);
+    assert.equal(boss.state.mode, "CHOOSE_ATTACK");
+    assert.equal(boss.state.threat.get("p1"), 21);
+
+    const players = new Map([
+      [
+        "p1",
+        {
+          id: "p1",
+          zone: ZONES.BOSS,
+          health: 100,
+          maxHealth: 100,
+          defense: 0,
+          position: { x: 2, y: 0, z: -3 }
+        }
+      ]
+    ]);
+
+    const events = boss.update(players);
+    assert.ok(events.some((event) => event.type === "boss_telegraph"));
+    assert.equal(boss.state.mode, "WINDUP");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("Shadow Wyrm watchdog clears stale attack state and continues attacking", () => {
+  const realNow = Date.now;
+  let now = 50000;
+  Date.now = () => now;
+  try {
+    const boss = new BossSystem({ rng: () => 0.1 });
+    boss.start();
+    boss.state.mode = "ACTIVE_ATTACK";
+    boss.state.attack = {
+      type: "fire_cone",
+      name: "Fire Cone",
+      startedAt: now - 30000,
+      resolvesAt: now - 29000,
+      durationMs: 60000,
+      recastMs: 4200,
+      damageScale: 1,
+      shape: { kind: "cone", x: 0, z: -4, length: 20, width: 16 }
+    };
+    boss.state.nextAttackAt = now + 60000;
+    const players = new Map([
+      [
+        "p1",
+        {
+          id: "p1",
+          zone: ZONES.BOSS,
+          health: 100,
+          maxHealth: 100,
+          defense: 0,
+          position: { x: 1, y: 0, z: -3 }
+        }
+      ]
+    ]);
+
+    const events = boss.update(players);
+
+    assert.ok(events.some((event) => event.type === "boss_telegraph"));
+    assert.equal(boss.state.mode, "WINDUP");
+    assert.notEqual(boss.state.attack.startedAt, now - 30000);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("Shadow Wyrm damage during windup preserves the active attack loop", () => {
+  const realNow = Date.now;
+  let now = 70000;
+  Date.now = () => now;
+  try {
+    const boss = new BossSystem({ rng: () => 0.1 });
+    boss.damage(20, "p1");
+    const players = new Map([
+      [
+        "p1",
+        {
+          id: "p1",
+          zone: ZONES.BOSS,
+          health: 100,
+          maxHealth: 100,
+          defense: 0,
+          position: { x: 1, y: 0, z: -3 }
+        }
+      ]
+    ]);
+    boss.update(players);
+    const activeAttack = boss.state.attack;
+    const nextAttackAt = boss.state.nextAttackAt;
+
+    now += 100;
+    boss.damage(6, "p1");
+
+    assert.equal(boss.state.mode, "WINDUP");
+    assert.equal(boss.state.attack, activeAttack);
+    assert.equal(boss.state.nextAttackAt, nextAttackAt);
+    assert.equal(boss.state.threat.get("p1"), 26);
   } finally {
     Date.now = realNow;
   }

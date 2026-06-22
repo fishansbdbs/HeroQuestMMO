@@ -1,7 +1,8 @@
 import { PLAYER_STATES, RESPAWN_DELAY_MS, SNAPSHOT_MS, SERVER_TICK_MS, ZONES } from "../../shared/constants.js";
+import { ABILITIES } from "../../shared/abilities.js";
 import { BOSS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { NET } from "../../shared/netMessages.js";
-import { addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
+import { addProgressRewards, consumeInventoryItem, distance2d, isPlayerDead } from "../../shared/combat.js";
 import { equipItemToSlot } from "../../shared/equipment.js";
 import { addInventoryStack } from "../../shared/inventory.js";
 import { spendAttributePoint, useRestStone } from "../../shared/progression.js";
@@ -113,6 +114,13 @@ export class RoomManager {
       if (result.ok) this.broadcastSnapshots();
     });
 
+    socket.on(NET.PLAYER_USE_CONSUMABLE, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.usePotion(player, payload?.itemId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
     socket.on(NET.PLAYER_BUY_ABILITY, (payload, ack) => {
       const player = this.players.get(socket.id);
       const result = this.buyAbility(player, payload?.abilityId);
@@ -191,12 +199,12 @@ export class RoomManager {
     socket.on(NET.PLAYER_RESPAWN, (_payload, ack) => {
       const player = this.players.get(socket.id);
       if (!player) return;
-      if (!isPlayerDead(player) || Date.now() < (player.respawnAt || 0)) {
-        ack?.({ ok: false, reason: "not_ready", player: sanitizePlayer(player) });
+      const oldZone = player.zone;
+      const result = this.requestRespawn(player);
+      if (!result.ok) {
+        ack?.({ ...result, player: sanitizePlayer(player) });
         return;
       }
-      const oldZone = player.zone;
-      this.respawnPlayer(player);
       socket.leave(oldZone);
       socket.join(ZONES.HUB);
       ack?.({ ok: true, player: sanitizePlayer(player), snapshot: this.snapshotForZone(player.zone) });
@@ -279,6 +287,46 @@ export class RoomManager {
     if (!result.ok) return result;
     Object.assign(player, result.player);
     return { ok: true };
+  }
+
+  usePotion(player, itemId = "small_health_potion") {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    if (itemId !== "small_health_potion") return { ok: false, reason: "item" };
+
+    const maxHealth = Math.max(1, Number(player.maxHealth) || 1);
+    const currentHealth = Math.max(0, Number(player.health) || 0);
+    if (currentHealth >= maxHealth) return { ok: false, reason: "full" };
+
+    const now = Date.now();
+    const cooldownMs = ABILITIES.potion.cooldownMs;
+    const lastPotionAt = Number(player.lastPotionAt) || 0;
+    if (lastPotionAt && now - lastPotionAt < cooldownMs) {
+      return {
+        ok: false,
+        reason: "cooldown",
+        remainingMs: Math.max(0, cooldownMs - (now - lastPotionAt))
+      };
+    }
+
+    const consumed = consumeInventoryItem(player.inventory || [], itemId, 1);
+    if (!consumed.consumed) return { ok: false, reason: "missing" };
+
+    const healCap = maxHealth - currentHealth;
+    const configuredHeal = Math.max(1, Math.round((ABILITIES.potion.heal || 30) + (Number(player.potionBonus) || 0)));
+    const amount = Math.min(healCap, configuredHeal);
+    player.inventory = consumed.inventory;
+    player.health = currentHealth + amount;
+    player.lastPotionAt = now;
+    return {
+      ok: true,
+      itemId,
+      heal: {
+        amount,
+        health: player.health,
+        maxHealth
+      },
+      cooldownMs
+    };
   }
 
   buyAbility(player, abilityId) {
@@ -534,26 +582,33 @@ export class RoomManager {
   processRespawns() {
     for (const player of this.players.values()) {
       if (player.state === PLAYER_STATES.DEAD && Date.now() >= (player.respawnAt || 0)) {
-        const oldZone = player.zone;
-        this.respawnPlayer(player);
-        const socket = this.io.sockets?.sockets?.get?.(player.id);
-        if (socket) {
-          socket.leave(oldZone);
-          socket.join(player.zone);
+        if (!player.respawnReadyNotified) {
+          player.respawnReadyNotified = true;
+          this.io.to(player.zone).emit(NET.WORLD_EVENT, { type: "player_respawn_ready", playerId: player.id });
         }
-        this.io.to(player.zone).emit(NET.WORLD_EVENT, { type: "player_respawned", playerId: player.id });
       }
     }
   }
 
+  requestRespawn(player) {
+    if (!player || !isPlayerDead(player)) return { ok: false, reason: "not_dead" };
+    if (Date.now() < (player.respawnAt || 0)) return { ok: false, reason: "not_ready" };
+    this.respawnPlayer(player);
+    return { ok: true };
+  }
+
   respawnPlayer(player) {
+    const now = Date.now();
     Object.assign(player, {
       state: PLAYER_STATES.ALIVE,
       health: player.maxHealth,
+      mana: player.maxMana,
       zone: ZONES.HUB,
       position: defaultZonePosition(ZONES.HUB),
       defeatedAt: null,
       respawnAt: null,
+      respawnReadyNotified: false,
+      respawnProtectionUntil: now + 3000,
       lastAttackAt: 0,
       lastAbilityAt: 0
     });

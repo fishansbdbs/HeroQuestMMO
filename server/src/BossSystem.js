@@ -43,6 +43,24 @@ const BOSS_ATTACKS = {
   }
 };
 
+const BOSS_MODES = {
+  IDLE: "IDLE",
+  AGGRO: "AGGRO",
+  CHOOSE_ATTACK: "CHOOSE_ATTACK",
+  WINDUP: "WINDUP",
+  ACTIVE_ATTACK: "ACTIVE_ATTACK",
+  RECOVERY: "RECOVERY",
+  DEAD: "DEAD"
+};
+
+const BOSS_MODE_MAX_MS = {
+  [BOSS_MODES.AGGRO]: 2000,
+  [BOSS_MODES.CHOOSE_ATTACK]: 2000,
+  [BOSS_MODES.WINDUP]: 5000,
+  [BOSS_MODES.ACTIVE_ATTACK]: 5000,
+  [BOSS_MODES.RECOVERY]: 5000
+};
+
 export class BossSystem {
   constructor({ lootSystem = new LootSystem(), rng = Math.random } = {}) {
     this.lootSystem = lootSystem;
@@ -58,27 +76,42 @@ export class BossSystem {
       phase: 1,
       active: false,
       defeated: false,
+      mode: BOSS_MODES.IDLE,
+      stateEnteredAt: Date.now(),
       attack: null,
+      threat: new Map(),
+      currentTargetId: null,
       participants: new Set(),
       nextAttackAt: Date.now() + 4000
     };
   }
 
-  start() {
+  start({ immediate = false } = {}) {
     if (this.state.defeated) this.reset();
+    if (this.state.active) {
+      if (immediate && !this.state.attack) {
+        this.enterMode(BOSS_MODES.CHOOSE_ATTACK);
+        this.state.nextAttackAt = Date.now();
+      }
+      return this.snapshot();
+    }
     this.state.active = true;
-    this.state.nextAttackAt = Date.now() + 2400;
+    this.enterMode(BOSS_MODES.CHOOSE_ATTACK);
+    this.state.nextAttackAt = Date.now() + (immediate ? 0 : 2400);
     return this.snapshot();
   }
 
   damage(amount, playerId) {
-    this.start();
+    this.start({ immediate: true });
+    const damage = Math.max(1, Math.round(amount));
     this.state.participants.add(playerId);
-    this.state.health = Math.max(0, this.state.health - Math.max(1, Math.round(amount)));
+    this.state.threat.set(playerId, (this.state.threat.get(playerId) || 0) + damage);
+    this.state.health = Math.max(0, this.state.health - damage);
     if (this.state.health <= BOSS.maxHealth * 0.5) this.state.phase = 2;
     if (this.state.health <= 0 && !this.state.defeated) {
       this.state.defeated = true;
       this.state.active = false;
+      this.enterMode(BOSS_MODES.DEAD);
       const drop = this.lootSystem.createDrop({
         enemy: BOSS,
         zone: ZONES.BOSS,
@@ -98,22 +131,34 @@ export class BossSystem {
     if (alivePlayers.length === 0) {
       this.state.active = false;
       this.state.attack = null;
+      this.state.currentTargetId = null;
+      this.enterMode(BOSS_MODES.IDLE);
       return [{ type: "boss_reset", boss: this.snapshot() }];
     }
 
+    this.recoverStaleState(now);
+
     if (this.state.attack && now - this.state.attack.startedAt > this.state.attack.durationMs) {
       this.state.attack = null;
+      this.enterMode(BOSS_MODES.RECOVERY);
+    }
+
+    if (!this.state.attack && now >= this.state.nextAttackAt && this.state.mode === BOSS_MODES.RECOVERY) {
+      this.enterMode(BOSS_MODES.CHOOSE_ATTACK);
     }
 
     if (!this.state.attack && now >= this.state.nextAttackAt) {
       const attack = this.createAttack(now, alivePlayers);
       this.state.attack = attack;
       this.state.nextAttackAt = now + attack.recastMs;
+      this.state.currentTargetId = attack.targetId || this.chooseTarget(alivePlayers)?.id || null;
+      this.enterMode(BOSS_MODES.WINDUP);
       events.push({ type: "boss_telegraph", attack });
     }
 
     if (this.state.attack && now >= this.state.attack.resolvesAt && !this.state.attack.resolved) {
       this.state.attack.resolved = true;
+      this.enterMode(BOSS_MODES.ACTIVE_ATTACK);
       if (this.state.attack.type === "shadow_summon") {
         events.push({ type: "boss_summon", attack: this.state.attack, enemy: ENEMIES.shadow_slime });
       } else {
@@ -131,6 +176,7 @@ export class BossSystem {
         }
         events.push({ type: "boss_impact", attack: this.state.attack, hits });
       }
+      this.enterMode(BOSS_MODES.RECOVERY);
     }
     return events;
   }
@@ -141,7 +187,7 @@ export class BossSystem {
       : ["fire_cone", "tail_sweep", "wing_gust", "shadow_slam", "shadow_summon"];
     const type = attackTypes[Math.floor(this.rng() * attackTypes.length)];
     const def = BOSS_ATTACKS[type];
-    const target = type === "shadow_slam" ? pickTarget(alivePlayers, this.rng) : null;
+    const target = type === "shadow_slam" ? this.chooseTarget(alivePlayers) : null;
     const summonPoints = type === "shadow_summon" ? createSummonPoints(this.rng) : null;
     const shape = target
       ? { ...def.shape, x: target.position.x, z: target.position.z }
@@ -181,6 +227,33 @@ export class BossSystem {
     return false;
   }
 
+  chooseTarget(players) {
+    const eligible = players.filter((player) => player.zone === ZONES.BOSS && !isPlayerDead(player));
+    if (!eligible.length) return null;
+    const threatened = eligible
+      .map((player) => ({ player, threat: this.state.threat.get(player.id) || 0 }))
+      .sort((a, b) => b.threat - a.threat);
+    if (threatened[0].threat > 0) return threatened[0].player;
+    return pickTarget(eligible, this.rng);
+  }
+
+  enterMode(mode) {
+    if (this.state.mode === mode) return;
+    this.state.mode = mode;
+    this.state.stateEnteredAt = Date.now();
+  }
+
+  recoverStaleState(now) {
+    const maxDuration = BOSS_MODE_MAX_MS[this.state.mode] || 0;
+    const staleByMode = maxDuration > 0 && now - (this.state.stateEnteredAt || now) > maxDuration;
+    const staleByAttack = this.state.attack && now - this.state.attack.startedAt > 8000;
+    if (!staleByMode && !staleByAttack) return;
+    this.state.attack = null;
+    this.state.currentTargetId = null;
+    this.enterMode(BOSS_MODES.CHOOSE_ATTACK);
+    this.state.nextAttackAt = now;
+  }
+
   snapshot() {
     return {
       id: this.state.id,
@@ -190,6 +263,7 @@ export class BossSystem {
       phase: this.state.phase,
       active: this.state.active,
       defeated: this.state.defeated,
+      mode: this.state.mode,
       attack: this.state.attack
     };
   }
