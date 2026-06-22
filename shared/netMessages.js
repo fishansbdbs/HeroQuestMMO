@@ -13,6 +13,8 @@ export const NET = {
   PLAYER_SAVE_LOADOUT: "player:save_loadout",
   PLAYER_ACTIVATE_LOADOUT: "player:activate_loadout",
   PLAYER_EQUIP_ITEM: "player:equip_item",
+  PLAYER_SELL_ITEM: "player:sell_item",
+  PLAYER_BUYBACK_ITEM: "player:buyback_item",
   WORLD_SNAPSHOT: "world:snapshot",
   WORLD_EVENT: "world:event",
   PUBLIC_EVENT_ACTIVATE: "public_event:activate",

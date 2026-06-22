@@ -138,6 +138,7 @@ function syncRemotePlayers(players) {
       game.save.availableSkillPoints = player.availableSkillPoints ?? game.save.availableSkillPoints;
       game.save.spentAttributes = player.spentAttributes || game.save.spentAttributes;
       game.save.inventory = player.inventory || game.save.inventory;
+      game.save.buyback = player.buyback || game.save.buyback || [];
       game.save.equipment = player.equipment || game.save.equipment;
       game.save.equippedWeapon = player.equippedWeapon || game.save.equippedWeapon;
       game.save.equippedArmor = player.equippedArmor || game.save.equippedArmor;
@@ -491,8 +492,45 @@ function equipReason(reason) {
 }
 
 function renderShopPanel() {
-  ui.panelTitle.textContent = "Weapon Shop";
-  ui.panelContent.innerHTML = SHOP_ITEMS.map((stock) => {
+  const tab = game.shopTab || "buy";
+  ui.panelTitle.textContent = "Shopkeeper";
+  ui.panelContent.innerHTML = `
+    ${renderShopTabs(tab)}
+    <div class="panel-grid">${tab === "sell" ? renderShopSellTab() : tab === "buyback" ? renderShopBuybackTab() : renderShopBuyTab()}</div>
+    <button id="close-shop">Close</button>
+  `;
+  ui.panelContent.querySelectorAll("[data-shop-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      game.shopTab = button.dataset.shopTab;
+      renderShopPanel();
+    });
+  });
+  ui.panelContent.querySelectorAll("[data-shop-buy]").forEach((button) => {
+    button.addEventListener("click", () => buyShopItem(button.dataset.shopBuy));
+  });
+  ui.panelContent.querySelectorAll("[data-shop-equip]").forEach((button) => {
+    button.addEventListener("click", () => {
+      equipItem(button.dataset.shopEquip);
+      renderShopPanel();
+    });
+  });
+  ui.panelContent.querySelectorAll("[data-shop-sell]").forEach((button) => {
+    button.addEventListener("click", () => sellShopItem(button.dataset.shopSell, button.dataset.quantity));
+  });
+  ui.panelContent.querySelectorAll("[data-shop-buyback]").forEach((button) => {
+    button.addEventListener("click", () => buyBackShopItem(button.dataset.shopBuyback));
+  });
+  ui.panelContent.querySelector("#close-shop").addEventListener("click", closePanel);
+}
+
+function renderShopTabs(activeTab) {
+  return `<div class="shop-tabs">
+    ${["buy", "sell", "buyback"].map((tab) => `<button data-shop-tab="${tab}" class="${activeTab === tab ? "active" : ""}">${tab === "buyback" ? "Buyback" : tab[0].toUpperCase() + tab.slice(1)}</button>`).join("")}
+  </div>`;
+}
+
+function renderShopBuyTab() {
+  return SHOP_ITEMS.map((stock) => {
     const item = getItem(stock.itemId);
     const owned = ownsItem(stock.itemId);
     const equipped = equippedItemIds().has(stock.itemId);
@@ -507,17 +545,44 @@ function renderShopPanel() {
         <button data-shop-buy="${stock.itemId}" ${equipped && item?.type !== "consumable" ? "disabled" : ""}>${owned && item?.type !== "consumable" ? "Owned" : "Buy"}</button>
       </div>
     </div>`;
-  }).join("") + `<button id="close-shop">Close</button>`;
-  ui.panelContent.querySelectorAll("[data-shop-buy]").forEach((button) => {
-    button.addEventListener("click", () => buyShopItem(button.dataset.shopBuy));
-  });
-  ui.panelContent.querySelectorAll("[data-shop-equip]").forEach((button) => {
-    button.addEventListener("click", () => {
-      equipItem(button.dataset.shopEquip);
-      renderShopPanel();
+  }).join("");
+}
+
+function renderShopSellTab() {
+  const equipped = equippedItemIds();
+  const rows = normalizeInventory(game.save.inventory || [])
+    .filter((entry) => isItemSellable(entry.itemId))
+    .map((entry) => {
+      const item = getItem(entry.itemId);
+      const quantity = Math.max(1, Number(entry.quantity) || 1);
+      const unitValue = itemSellUnitValue(entry.itemId);
+      const equippedItem = equipped.has(entry.itemId);
+      return `<div class="item-row shop-row">
+        <div><strong>${item?.name || entry.itemId}</strong><small>${item?.rarity || ""} Sell ${unitValue} coins each. Quantity ${quantity}.</small></div>
+        <div class="shop-actions">
+          <button data-shop-sell="${entry.itemId}" data-quantity="1" ${equippedItem ? "disabled" : ""}>Sell 1</button>
+          ${quantity > 1 ? `<button data-shop-sell="${entry.itemId}" data-quantity="${quantity}" ${equippedItem ? "disabled" : ""}>Sell Stack</button>` : ""}
+          ${equippedItem ? "<span>Equipped</span>" : ""}
+        </div>
+      </div>`;
     });
-  });
-  ui.panelContent.querySelector("#close-shop").addEventListener("click", closePanel);
+  return rows.length ? rows.join("") : `<div class="quest-row"><strong>No sellable items</strong><small>Loot and extra consumables appear here.</small></div>`;
+}
+
+function renderShopBuybackTab() {
+  const entries = normalizeBuyback(game.save.buyback || []);
+  game.save.buyback = entries;
+  if (!entries.length) return `<div class="quest-row"><strong>Buyback empty</strong><small>Recently sold items appear here.</small></div>`;
+  return entries.map((entry) => {
+    const item = getItem(entry.itemId);
+    const cost = Number(entry.cost ?? entry.saleValue ?? itemSellValue(entry.itemId, entry.quantity)) || 0;
+    return `<div class="item-row shop-row">
+      <div><strong>${item?.name || entry.itemId}</strong><small>${item?.rarity || ""} Quantity ${entry.quantity}. Buyback ${cost} coins.</small></div>
+      <div class="shop-actions">
+        <button data-shop-buyback="${entry.id}" ${(game.save.coins || 0) < cost ? "disabled" : ""}>Buy Back</button>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 function ownsItem(itemId) {
@@ -557,6 +622,91 @@ function buyShopItem(itemId) {
   playUiSound("pickup");
   toast(`Bought ${item.name}.`);
   renderShopPanel();
+}
+
+function sellShopItem(itemId, quantity = 1) {
+  if (isLocallyDead()) return toast("You cannot shop while defeated.");
+  const item = getItem(itemId);
+  const count = Math.max(1, Math.floor(Number(quantity) || 1));
+  if (!item || !isItemSellable(itemId)) return toast("Not sellable.");
+  if (equippedItemIds().has(itemId)) return toast("Unequip first.");
+
+  const needsConfirmation = itemRequiresShopSellConfirmation(item);
+  if (needsConfirmation && !window.confirm(`Sell ${item.name}?`)) return;
+
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_SELL_ITEM, { itemId, quantity: count, confirmed: needsConfirmation }, (ack) => {
+      if (!ack?.ok) return toast(shopTradeReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("pickup");
+      toast(`Item sold: ${item.name}.`);
+      renderShopPanel();
+    });
+    return;
+  }
+
+  const removed = removeInventoryItems(game.save.inventory || [], itemId, count);
+  if (!removed.ok) return toast("Not enough items.");
+  const coins = itemSellValue(itemId, count);
+  if (coins <= 0) return toast("Not sellable.");
+  game.save.inventory = removed.inventory;
+  game.save.coins = Math.max(0, Math.floor(Number(game.save.coins) || 0)) + coins;
+  game.save.buyback = [createBuybackEntry(itemId, count, coins), ...normalizeBuyback(game.save.buyback || [])].slice(0, BUYBACK_LIMIT);
+  saveGame();
+  playUiSound("pickup");
+  toast(`Item sold: ${item.name}.`);
+  renderShopPanel();
+}
+
+function buyBackShopItem(buybackId) {
+  if (isLocallyDead()) return toast("You cannot shop while defeated.");
+  if (game.online) {
+    game.socket.emit(NET.PLAYER_BUYBACK_ITEM, { buybackId }, (ack) => {
+      if (!ack?.ok) return toast(shopTradeReason(ack?.reason));
+      applyServerPlayerUpdate(ack.player);
+      saveGame();
+      playUiSound("pickup");
+      toast("Buyback complete.");
+      renderShopPanel();
+    });
+    return;
+  }
+
+  const entries = normalizeBuyback(game.save.buyback || []);
+  const index = entries.findIndex((entry) => entry.id === buybackId);
+  if (index < 0) {
+    game.save.buyback = entries;
+    return toast("That buyback item is gone.");
+  }
+  const entry = entries[index];
+  const cost = Math.max(0, Math.floor(Number(entry.cost ?? entry.saleValue) || 0));
+  if ((game.save.coins || 0) < cost) return toast("Not enough coins for buyback.");
+  const inventoryResult = addInventoryStack(game.save.inventory || [], entry.itemId, entry.quantity);
+  if (!inventoryResult.ok) return toast("Inventory full.");
+  game.save.coins -= cost;
+  game.save.inventory = inventoryResult.inventory;
+  entries.splice(index, 1);
+  game.save.buyback = entries;
+  saveGame();
+  playUiSound("pickup");
+  toast("Buyback complete.");
+  renderShopPanel();
+}
+
+function itemRequiresShopSellConfirmation(item) {
+  return Boolean(item?.id === "rest_stone" || item?.rarity === "Rare" || item?.rarity === "Epic" || item?.boss || item?.setId);
+}
+
+function shopTradeReason(reason) {
+  if (reason === "equipped") return "Unequip first.";
+  if (reason === "confirm_required") return "Confirm before selling that item.";
+  if (reason === "quantity" || reason === "missing") return "Not enough items.";
+  if (reason === "not_sellable" || reason === "item") return "Not sellable.";
+  if (reason === "inventory_full") return "Inventory full.";
+  if (reason === "coins") return "Not enough coins for buyback.";
+  if (reason === "dead") return "You cannot shop while defeated.";
+  return "Shop action failed.";
 }
 
 function openChest(chestId) {
@@ -962,6 +1112,7 @@ function applyServerPlayerUpdate(player) {
     achievements: player.achievements || game.save.achievements,
     firstClearRewards: player.firstClearRewards || game.save.firstClearRewards,
     publicEventClaims: player.publicEventClaims || game.save.publicEventClaims,
+    buyback: player.buyback || game.save.buyback || [],
     title: player.title || game.save.title
   });
   game.save = applyEquipment(game.save);

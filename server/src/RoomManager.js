@@ -3,12 +3,21 @@ import { ABILITIES } from "../../shared/abilities.js";
 import { BOSS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { NET } from "../../shared/netMessages.js";
 import { addProgressRewards, consumeInventoryItem, distance2d, isPlayerDead } from "../../shared/combat.js";
-import { equipItemToSlot } from "../../shared/equipment.js";
-import { addInventoryStack } from "../../shared/inventory.js";
+import { equipItemToSlot, normalizeEquipment } from "../../shared/equipment.js";
+import { addInventoryStack, removeInventoryItems } from "../../shared/inventory.js";
+import { getItem } from "../../shared/items.js";
 import { spendAttributePoint, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, purchaseTrainerAbility } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
 import { applyQuestEvent, applyQuestKill } from "../../shared/quests.js";
+import {
+  BUYBACK_LIMIT,
+  createBuybackEntry,
+  isItemSellable,
+  itemSellValue,
+  normalizeBuyback,
+  normalizeTradeQuantity
+} from "../../shared/shop.js";
 import { canEnterZone, unlockWaypoint } from "../../shared/zones.js";
 import { recordBestiaryKill, refreshMetaProgress as refreshPlayerMetaProgress } from "../../shared/metaProgress.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
@@ -97,6 +106,7 @@ export class RoomManager {
         achievements: payload.achievements ?? player.achievements,
         firstClearRewards: payload.firstClearRewards ?? player.firstClearRewards,
         publicEventClaims: payload.publicEventClaims ?? player.publicEventClaims,
+        buyback: payload.buyback ?? player.buyback,
         title: payload.title ?? player.title
       });
     });
@@ -160,6 +170,20 @@ export class RoomManager {
     socket.on(NET.PLAYER_EQUIP_ITEM, (payload, ack) => {
       const player = this.players.get(socket.id);
       const result = this.equipItem(player, payload?.slot, payload?.itemId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_SELL_ITEM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.sellItem(player, payload?.itemId, payload?.quantity, { confirmed: Boolean(payload?.confirmed) });
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_BUYBACK_ITEM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.buyBackItem(player, payload?.buybackId);
       ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
       if (result.ok) this.broadcastSnapshots();
     });
@@ -422,6 +446,66 @@ export class RoomManager {
     if (!result.ok) return result;
     Object.assign(player, result.player);
     return { ok: true };
+  }
+
+  sellItem(player, itemId, quantity = 1, options = {}) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+
+    const item = getItem(itemId);
+    if (!item) return { ok: false, reason: "item" };
+
+    const count = normalizeTradeQuantity(quantity);
+    if (count <= 0) return { ok: false, reason: "quantity" };
+    if (!isItemSellable(itemId)) return { ok: false, reason: "not_sellable" };
+    if (isEquippedItem(player, itemId)) return { ok: false, reason: "equipped" };
+    if (requiresSellConfirmation(player, item) && !options.confirmed) return { ok: false, reason: "confirm_required" };
+    if (inventoryQuantity(player.inventory, itemId) < count) return { ok: false, reason: "missing" };
+
+    const coins = itemSellValue(itemId, count);
+    if (coins <= 0) return { ok: false, reason: "not_sellable" };
+
+    const removed = removeInventoryItems(player.inventory, itemId, count);
+    if (!removed.ok) return { ok: false, reason: "missing" };
+
+    player.inventory = removed.inventory;
+    player.coins = nonNegativeInt(player.coins) + coins;
+    const buybackEntry = createBuybackEntry(itemId, count, coins);
+    player.buyback = [buybackEntry, ...normalizeBuyback(player.buyback)].slice(0, BUYBACK_LIMIT);
+    return { ok: true, itemId, quantity: count, coins, buyback: buybackEntry };
+  }
+
+  buyBackItem(player, buybackId) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+
+    const entries = normalizeBuyback(player.buyback);
+    const index = entries.findIndex((entry) => entry.id === buybackId);
+    if (index < 0) {
+      player.buyback = entries;
+      return { ok: false, reason: "missing" };
+    }
+
+    const entry = entries[index];
+    const cost = nonNegativeInt(entry.cost ?? entry.saleValue);
+    if (nonNegativeInt(player.coins) < cost) {
+      player.buyback = entries;
+      return { ok: false, reason: "coins" };
+    }
+
+    const inventoryResult = addInventoryStack(player.inventory || [], entry.itemId, entry.quantity);
+    if (!inventoryResult.ok) {
+      player.buyback = entries;
+      return {
+        ok: false,
+        reason: inventoryResult.reason === "full" ? "inventory_full" : inventoryResult.reason,
+        overflow: inventoryResult.overflow
+      };
+    }
+
+    player.coins = nonNegativeInt(player.coins) - cost;
+    player.inventory = inventoryResult.inventory;
+    entries.splice(index, 1);
+    player.buyback = entries;
+    return { ok: true, itemId: entry.itemId, quantity: entry.quantity, cost };
   }
 
   claimLoot(player, lootId) {
@@ -761,6 +845,32 @@ export class RoomManager {
         openedBy: [...chest.openedBy]
       }));
   }
+}
+
+function inventoryQuantity(inventory, itemId) {
+  return (inventory || [])
+    .filter((entry) => entry?.itemId === itemId)
+    .reduce((total, entry) => total + (Number(entry.quantity) || 0), 0);
+}
+
+function isEquippedItem(player, itemId) {
+  return Object.values(normalizeEquipment(player)).includes(itemId);
+}
+
+function requiresSellConfirmation(player, item) {
+  if (!item) return false;
+  if (item.id === "rest_stone") return true;
+  if (item.rarity === "Rare" || item.rarity === "Epic") return true;
+  if (item.boss || item.setId) return true;
+  if (Array.isArray(player?.favoriteItems) && player.favoriteItems.includes(item.id)) return true;
+  if (nonNegativeInt(player?.upgradeRanks?.[item.id]) > 0) return true;
+  return false;
+}
+
+function nonNegativeInt(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.floor(number));
 }
 
 function applyRewardItems(inventory, items = []) {

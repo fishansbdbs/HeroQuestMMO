@@ -13,14 +13,7 @@ const HOTBAR_DEFS = [
   { slot: 8, action: "future8", name: "Future Slot", key: "8", icon: "--", cooldownMs: 0, locked: true, tooltip: "Future ability slot." }
 ];
 
-const SHOP_ITEMS = [
-  { itemId: "wooden_sword", price: 0 },
-  { itemId: "rusty_blade", price: 35 },
-  { itemId: "goblin_dagger", price: 65 },
-  { itemId: "wolf_fang_blade", price: 120 },
-  { itemId: "stone_club", price: 155 },
-  { itemId: "small_health_potion", price: 15 }
-];
+const SHOP_ITEMS = SHOP_STOCK;
 
 const NPC_DIALOGUES = {
   quest_guide: {
@@ -129,6 +122,7 @@ const game = {
   combatLog: [],
   inventorySearch: "",
   inventoryFilter: "all",
+  shopTab: "buy",
   lastPingMs: null,
   questCollapsed: false,
   hotbarPressed: null,
@@ -321,6 +315,7 @@ function loadSave() {
     coins: STARTING_PLAYER.coins,
     health: STARTING_PLAYER.health,
     inventory: clone(STARTER_INVENTORY),
+    buyback: [],
     equipment: createEquipmentState({
       weapon: STARTING_PLAYER.equippedWeapon,
       chest: STARTING_PLAYER.equippedArmor
@@ -396,6 +391,7 @@ function saveGame() {
     health: game.save.health,
     state: game.save.state || "alive",
     inventory: game.save.inventory,
+    buyback: game.save.buyback || [],
     equipment: game.save.equipment,
     equippedWeapon: game.save.equippedWeapon,
     equippedArmor: game.save.equippedArmor,

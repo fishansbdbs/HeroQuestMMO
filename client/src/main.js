@@ -7,7 +7,7 @@ import { GAME_VERSION, PATCH_NOTES, PLAYER_LIMITS, STARTING_PLAYER, XP_TABLE, ZO
 import { getItem, ITEMS, STARTER_INVENTORY } from "../../shared/items.js";
 import { NET } from "../../shared/netMessages.js";
 import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot, slotForItem } from "../../shared/equipment.js";
-import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory } from "../../shared/inventory.js";
+import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory, removeInventoryItems } from "../../shared/inventory.js";
 import { FROSTFORGED_MIGRATION_ID, migrateFrostforgedSave } from "../../shared/saveMigration.js";
 import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from "../../shared/trainers.js";
@@ -15,6 +15,15 @@ import { activateLoadout, purchaseSkillNode, saveLoadout, SKILL_NODES, SKILL_TRE
 import { applyQuestEvent, applyQuestKill, createQuestProgress, getQuestList } from "../../shared/quests.js";
 import { getZone, ZONE_DEFS, canEnterZone, unlockWaypoint } from "../../shared/zones.js";
 import { ACHIEVEMENTS, TITLES, calculateZoneCompletion, recordBestiaryKill, refreshMetaProgress, refreshZoneCompletion, setActiveTitle } from "../../shared/metaProgress.js";
+import {
+  BUYBACK_LIMIT,
+  SHOP_STOCK,
+  createBuybackEntry,
+  isItemSellable,
+  itemSellUnitValue,
+  itemSellValue,
+  normalizeBuyback
+} from "../../shared/shop.js";
 import {
   addInventoryItem,
   addProgressRewards,
@@ -81,6 +90,7 @@ const bootRuntime = new Function(
   "INVENTORY_SLOT_COUNT",
   "addInventoryStack",
   "normalizeInventory",
+  "removeInventoryItems",
   "applyQuestEvent",
   "applyQuestKill",
   "createQuestProgress",
@@ -123,6 +133,13 @@ const bootRuntime = new Function(
   "saveLoadout",
   "SKILL_NODES",
   "SKILL_TREES",
+  "BUYBACK_LIMIT",
+  "SHOP_STOCK",
+  "createBuybackEntry",
+  "isItemSellable",
+  "itemSellUnitValue",
+  "itemSellValue",
+  "normalizeBuyback",
   "env",
   `"use strict";\n${runtimeSource}`
 );
@@ -154,6 +171,7 @@ bootRuntime(
   INVENTORY_SLOT_COUNT,
   addInventoryStack,
   normalizeInventory,
+  removeInventoryItems,
   applyQuestEvent,
   applyQuestKill,
   createQuestProgress,
@@ -196,5 +214,12 @@ bootRuntime(
   saveLoadout,
   SKILL_NODES,
   SKILL_TREES,
+  BUYBACK_LIMIT,
+  SHOP_STOCK,
+  createBuybackEntry,
+  isItemSellable,
+  itemSellUnitValue,
+  itemSellValue,
+  normalizeBuyback,
   import.meta.env
 );

@@ -78,6 +78,7 @@ export function sanitizePlayer(player) {
     achievements: player.achievements,
     firstClearRewards: player.firstClearRewards,
     publicEventClaims: player.publicEventClaims,
+    buyback: player.buyback || [],
     learnedAbilities: player.learnedAbilities,
     hotbar: player.hotbar,
     skillTreeNodes: player.skillTreeNodes,

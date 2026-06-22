@@ -898,6 +898,96 @@ test("server equipment changes validate slots and update authoritative player st
   }
 });
 
+test("server shop selling validates ownership, quantities, and equipped items", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const player = createPlayerState("seller", {
+      coins: 5,
+      inventory: [
+        { itemId: "rusty_blade", quantity: 2 },
+        { itemId: "leather_vest", quantity: 1 },
+        { itemId: "rest_stone", quantity: 1 }
+      ],
+      equipment: createEquipmentState({ chest: "leather_vest" }),
+      equippedArmor: "leather_vest"
+    });
+
+    const equipped = room.sellItem(player, "leather_vest", 1);
+    assert.equal(equipped.ok, false);
+    assert.equal(equipped.reason, "equipped");
+    assert.equal(player.coins, 5);
+    assert.equal(inventoryQuantity(player.inventory, "leather_vest"), 1);
+
+    const invalidQuantity = room.sellItem(player, "rusty_blade", -2);
+    assert.equal(invalidQuantity.ok, false);
+    assert.equal(invalidQuantity.reason, "quantity");
+    assert.equal(player.coins, 5);
+    assert.equal(inventoryQuantity(player.inventory, "rusty_blade"), 2);
+
+    const confirmRequired = room.sellItem(player, "rest_stone", 1);
+    assert.equal(confirmRequired.ok, false);
+    assert.equal(confirmRequired.reason, "confirm_required");
+    assert.equal(player.coins, 5);
+    assert.equal(inventoryQuantity(player.inventory, "rest_stone"), 1);
+
+    const sold = room.sellItem(player, "rusty_blade", 2);
+    assert.equal(sold.ok, true);
+    assert.equal(sold.coins, 28);
+    assert.equal(player.coins, 33);
+    assert.equal(inventoryQuantity(player.inventory, "rusty_blade"), 0);
+    assert.equal(player.buyback.length, 1);
+    assert.equal(player.buyback[0].itemId, "rusty_blade");
+    assert.equal(player.buyback[0].quantity, 2);
+
+    const missing = room.sellItem(player, "rusty_blade", 1);
+    assert.equal(missing.ok, false);
+    assert.equal(missing.reason, "missing");
+    assert.equal(player.coins, 33);
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("server shop buyback restores sold items once without duplicating inventory", () => {
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const player = createPlayerState("buyer", {
+      coins: 0,
+      inventory: [{ itemId: "small_health_potion", quantity: 3 }]
+    });
+
+    const sold = room.sellItem(player, "small_health_potion", 2);
+    assert.equal(sold.ok, true);
+    assert.equal(sold.coins, 12);
+    assert.equal(player.coins, 12);
+    assert.equal(inventoryQuantity(player.inventory, "small_health_potion"), 1);
+
+    const buybackId = player.buyback[0].id;
+    const restored = room.buyBackItem(player, buybackId);
+    assert.equal(restored.ok, true);
+    assert.equal(restored.cost, 12);
+    assert.equal(player.coins, 0);
+    assert.equal(inventoryQuantity(player.inventory, "small_health_potion"), 3);
+    assert.deepEqual(player.buyback, []);
+
+    const repeated = room.buyBackItem(player, buybackId);
+    assert.equal(repeated.ok, false);
+    assert.equal(repeated.reason, "missing");
+    assert.equal(player.coins, 0);
+    assert.equal(inventoryQuantity(player.inventory, "small_health_potion"), 3);
+  } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
 test("Frostveil Reach is registered as a level 5 gated zone with a discoverable waypoint", () => {
   assert.equal(ZONES.FROSTVEIL, "frostveil");
 
