@@ -133,6 +133,20 @@ test("client runtime animates Fireball projectile acknowledgements", () => {
   assert.match(runtimeSource, /projectile\.type === "fireball"/);
 });
 
+test("client runtime animates Ground Pound area acknowledgements", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
+  const runtimeSource = runtimeParts
+    .map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8"))
+    .join("\n");
+  const combatAckSource = runtimeSource.match(/function handleCombatAck\([\s\S]*?\n}\r?\n\r?\nfunction damagePlayer/)?.[0] || "";
+
+  assert.ok(combatAckSource, "handleCombatAck runtime source should exist");
+  assert.match(combatAckSource, /areaEffect\(result\.areaEffect\)/);
+  assert.match(runtimeSource, /function areaEffect\(effect\)/);
+  assert.match(runtimeSource, /effect\.type === "ground_pound"/);
+});
+
 test("IceZero v2 title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
@@ -1570,6 +1584,75 @@ test("Fireball resolves as a server-authoritative projectile against one hostile
     to: { x: 8, y: 1, z: 1 },
     travelMs: 420,
     impactEffect: "burn"
+  });
+});
+
+test("Ground Pound resolves circular area hits once per cast", () => {
+  const near = {
+    id: "enemy_ground_1",
+    enemyId: "goblin_scout",
+    zone: ZONES.FIELD,
+    position: { x: 2, y: 0, z: 1 },
+    health: 45,
+    maxHealth: 45
+  };
+  const center = {
+    id: "enemy_ground_2",
+    enemyId: "green_slime",
+    zone: ZONES.FIELD,
+    position: { x: 0.8, y: 0, z: 0.6 },
+    health: 25,
+    maxHealth: 25
+  };
+  const far = {
+    id: "enemy_ground_far",
+    enemyId: "forest_wisp",
+    zone: ZONES.FIELD,
+    position: { x: 7, y: 0, z: 0 },
+    health: 50,
+    maxHealth: 50
+  };
+  const damageEvents = [];
+  const enemySystem = {
+    enemies: new Map([
+      [near.id, near],
+      [center.id, center],
+      [far.id, far]
+    ]),
+    getZoneEnemies: () => [near, near, center, far],
+    damageEnemy(payload) {
+      damageEvents.push(payload);
+      const target = this.enemies.get(payload.enemyInstanceId);
+      target.health = Math.max(0, target.health - payload.damage);
+      return { hit: true, defeated: target.health <= 0, enemy: target };
+    }
+  };
+  const combat = new CombatSystem({ enemySystem, bossSystem: { damage: () => ({ defeated: false }) }, rng: () => 0.5 });
+  const player = applyEquipment({
+    ...STARTING_PLAYER,
+    id: "bruiser",
+    zone: ZONES.FIELD,
+    position: { x: 0, y: 0, z: 0 },
+    health: 100,
+    level: 3,
+    learnedAbilities: ["ground_pound"],
+    spentAttributes: { health: 0, strength: 5, magic: 0, defense: 0 },
+    lastAbilityAt: 0
+  });
+
+  const result = combat.ability(player, { abilityId: "ground_pound" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.abilityId, "ground_pound");
+  assert.deepEqual(damageEvents.map((event) => event.enemyInstanceId), [near.id, center.id]);
+  assert.ok(damageEvents.every((event) => event.damage > 0));
+  assert.equal(far.health, far.maxHealth);
+  assert.equal(new Set(result.hits.map((hit) => hit.enemy?.id)).size, result.hits.length);
+  assert.deepEqual(result.areaEffect, {
+    type: "ground_pound",
+    origin: { x: 0, y: 0, z: 0 },
+    radius: ABILITIES.ground_pound.radius,
+    knockback: ABILITIES.ground_pound.knockback
   });
 });
 

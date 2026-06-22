@@ -129,6 +129,47 @@ function fireballImpactEffect(position) {
   animate();
 }
 
+function areaEffect(effect) {
+  if (!effect || !game.scene) return;
+  if (effect.type === "ground_pound") {
+    const origin = new THREE.Vector3(effect.origin?.x || 0, effect.origin?.y || 0, effect.origin?.z || 0);
+    const radius = Math.max(1, effect.radius || 4.8);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.52, 40), mat(0xd0b27a, 0.62, true));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(origin.x, Math.max(0.09, origin.y + 0.09), origin.z);
+    game.scene.add(ring);
+    const stones = [];
+    for (let i = 0; i < 14; i += 1) {
+      const angle = (i / 14) * Math.PI * 2;
+      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.08 + (i % 3) * 0.025, 0), mat(i % 2 ? 0x8a8170 : 0xb49a72, 0.72, true));
+      stone.position.set(origin.x, 0.12, origin.z);
+      stone.userData.velocity = new THREE.Vector3(Math.cos(angle) * (0.055 + (i % 4) * 0.01), 0.035 + (i % 3) * 0.012, Math.sin(angle) * (0.055 + (i % 4) * 0.01));
+      stones.push(stone);
+      game.scene.add(stone);
+    }
+    const started = performance.now();
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / 520);
+      ring.scale.setScalar(1 + t * radius * 1.9);
+      ring.material.opacity = Math.max(0, 0.62 - t * 0.62);
+      for (const stone of stones) {
+        stone.position.add(stone.userData.velocity);
+        stone.userData.velocity.y -= 0.0025;
+        stone.rotation.x += 0.08;
+        stone.rotation.z += 0.05;
+        stone.material.opacity = Math.max(0, 0.72 - t * 0.72);
+      }
+      if (t < 1) requestAnimationFrame(animate);
+      else {
+        game.scene.remove(ring);
+        stones.forEach((stone) => game.scene.remove(stone));
+      }
+    };
+    screenShake(0.08);
+    animate();
+  }
+}
+
 function flashMesh(group, color) {
   if (!group) return;
   const originals = [];

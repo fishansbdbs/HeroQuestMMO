@@ -95,6 +95,7 @@ function defeatIceMage() {
 function handleCombatAck(result) {
   if (!result?.ok) return;
   if (result.projectile) projectileEffect(result.projectile);
+  if (result.areaEffect) areaEffect(result.areaEffect);
   if (result.damage) {
     const target = result.result?.enemy || getCurrentTarget();
     if (target?.position) {

@@ -94,6 +94,33 @@ export class CombatSystem {
         projectile: createProjectilePayload(ability.id, player.position, target.enemy.position, target.enemy.id)
       };
     }
+    if (ability.id === "ground_pound") {
+      const manaSpend = spendMana(player, ability.manaCost || 0);
+      if (!manaSpend.ok) return { ok: false, reason: "mana" };
+      Object.assign(player, manaSpend.player);
+      player.lastAbilityAt = now;
+      const damage = calculateAbilityDamage(player, ability, this.rng);
+      const hits = [];
+      const hitIds = new Set();
+      for (const enemy of this.enemySystem.getZoneEnemies(player.zone)) {
+        if (!enemy?.id || hitIds.has(enemy.id)) continue;
+        if (enemy.health <= 0 || distance2d(player.position, enemy.position) > ability.radius) continue;
+        hitIds.add(enemy.id);
+        hits.push(this.enemySystem.damageEnemy({
+          zone: player.zone,
+          enemyInstanceId: enemy.id,
+          damage,
+          attackerId: player.id
+        }));
+      }
+      return {
+        ok: true,
+        abilityId: ability.id,
+        damage,
+        hits,
+        areaEffect: createAreaEffectPayload(ability.id, player.position, ability)
+      };
+    }
     if (ability.id !== "hero_pulse") {
       return { ok: false, reason: "unsupported" };
     }
@@ -141,6 +168,15 @@ function createProjectilePayload(type, from, to, targetId) {
     to: { x: to?.x || 0, y: (to?.y || 0) + 1, z: to?.z || 0 },
     travelMs: 420,
     impactEffect: type === "fireball" ? "burn" : "impact"
+  };
+}
+
+function createAreaEffectPayload(type, origin, ability) {
+  return {
+    type,
+    origin: { x: origin?.x || 0, y: origin?.y || 0, z: origin?.z || 0 },
+    radius: ability.radius || PLAYER_LIMITS.abilityRange,
+    knockback: ability.knockback || 0
   };
 }
 
