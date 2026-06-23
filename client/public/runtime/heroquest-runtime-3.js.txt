@@ -76,12 +76,12 @@ function updateHotbar(now) {
     button.classList.toggle("active", slot.action === "auto" && game.autoAttack);
     button.classList.toggle("pressed", game.hotbarPressed === slot.action);
     button.classList.toggle("locked", Boolean(slot.locked) || notLearned);
-    button.title = notLearned ? "Learn Hero Pulse from the Mage Trainer." : slot.tooltip;
+    button.title = notLearned ? `Learn ${slot.name} before using it.` : slot.tooltip;
     button.disabled = isLocallyDead() || Boolean(slot.locked) || notLearned || (slot.action !== "auto" && cooldown > 0) || (slot.action === "potion" && countItem("small_health_potion") <= 0);
     if (overlay) overlay.style.height = cooldown > 0 ? `${Math.min(100, (cooldown / Math.max(1, slot.cooldownMs)) * 100)}%` : "0%";
     if (count) {
       if (slot.action === "potion") count.textContent = `x${countItem("small_health_potion")}`;
-      else if (slot.action === "pulse" && !notLearned) count.textContent = game.save.mana < ABILITIES.hero_pulse.manaCost ? "Mana" : "";
+      else if (ABILITIES[slot.action]?.manaCost && !notLearned) count.textContent = game.save.mana < ABILITIES[slot.action].manaCost ? "Mana" : "";
       else if (cooldown > 0) count.textContent = `${Math.ceil(cooldown / 1000)}`;
       else count.textContent = "";
     }
@@ -95,7 +95,7 @@ function knowsAbility(abilityId) {
 function cooldownLeft(slot, now) {
   if (!slot || slot.locked || !slot.cooldownMs) return 0;
   const key = slot.action === "auto" ? "attack" : slot.action;
-  if (slot.action === "pulse") {
+  if (slot.action === "hero_pulse") {
     const weapon = getItem(game.save.equippedWeapon);
     return game.cooldowns.pulse ? Math.max(0, ABILITIES.hero_pulse.cooldownMs * (weapon?.pulseCooldownBonus || 1) - (now - game.cooldowns.pulse)) : 0;
   }
@@ -209,6 +209,33 @@ function updateFps(now) {
   }
 }
 
+function findNearestFrostWard(player, range = 5) {
+  const wards = [
+    { id: "frost_ward", label: "Frost Ward", x: 8, z: -8 },
+    { id: "north_ward", label: "North Ward", x: -18, z: -22 },
+    { id: "east_ward", label: "East Ward", x: 24, z: 10 }
+  ];
+  let nearest = null;
+  let best = Infinity;
+  for (const ward of wards) {
+    const dist = distance2d(player, ward);
+    if (dist <= range && dist < best) {
+      nearest = ward;
+      best = dist;
+    }
+  }
+  return nearest;
+}
+
+function confirmFrostWardActivation(ward) {
+  const accepted = window.confirm(`Begin the defense?\n\n${ward.label} will awaken in 5 seconds.`);
+  if (!accepted) {
+    toast("Frost Ward defense canceled.");
+    return;
+  }
+  activatePublicEvent("defend_frost_ward", ward.id);
+}
+
 function updatePrompt() {
   game.promptAction = null;
   if (isLocallyDead()) {
@@ -246,10 +273,34 @@ function updatePrompt() {
     ui.prompt.classList.remove("hidden");
     return;
   }
+  const nearestHealingOrb = findNearestHealingOrb(3.2);
+  if (nearestHealingOrb) {
+    game.promptAction = () => claimHealingOrb(nearestHealingOrb.id);
+    ui.prompt.textContent = "E: Absorb Healing Orb";
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
   const nearestChest = findNearestChest(3.4);
   if (nearestChest) {
     game.promptAction = () => openChest(nearestChest.id);
     ui.prompt.textContent = nearestChest.opened ? "Treasure chest is empty" : "E: Open Treasure Chest";
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
+  const nearestWard = game.zone === ZONES.FROSTVEIL ? findNearestFrostWard(player, 5) : null;
+  if (nearestWard) {
+    const event = game.publicEvent || {};
+    const wardLabel = event.wardLabel || nearestWard.label;
+    if (event.phase === "starting") {
+      ui.prompt.textContent = `${wardLabel} defense is starting.`;
+    } else if (event.active) {
+      ui.prompt.textContent = `${wardLabel} wave ${event.wave || 1}/${event.totalWaves || 3}`;
+    } else if (event.phase === "cooldown") {
+      ui.prompt.textContent = `${wardLabel} is recharging.`;
+    } else {
+      game.promptAction = () => confirmFrostWardActivation(nearestWard);
+      ui.prompt.textContent = `E: Activate ${nearestWard.label}`;
+    }
     ui.prompt.classList.remove("hidden");
     return;
   }

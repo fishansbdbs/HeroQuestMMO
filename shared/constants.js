@@ -1,10 +1,11 @@
-export const GAME_VERSION = "1.2.3";
+export const GAME_VERSION = "2.1.0";
 
 export const ZONES = {
   HUB: "hub",
   FIELD: "field",
   FROSTVEIL: "frostveil",
   PALACE: "palace",
+  FROSTBOUND_VAULT: "frostbound_vault",
   BOSS: "boss"
 };
 
@@ -28,7 +29,20 @@ export const PLAYER_STATES = {
 
 export const RESPAWN_DELAY_MS = 5000;
 
-export const XP_TABLE = [0, 60, 145, 260, 420, 650, 940, 1300, 1760, 2300, 3000, 3840, 4800, 5900, 7150];
+const LEGACY_XP_TABLE = [0, 60, 145, 260, 420, 650, 940, 1300, 1760, 2300, 3000, 3840, 4800, 5900, 7150];
+
+function buildLevel100XpTable() {
+  const table = [...LEGACY_XP_TABLE];
+  while (table.length < 100) {
+    const nextLevel = table.length + 1;
+    const previous = table[table.length - 1];
+    const increment = Math.round(1250 + Math.pow(nextLevel, 2.05) * 42);
+    table.push(previous + increment);
+  }
+  return table;
+}
+
+export const XP_TABLE = buildLevel100XpTable();
 
 export const PLAYER_LIMITS = {
   partySize: 4,
@@ -44,6 +58,30 @@ export const SNAPSHOT_MS = 120;
 export const PATCH_NOTES = {
   title: "HeroQuest MMO Patch Notes",
   versions: [
+    {
+      version: "2.1.0",
+      title: "Frostforged Paths",
+      date: "2026-06-22",
+      summary: "A systems expansion adding Frostforge upgrades, set bonuses, tier-two abilities, Frostbound Vault, and rotating bounties.",
+      sections: [
+        {
+          title: "Progression",
+          items: [
+            "Added Iceguard, Zero-Born, and Dawnmender equipment sets with two-piece and four-piece bonuses.",
+            "Added Whirlwind Cleave, Chain Frost, and Radiant Ward through tier-two skill-tree nodes.",
+            "Raised long-term progression support through Level 100."
+          ]
+        },
+        {
+          title: "Frostbound",
+          items: [
+            "Added the Level 15 Frostbound Vault with elite rooms and the Runebound Colossus.",
+            "Added the Dawnrest Bounty Board with deterministic rotating objectives.",
+            "Added predictable +0 through +5 Frostforge upgrades."
+          ]
+        }
+      ]
+    },
     {
       version: "2.0.0",
       title: "ICEZERO",

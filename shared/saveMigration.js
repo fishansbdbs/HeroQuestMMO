@@ -1,10 +1,13 @@
 import { STARTING_PLAYER } from "./constants.js";
 import { createEquipmentState } from "./equipment.js";
 import { STARTER_INVENTORY } from "./items.js";
+import { calculateEarnedAttributePoints, calculateEarnedSkillPoints, LEVEL_CAP } from "./progression.js";
 import { createQuestProgress } from "./quests.js";
 
 export const ICEZERO_SAVE_SCHEMA_VERSION = 2;
 export const ICEZERO_MIGRATION_ID = "icezero-v2-save-migration";
+export const FROSTFORGED_SAVE_SCHEMA_VERSION = 3;
+export const FROSTFORGED_MIGRATION_ID = "v2.1.0-frostforged-paths";
 export const HERO_PULSE_REFUND_MESSAGE =
   "Combat training has changed. Visit the Mage Trainer in Dawnrest to relearn Hero Pulse.";
 
@@ -37,6 +40,11 @@ function positiveNumber(value, fallback) {
 function uniqueStrings(value) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((entry) => typeof entry === "string"))];
+}
+
+function uniqueObjects(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => entry && typeof entry === "object").map(clone);
 }
 
 function normalizeInventory(inventory) {
@@ -115,6 +123,7 @@ function createDefaultIceZeroSave() {
     waypoints: ["dawnrest"],
     achievements: [],
     firstClearRewards: {},
+    publicEventClaims: [],
     restStones: 0,
     maxMana: BASE_MANA,
     mana: BASE_MANA
@@ -128,11 +137,11 @@ export function migrateIceZeroSave(input) {
   const alreadyMigrated = existingMigrations.includes(ICEZERO_MIGRATION_ID);
   const messages = [];
 
-  const level = Math.max(1, nonNegativeInt(source.level, base.level));
+  const level = Math.max(1, Math.min(LEVEL_CAP, nonNegativeInt(source.level, base.level)));
   const spentAttributes = normalizeSpentAttributes(source.spentAttributes);
   const spentAttributePoints = Object.values(spentAttributes).reduce((total, value) => total + value, 0);
-  const earnedAttributePoints = Math.max(0, (level - 1) * 3);
-  const earnedSkillPoints = Math.max(0, level - 1);
+  const earnedAttributePoints = calculateEarnedAttributePoints(level);
+  const earnedSkillPoints = calculateEarnedSkillPoints(level);
   const availableAttributePoints = Math.max(0, earnedAttributePoints - spentAttributePoints);
   const availableSkillPoints = Math.max(0, earnedSkillPoints - spentSkillPoints(source));
   const maxHealth = positiveNumber(source.maxHealth, STARTING_PLAYER.maxHealth + (level - 1) * 14);
@@ -195,6 +204,7 @@ export function migrateIceZeroSave(input) {
     waypoints: uniqueStrings(source.waypoints).length ? uniqueStrings(source.waypoints) : clone(base.waypoints),
     achievements: uniqueStrings(source.achievements),
     firstClearRewards: asObject(source.firstClearRewards),
+    publicEventClaims: uniqueStrings(source.publicEventClaims),
     restStones: nonNegativeInt(source.restStones, 0),
     maxMana,
     mana
@@ -206,5 +216,57 @@ export function migrateIceZeroSave(input) {
     migrated: !alreadyMigrated || errors.length > 0,
     messages,
     errors
+  };
+}
+
+export function migrateFrostforgedSave(input) {
+  const iceZeroResult = migrateIceZeroSave(input);
+  const source = iceZeroResult.save;
+  const existingMigrations = uniqueStrings(source.migrations);
+  const alreadyMigrated = existingMigrations.includes(FROSTFORGED_MIGRATION_ID);
+  const migrations = alreadyMigrated ? existingMigrations : [...existingMigrations, FROSTFORGED_MIGRATION_ID];
+  const spentAttributes = normalizeSpentAttributes(source.spentAttributes);
+  const spentAttributePoints = Object.values(spentAttributes).reduce((total, value) => total + value, 0);
+  const level = Math.max(1, Math.min(LEVEL_CAP, nonNegativeInt(source.level, 1)));
+  const dungeonProgress = asObject(source.dungeonProgress);
+  const frostboundProgress = asObject(dungeonProgress.frostbound_vault);
+  const bounties = asObject(source.bounties);
+
+  const save = {
+    ...source,
+    level,
+    migrations,
+    saveSchemaVersion: FROSTFORGED_SAVE_SCHEMA_VERSION,
+    spentAttributes,
+    availableAttributePoints: Math.max(0, calculateEarnedAttributePoints(level) - spentAttributePoints),
+    availableSkillPoints: Math.max(0, calculateEarnedSkillPoints(level) - spentSkillPoints(source)),
+    itemInstances: asObject(source.itemInstances),
+    upgradeRanks: asObject(source.upgradeRanks),
+    setProgress: asObject(source.setProgress),
+    tierTwoSkillNodes: asObject(source.tierTwoSkillNodes),
+    buyback: uniqueObjects(source.buyback),
+    publicEventClaims: uniqueStrings(source.publicEventClaims),
+    spellbookHotbarVersion: Math.max(2, nonNegativeInt(source.spellbookHotbarVersion, 2)),
+    bounties: {
+      active: uniqueObjects(bounties.active),
+      progress: asObject(bounties.progress),
+      completed: uniqueStrings(bounties.completed),
+      claimed: uniqueStrings(bounties.claimed)
+    },
+    dungeonProgress: {
+      ...dungeonProgress,
+      frostbound_vault: {
+        bestEncounterLevel: nonNegativeInt(frostboundProgress.bestEncounterLevel, 0),
+        clears: nonNegativeInt(frostboundProgress.clears, 0),
+        firstClear: Boolean(frostboundProgress.firstClear),
+        personalChestClaims: uniqueStrings(frostboundProgress.personalChestClaims)
+      }
+    }
+  };
+
+  return {
+    ...iceZeroResult,
+    save,
+    migrated: iceZeroResult.migrated || !alreadyMigrated
   };
 }

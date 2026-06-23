@@ -2,10 +2,10 @@ import { STARTER_INVENTORY } from "../../shared/items.js";
 import { PLAYER_STATES, STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment } from "../../shared/combat.js";
 import { createQuestProgress } from "../../shared/quests.js";
-import { migrateIceZeroSave } from "../../shared/saveMigration.js";
+import { migrateFrostforgedSave } from "../../shared/saveMigration.js";
 
 export function createPlayerState(socketId, profile = {}) {
-  const migrated = migrateIceZeroSave(profile).save;
+  const migrated = migrateFrostforgedSave(profile).save;
   const color = Number(migrated.color || 0x4da7ff);
   const rawIncomingHealth = Number(profile.health ?? STARTING_PLAYER.health);
   const incomingHealth = Number(migrated.health ?? STARTING_PLAYER.health);
@@ -35,6 +35,7 @@ export function createPlayerState(socketId, profile = {}) {
     lastAttackAt: 0,
     lastAbilityAt: 0,
     partyId: null,
+    publicEventClaims: Array.isArray(migrated.publicEventClaims) ? migrated.publicEventClaims : [],
     title: migrated.title || ""
   };
 }
@@ -69,12 +70,25 @@ export function sanitizePlayer(player) {
     equippedArmor: player.equippedArmor,
     magicPower: player.magicPower,
     inventory: player.inventory,
+    questProgress: player.questProgress,
     waypoints: player.waypoints,
     openedChests: player.openedChests,
     bestiaryProgress: player.bestiaryProgress,
     zoneCompletion: player.zoneCompletion,
     achievements: player.achievements,
     firstClearRewards: player.firstClearRewards,
+    publicEventClaims: player.publicEventClaims,
+    buyback: player.buyback || [],
+    upgradeRanks: player.upgradeRanks || {},
+    setProgress: player.setProgress || {},
+    activeSetBonuses: player.activeSetBonuses || [],
+    setBonusEffects: player.setBonusEffects || {},
+    setGuardUntil: player.setGuardUntil || 0,
+    setGuardReduction: player.setGuardReduction || 0,
+    radiantWardUntil: player.radiantWardUntil || 0,
+    radiantWardReduction: player.radiantWardReduction || 0,
+    bounties: player.bounties,
+    dungeonProgress: player.dungeonProgress,
     learnedAbilities: player.learnedAbilities,
     hotbar: player.hotbar,
     skillTreeNodes: player.skillTreeNodes,

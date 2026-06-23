@@ -10,9 +10,22 @@ function basicAttack() {
 function resolveHotbarSlot(baseSlot) {
   if (!baseSlot) return { slot: 0, action: "empty", name: "Empty", key: "", icon: "--", cooldownMs: 0, locked: true, tooltip: "Empty hotbar slot." };
   const assigned = (game.save.hotbar || [])[baseSlot.slot - 1];
-  if (baseSlot.slot === 3) {
-    if (assigned === "hero_pulse" || assigned === "pulse") return { ...baseSlot, action: "pulse", requiresAbility: "hero_pulse" };
-    return { ...baseSlot, action: "empty3", name: "Empty", icon: "--", cooldownMs: 0, locked: true, tooltip: "Open the Spellbook with K to assign an ability." };
+  if ([3, 7, 8].includes(baseSlot.slot)) {
+    const assignedAbilityId = assigned === "pulse" ? "hero_pulse" : assigned;
+    const ability = ABILITIES[assignedAbilityId];
+    if (ability) {
+      return {
+        ...baseSlot,
+        action: ability.id,
+        name: ability.name,
+        icon: abilityIcon(ability),
+        cooldownMs: ability.cooldownMs || 0,
+        locked: false,
+        requiresAbility: ability.id,
+        tooltip: ability.description
+      };
+    }
+    return { ...baseSlot, action: `empty${baseSlot.slot}`, name: "Empty", icon: "--", cooldownMs: 0, locked: false, tooltip: "Open the Spellbook with K to assign an ability." };
   }
   return baseSlot;
 }
@@ -27,7 +40,7 @@ function handleHotbarSlot(slotNumber) {
 }
 
 function handleHotbarAction(action) {
-  const slot = HOTBAR_DEFS.find((entry) => entry.action === action);
+  const slot = HOTBAR_DEFS.find((entry) => entry.action === action) || (ABILITIES[action] ? { action, locked: false } : null);
   if (!slot || slot.locked) return;
   if (isLocallyDead()) {
     toast("You are defeated. Wait for respawn.");
@@ -39,10 +52,20 @@ function handleHotbarAction(action) {
   }, 140);
   if (action === "auto") toggleAutoAttack();
   if (action === "slash") performAttack({ kind: "slash", source: "hotbar" });
-  if (action === "pulse") useHeroPulse();
+  if (action === "hero_pulse") useHeroPulse();
+  if (ABILITIES[action]?.trainerId && action !== "hero_pulse") useAssignedAbility(action);
   if (action === "guard") useGuard();
   if (action === "potion") usePotion();
   if (action === "dash") dash();
+}
+
+function abilityIcon(ability) {
+  return ability.name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
 function toggleAutoAttack() {
@@ -194,6 +217,53 @@ function useHeroPulse() {
   saveGame();
 }
 
+function useAssignedAbility(abilityId) {
+  const ability = ABILITIES[abilityId];
+  if (!ability) return;
+  if (isLocallyDead()) {
+    toast("You cannot use abilities while defeated.");
+    return;
+  }
+  if (!knowsAbility(abilityId)) {
+    toast("That ability is not learned.");
+    logCombat(`${ability.name} is not learned.`);
+    return;
+  }
+  const now = performance.now();
+  if (game.cooldowns[abilityId] && now - game.cooldowns[abilityId] < ability.cooldownMs) return;
+  if (!game.online) {
+    toast(`${ability.name} needs the online combat server.`);
+    return;
+  }
+  const target = getCurrentTarget();
+  game.socket.emit(NET.COMBAT_ABILITY, { abilityId, targetId: target?.id }, (ack) => {
+    if (!ack?.ok) {
+      toast(abilityUseReason(ack?.reason, ability));
+      logCombat(abilityUseReason(ack?.reason, ability));
+      return;
+    }
+    game.cooldowns[abilityId] = performance.now();
+    handleCombatAck(ack);
+    for (const heal of ack.heals || []) {
+      if (heal.playerId === game.socket?.id) {
+        floatingText(`+${heal.amount}`, groupPosition(game.playerGroup), "#6df08a");
+      }
+    }
+    saveGame();
+  });
+}
+
+function abilityUseReason(reason, ability) {
+  if (reason === "not_learned") return `${ability.name} is not learned.`;
+  if (reason === "mana") return "Not enough mana.";
+  if (reason === "cooldown") return `${ability.name} is on cooldown.`;
+  if (reason === "target") return "Wrong target type.";
+  if (reason === "range") return "Target is out of range.";
+  if (reason === "full") return "Target health is already full.";
+  if (reason === "unsupported") return `${ability.name} is not combat-ready yet.`;
+  return `${ability.name} failed.`;
+}
+
 function markCombat() {
   game.lastCombatAt = performance.now();
 }
@@ -234,6 +304,33 @@ function usePotion() {
   }
   const now = performance.now();
   if (game.cooldowns.potion && now - game.cooldowns.potion < ABILITIES.potion.cooldownMs) return;
+  if ((game.save.health ?? 0) >= (game.save.maxHealth ?? 1)) {
+    toast("Health is already full.");
+    logCombat("Health is already full.");
+    return;
+  }
+  if (game.potionRequestPending) return;
+  if (game.online) {
+    game.potionRequestPending = true;
+    game.socket.emit(NET.PLAYER_USE_CONSUMABLE, { itemId: "small_health_potion" }, (ack) => {
+      game.potionRequestPending = false;
+      if (!ack?.ok) {
+        toast(potionUseReason(ack?.reason));
+        logCombat(potionUseReason(ack?.reason));
+        return;
+      }
+      game.cooldowns.potion = performance.now();
+      if (ack.player) applyServerPlayerUpdate(ack.player);
+      const amount = ack.heal?.amount || ABILITIES.potion.heal;
+      floatingText(`+${amount}`, groupPosition(game.playerGroup), "#6df08a");
+      playUiSound("pickup");
+      toast("Health potion used.");
+      logCombat(`Potion restored ${amount} HP.`);
+      saveGame();
+      if (!ui.panel?.classList.contains("hidden") && ui.panelTitle?.textContent === "Inventory") renderInventoryPanel();
+    });
+    return;
+  }
   const result = consumeInventoryItem(game.save.inventory, "small_health_potion", 1);
   if (!result.consumed) {
     toast("No health potion available.");
@@ -243,11 +340,22 @@ function usePotion() {
   game.cooldowns.potion = now;
   game.save.inventory = result.inventory;
   const healAmount = ABILITIES.potion.heal + (game.save.potionBonus || 0);
+  const before = game.save.health;
   game.save.health = Math.min(game.save.maxHealth, game.save.health + healAmount);
+  const actual = Math.max(0, game.save.health - before);
+  floatingText(`+${actual}`, groupPosition(game.playerGroup), "#6df08a");
   playUiSound("pickup");
   toast("Health potion used.");
-  logCombat(`Potion restored ${healAmount} HP.`);
+  logCombat(`Potion restored ${actual} HP.`);
   saveGame();
+}
+
+function potionUseReason(reason) {
+  if (reason === "full") return "Health is already full.";
+  if (reason === "cooldown") return "Potion is on cooldown.";
+  if (reason === "dead") return "You cannot drink potions while defeated.";
+  if (reason === "missing") return "No health potion available.";
+  return "Potion could not be used.";
 }
 
 function damageLocalEnemy(enemyId, damage, options = {}) {

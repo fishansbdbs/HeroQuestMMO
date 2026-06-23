@@ -1,4 +1,4 @@
-export const LEVEL_CAP = 15;
+export const LEVEL_CAP = 100;
 export const ATTRIBUTE_POINTS_PER_LEVEL = 3;
 export const SKILL_POINTS_PER_LEVEL = 1;
 export const BASE_MANA = 50;

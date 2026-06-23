@@ -7,6 +7,28 @@
   toast("Loot collected.");
 }
 
+function claimHealingOrb(orbId) {
+  if (isLocallyDead()) {
+    toast("You cannot absorb healing while defeated.");
+    return;
+  }
+  const orb = game.healingOrbs.get(orbId);
+  if (!orb) return toast("That healing orb has faded.");
+  if (game.online) {
+    game.socket.emit(NET.HEALING_ORB_CLAIM, { orbId }, (ack) => {
+      if (!ack?.ok) return toast(healingOrbClaimReason(ack?.reason));
+      if (ack.player) applyServerPlayerUpdate(ack.player);
+      for (const heal of ack.heals || []) {
+        if (heal.playerId === game.socket?.id) floatingText(`+${heal.amount}`, groupPosition(game.playerGroup), "#6df08a");
+      }
+      game.healingOrbs.delete(orbId);
+      toast("Healing Orb absorbed.");
+    });
+    return;
+  }
+  toast("Healing Orb needs the online combat server.");
+}
+
 function applyLootBag(bag) {
   const inventoryResult = applyRewardItemsToInventory(game.save.inventory, bag.items || []);
   if (!inventoryResult.ok) {
@@ -94,6 +116,11 @@ function defeatIceMage() {
 
 function handleCombatAck(result) {
   if (!result?.ok) return;
+  if (result.projectile) projectileEffect(result.projectile);
+  if (result.areaEffect) areaEffect(result.areaEffect);
+  if (result.meleeEffect) meleeEffect(result.meleeEffect);
+  if (result.healingOrb) healingOrbEffect(result.healingOrb);
+  if (result.healingEffect) healingBeamEffect(result.healingEffect);
   if (result.damage) {
     const target = result.result?.enemy || getCurrentTarget();
     if (target?.position) {
@@ -183,7 +210,6 @@ function updateDefeatState() {
   const remaining = Math.max(0, Math.ceil(((game.respawnAt || Date.now()) - Date.now()) / 1000));
   if (ui.defeatTimer) ui.defeatTimer.textContent = remaining > 0 ? `Respawning in ${remaining}s` : "Respawn ready";
   if (ui.respawnButton) ui.respawnButton.disabled = remaining > 0;
-  if (remaining <= 0 && !game.respawnRequested) requestRespawn();
 }
 
 function requestRespawn() {
@@ -193,7 +219,11 @@ function requestRespawn() {
   if (game.online) {
     game.socket.emit(NET.PLAYER_RESPAWN, {}, (ack) => {
       if (ack?.ok) finishRespawn(ack.player);
-      else game.respawnRequested = false;
+      else {
+        game.respawnRequested = false;
+        toast(respawnReason(ack?.reason));
+        logCombat(respawnReason(ack?.reason));
+      }
     });
     return;
   }
@@ -203,14 +233,22 @@ function requestRespawn() {
 function finishRespawn(serverPlayer = null) {
   game.save.state = "alive";
   game.save.health = serverPlayer?.health || game.save.maxHealth;
+  game.save.mana = serverPlayer?.mana ?? game.save.maxMana;
   game.defeatedAt = null;
   game.respawnAt = null;
   game.respawnRequested = false;
   ui.defeatOverlay?.classList.add("hidden");
   loadZone(ZONES.HUB, true);
   game.save.health = game.save.maxHealth;
+  game.save.mana = serverPlayer?.mana ?? game.save.maxMana;
   saveGame();
   toast("Respawned at Dawnrest.");
+}
+
+function respawnReason(reason) {
+  if (reason === "not_ready") return "Respawn is not ready yet.";
+  if (reason === "not_dead") return "You are already alive.";
+  return "Respawn failed. Try again.";
 }
 
 function completeBossQuestLocal(reward = { xp: BOSS.xp, coins: BOSS.coins }) {
@@ -616,6 +654,10 @@ function applySnapshot(snapshot) {
   if (snapshot.loot) {
     game.loot.clear();
     snapshot.loot.forEach((bag) => game.loot.set(bag.id, bag));
+  }
+  if (snapshot.healingOrbs) {
+    game.healingOrbs.clear();
+    snapshot.healingOrbs.forEach((orb) => game.healingOrbs.set(orb.id, orb));
   }
   if (snapshot.boss) {
     game.boss = { ...game.boss, ...snapshot.boss };

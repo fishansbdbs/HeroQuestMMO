@@ -56,6 +56,358 @@ function levelUpEffect() {
   animate();
 }
 
+function healingOrbEffect(orb) {
+  if (!orb?.id || !game.scene) return;
+  game.healingOrbs.set(orb.id, orb);
+  syncHealingOrbMeshes();
+  const pulse = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.62, 32), mat(0x90ff9a, 0.58, true));
+  pulse.rotation.x = -Math.PI / 2;
+  pulse.position.set(orb.position?.x || 0, 0.1, orb.position?.z || 0);
+  game.scene.add(pulse);
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 520;
+    pulse.scale.setScalar(1 + t * 3.2);
+    pulse.material.opacity = Math.max(0, 0.58 - t * 0.58);
+    if (t < 1) requestAnimationFrame(animate);
+    else game.scene.remove(pulse);
+  };
+  animate();
+}
+
+function healingBeamEffect(effect) {
+  if (!effect || !game.scene) return;
+  if (effect.type === "mend_ally") {
+    const from = new THREE.Vector3(effect.from?.x || 0, effect.from?.y || 1.2, effect.from?.z || 0);
+    const to = new THREE.Vector3(effect.to?.x || 0, effect.to?.y || 1.2, effect.to?.z || 0);
+    const direction = to.clone().sub(from);
+    const length = Math.max(0.2, direction.length());
+    if (direction.lengthSq() > 0.001) direction.normalize();
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, length, 10), mat(0x8cff9d, 0.48, true));
+    beam.position.copy(from).lerp(to, 0.5);
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.lengthSq() > 0.001 ? direction : new THREE.Vector3(0, 1, 0));
+    const pulse = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.55, 32), mat(0xffdd7a, 0.58, true));
+    pulse.rotation.x = -Math.PI / 2;
+    pulse.position.copy(to);
+    pulse.position.y = Math.max(0.1, to.y - 1.05);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), mat(0xb8ff9c, 0.2, true));
+    glow.position.copy(to);
+    game.scene.add(beam, pulse, glow);
+    if (effect.amount) floatingText(`+${effect.amount}`, to, "#6df08a");
+    const started = performance.now();
+    const duration = Math.max(160, effect.beamMs || 420);
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / duration);
+      beam.material.opacity = Math.max(0, 0.48 - t * 0.48);
+      beam.scale.set(1 + Math.sin(t * Math.PI) * 0.12, 1, 1 + Math.sin(t * Math.PI) * 0.12);
+      pulse.scale.setScalar(1 + t * 2.6);
+      pulse.material.opacity = Math.max(0, 0.58 - t * 0.58);
+      glow.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.35);
+      glow.material.opacity = Math.max(0, 0.2 - t * 0.2);
+      if (t < 1) requestAnimationFrame(animate);
+      else {
+        game.scene.remove(beam);
+        game.scene.remove(pulse);
+        game.scene.remove(glow);
+      }
+    };
+    animate();
+  }
+}
+
+function projectileEffect(projectile) {
+  if (!projectile || !game.scene) return;
+  if (projectile.type === "fireball") {
+    const from = new THREE.Vector3(projectile.from?.x || 0, projectile.from?.y || 1.2, projectile.from?.z || 0);
+    const to = new THREE.Vector3(projectile.to?.x || 0, projectile.to?.y || 1, projectile.to?.z || 0);
+    const group = new THREE.Group();
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.28, 14, 10), mat(0xff6b24, 0.95, true));
+    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), mat(0xfff08a, 0.85, true));
+    const light = new THREE.PointLight(0xff7424, 1.8, 8);
+    group.add(core, inner, light);
+    for (let i = 0; i < 5; i += 1) {
+      const ember = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 4), mat(i % 2 ? 0xffb84a : 0xff3d1f, 0.72, true));
+      ember.userData.phase = i * 1.7;
+      group.add(ember);
+    }
+    group.position.copy(from);
+    game.scene.add(group);
+    const started = performance.now();
+    const duration = Math.max(180, projectile.travelMs || 420);
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / duration);
+      group.position.lerpVectors(from, to, t);
+      group.rotation.y += 0.18;
+      group.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.18);
+      group.children.forEach((child, index) => {
+        if (!child.userData || child.userData.phase == null) return;
+        const orbit = child.userData.phase + t * Math.PI * 8;
+        child.position.set(Math.cos(orbit) * 0.32, Math.sin(orbit * 1.3) * 0.16, Math.sin(orbit) * 0.32);
+        child.material.opacity = Math.max(0.12, 0.72 - t * 0.35 + index * 0.02);
+      });
+      if (t < 1) requestAnimationFrame(animate);
+      else {
+        game.scene.remove(group);
+        fireballImpactEffect(to);
+      }
+    };
+    animate();
+  } else if (projectile.type === "chain_frost") {
+    const points = [
+      new THREE.Vector3(projectile.from?.x || 0, projectile.from?.y || 1.2, projectile.from?.z || 0),
+      ...(projectile.chainTargets || []).map((target) => new THREE.Vector3(target.position?.x || 0, target.position?.y || 1, target.position?.z || 0))
+    ];
+    const bolts = [];
+    for (let i = 1; i < points.length; i += 1) {
+      const from = points[i - 1];
+      const to = points[i];
+      const direction = to.clone().sub(from);
+      const length = Math.max(0.2, direction.length());
+      if (direction.lengthSq() > 0.001) direction.normalize();
+      const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.055, length, 8), mat(0xb8fbff, 0.68, true));
+      bolt.position.copy(from).lerp(to, 0.5);
+      bolt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+      bolts.push(bolt);
+      game.scene.add(bolt);
+    }
+    const started = performance.now();
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / 460);
+      bolts.forEach((bolt, index) => {
+        bolt.material.opacity = Math.max(0, 0.68 - t * 0.68);
+        bolt.scale.set(1 + Math.sin((t + index * 0.1) * Math.PI) * 0.2, 1, 1 + Math.sin(t * Math.PI) * 0.2);
+      });
+      if (t < 1) requestAnimationFrame(animate);
+      else bolts.forEach((bolt) => game.scene.remove(bolt));
+    };
+    animate();
+  } else if (projectile.type === "water_blast") {
+    const from = new THREE.Vector3(projectile.from?.x || 0, projectile.from?.y || 1.2, projectile.from?.z || 0);
+    const to = new THREE.Vector3(projectile.to?.x || 0, projectile.to?.y || 1, projectile.to?.z || 0);
+    const group = new THREE.Group();
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), mat(0x5fdfff, 0.82, true));
+    const sheen = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 8), mat(0x9ff4ff, 0.24, true));
+    const stream = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.82, 12, 1, true), mat(0x2fb8ff, 0.28, true));
+    const light = new THREE.PointLight(0x54d8ff, 1.2, 6);
+    stream.rotation.x = Math.PI / 2;
+    stream.position.z = -0.34;
+    group.add(stream, core, sheen, light);
+    for (let i = 0; i < 9; i += 1) {
+      const droplet = new THREE.Mesh(new THREE.SphereGeometry(0.045 + (i % 3) * 0.01, 6, 4), mat(i % 2 ? 0xa3f7ff : 0x2aa9ff, 0.68, true));
+      droplet.userData.phase = i * 0.9;
+      droplet.userData.trail = 0.16 + (i % 4) * 0.13;
+      group.add(droplet);
+    }
+    group.position.copy(from);
+    group.lookAt(to);
+    game.scene.add(group);
+    const started = performance.now();
+    const duration = Math.max(160, projectile.travelMs || 360);
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / duration);
+      group.position.lerpVectors(from, to, t);
+      group.lookAt(to);
+      core.scale.setScalar(1 + Math.sin(t * Math.PI * 2) * 0.1);
+      sheen.material.opacity = Math.max(0.08, 0.24 - t * 0.08);
+      group.children.forEach((child) => {
+        if (!child.userData || child.userData.phase == null) return;
+        const wave = child.userData.phase + t * Math.PI * 8;
+        child.position.set(Math.cos(wave) * 0.16, Math.sin(wave * 1.2) * 0.13, -child.userData.trail);
+        child.material.opacity = Math.max(0.08, 0.68 - t * 0.32);
+      });
+      if (t < 1) requestAnimationFrame(animate);
+      else {
+        game.scene.remove(group);
+        waterBlastImpactEffect(to);
+      }
+    };
+    animate();
+  }
+}
+
+function meleeEffect(effect) {
+  if (!effect || !game.scene) return;
+  if (effect.type === "dark_punch") {
+    const from = new THREE.Vector3(effect.from?.x || 0, effect.from?.y || 1.1, effect.from?.z || 0);
+    const to = new THREE.Vector3(effect.to?.x || 0, effect.to?.y || 1, effect.to?.z || 0);
+    const direction = to.clone().sub(from);
+    if (direction.lengthSq() > 0.001) direction.normalize();
+    const lungeEnd = from.clone().add(direction.multiplyScalar(0.9));
+    const fist = new THREE.Group();
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), mat(0x24112f, 0.86, true));
+    const aura = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 8), mat(0x8a4dff, 0.22, true));
+    fist.add(core, aura);
+    fist.position.copy(from);
+    game.scene.add(fist);
+    const started = performance.now();
+    const duration = Math.max(120, effect.lungeMs || 220);
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / duration);
+      const arc = Math.sin(t * Math.PI);
+      fist.position.lerpVectors(from, lungeEnd, arc);
+      fist.scale.setScalar(1 + arc * 0.35);
+      aura.material.opacity = Math.max(0, 0.22 - t * 0.18);
+      if (t < 1) requestAnimationFrame(animate);
+      else {
+        game.scene.remove(fist);
+        darkPunchImpactEffect(to);
+      }
+    };
+    animate();
+  }
+}
+
+function fireballImpactEffect(position) {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.62, 28), mat(0xff7a24, 0.66, true));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.copy(position);
+  ring.position.y = Math.max(0.08, position.y - 0.75);
+  game.scene.add(ring);
+  const sparks = [];
+  for (let i = 0; i < 9; i += 1) {
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), mat(i % 3 ? 0xffc25a : 0xff4124, 0.74, true));
+    const angle = (i / 9) * Math.PI * 2;
+    spark.position.copy(position);
+    spark.userData.velocity = new THREE.Vector3(Math.cos(angle) * 0.05, 0.035 + (i % 3) * 0.01, Math.sin(angle) * 0.05);
+    sparks.push(spark);
+    game.scene.add(spark);
+  }
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 360;
+    ring.scale.setScalar(1 + t * 2.6);
+    ring.material.opacity = Math.max(0, 0.66 - t * 0.66);
+    for (const spark of sparks) {
+      spark.position.add(spark.userData.velocity);
+      spark.material.opacity = Math.max(0, 0.74 - t * 0.74);
+    }
+    if (t < 1) requestAnimationFrame(animate);
+    else {
+      game.scene.remove(ring);
+      sparks.forEach((spark) => game.scene.remove(spark));
+    }
+  };
+  animate();
+}
+
+function waterBlastImpactEffect(position) {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.52, 30), mat(0x6ee7ff, 0.62, true));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.copy(position);
+  ring.position.y = Math.max(0.08, position.y - 0.72);
+  game.scene.add(ring);
+  const crown = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.025, 8, 28), mat(0xb7fbff, 0.46, true));
+  crown.rotation.x = -Math.PI / 2;
+  crown.position.copy(ring.position);
+  crown.position.y += 0.08;
+  game.scene.add(crown);
+  const droplets = [];
+  for (let i = 0; i < 12; i += 1) {
+    const droplet = new THREE.Mesh(new THREE.SphereGeometry(0.045 + (i % 3) * 0.012, 6, 4), mat(i % 2 ? 0xd8ffff : 0x35bfff, 0.72, true));
+    const angle = (i / 12) * Math.PI * 2;
+    droplet.position.copy(position);
+    droplet.userData.velocity = new THREE.Vector3(Math.cos(angle) * (0.042 + (i % 3) * 0.01), 0.045 + (i % 4) * 0.012, Math.sin(angle) * (0.042 + (i % 2) * 0.012));
+    droplets.push(droplet);
+    game.scene.add(droplet);
+  }
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 420;
+    ring.scale.setScalar(1 + t * 2.4);
+    crown.scale.setScalar(1 + t * 1.2);
+    ring.material.opacity = Math.max(0, 0.62 - t * 0.62);
+    crown.material.opacity = Math.max(0, 0.46 - t * 0.46);
+    for (const droplet of droplets) {
+      droplet.position.add(droplet.userData.velocity);
+      droplet.userData.velocity.y -= 0.003;
+      droplet.material.opacity = Math.max(0, 0.72 - t * 0.72);
+    }
+    if (t < 1) requestAnimationFrame(animate);
+    else {
+      game.scene.remove(ring);
+      game.scene.remove(crown);
+      droplets.forEach((droplet) => game.scene.remove(droplet));
+    }
+  };
+  screenShake(0.035);
+  animate();
+}
+
+function darkPunchImpactEffect(position) {
+  const burst = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 8), mat(0x5b2c87, 0.5, true));
+  burst.position.copy(position);
+  game.scene.add(burst);
+  const shards = [];
+  for (let i = 0; i < 8; i += 1) {
+    const shard = new THREE.Mesh(new THREE.TetrahedronGeometry(0.08, 0), mat(i % 2 ? 0xa06cff : 0x1a1024, 0.66, true));
+    const angle = (i / 8) * Math.PI * 2;
+    shard.position.copy(position);
+    shard.userData.velocity = new THREE.Vector3(Math.cos(angle) * 0.045, 0.025 + (i % 3) * 0.008, Math.sin(angle) * 0.045);
+    shards.push(shard);
+    game.scene.add(shard);
+  }
+  const started = performance.now();
+  const animate = () => {
+    const t = (performance.now() - started) / 320;
+    burst.scale.setScalar(1 + t * 2.8);
+    burst.material.opacity = Math.max(0, 0.5 - t * 0.5);
+    for (const shard of shards) {
+      shard.position.add(shard.userData.velocity);
+      shard.rotation.y += 0.1;
+      shard.material.opacity = Math.max(0, 0.66 - t * 0.66);
+    }
+    if (t < 1) requestAnimationFrame(animate);
+    else {
+      game.scene.remove(burst);
+      shards.forEach((shard) => game.scene.remove(shard));
+    }
+  };
+  screenShake(0.06);
+  animate();
+}
+
+function areaEffect(effect) {
+  if (!effect || !game.scene) return;
+  if (effect.type === "ground_pound" || effect.type === "whirlwind_cleave" || effect.type === "radiant_ward") {
+    const origin = new THREE.Vector3(effect.origin?.x || 0, effect.origin?.y || 0, effect.origin?.z || 0);
+    const radius = Math.max(1, effect.radius || 4.8);
+    const color = effect.type === "radiant_ward" ? 0xffe38b : effect.type === "whirlwind_cleave" ? 0xd8efff : 0xd0b27a;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.52, 40), mat(color, 0.62, true));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(origin.x, Math.max(0.09, origin.y + 0.09), origin.z);
+    game.scene.add(ring);
+    const stones = [];
+    for (let i = 0; i < 14; i += 1) {
+      const angle = (i / 14) * Math.PI * 2;
+      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.08 + (i % 3) * 0.025, 0), mat(effect.type === "ground_pound" ? (i % 2 ? 0x8a8170 : 0xb49a72) : color, 0.72, true));
+      stone.position.set(origin.x, 0.12, origin.z);
+      stone.userData.velocity = new THREE.Vector3(Math.cos(angle) * (0.055 + (i % 4) * 0.01), 0.035 + (i % 3) * 0.012, Math.sin(angle) * (0.055 + (i % 4) * 0.01));
+      stones.push(stone);
+      game.scene.add(stone);
+    }
+    const started = performance.now();
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / 520);
+      ring.scale.setScalar(1 + t * radius * 1.9);
+      ring.material.opacity = Math.max(0, 0.62 - t * 0.62);
+      for (const stone of stones) {
+        stone.position.add(stone.userData.velocity);
+        stone.userData.velocity.y -= 0.0025;
+        stone.rotation.x += 0.08;
+        stone.rotation.z += 0.05;
+        stone.material.opacity = Math.max(0, 0.72 - t * 0.72);
+      }
+      if (t < 1) requestAnimationFrame(animate);
+      else {
+        game.scene.remove(ring);
+        stones.forEach((stone) => game.scene.remove(stone));
+      }
+    };
+    screenShake(0.08);
+    animate();
+  }
+}
+
 function flashMesh(group, color) {
   if (!group) return;
   const originals = [];

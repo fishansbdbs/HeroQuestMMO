@@ -7,14 +7,34 @@ import { GAME_VERSION, PATCH_NOTES, PLAYER_LIMITS, STARTING_PLAYER, XP_TABLE, ZO
 import { getItem, ITEMS, STARTER_INVENTORY } from "../../shared/items.js";
 import { NET } from "../../shared/netMessages.js";
 import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot, slotForItem } from "../../shared/equipment.js";
-import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory } from "../../shared/inventory.js";
-import { ICEZERO_MIGRATION_ID, migrateIceZeroSave } from "../../shared/saveMigration.js";
+import { EQUIPMENT_SETS, calculateSetProgress } from "../../shared/equipmentSets.js";
+import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory, removeInventoryItems } from "../../shared/inventory.js";
+import { FROSTFORGED_MIGRATION_ID, migrateFrostforgedSave } from "../../shared/saveMigration.js";
 import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout, SKILL_NODES, SKILL_TREES } from "../../shared/skillTrees.js";
 import { applyQuestEvent, applyQuestKill, createQuestProgress, getQuestList } from "../../shared/quests.js";
 import { getZone, ZONE_DEFS, canEnterZone, unlockWaypoint } from "../../shared/zones.js";
+import { BOUNTIES, createBountyState } from "../../shared/bounties.js";
 import { ACHIEVEMENTS, TITLES, calculateZoneCompletion, recordBestiaryKill, refreshMetaProgress, refreshZoneCompletion, setActiveTitle } from "../../shared/metaProgress.js";
+import {
+  BUYBACK_LIMIT,
+  SHOP_STOCK,
+  createBuybackEntry,
+  isItemSellable,
+  itemSellUnitValue,
+  itemSellValue,
+  normalizeBuyback
+} from "../../shared/shop.js";
+import {
+  FROSTFORGE_MAX_RANK,
+  frostforgeUpgradeCost,
+  frostforgeUpgradePreview,
+  getFrostforgeRank,
+  isFrostforgeUpgradeable,
+  upgradeDisplayName,
+  upgradeFrostforgeItem
+} from "../../shared/frostforge.js";
 import {
   addInventoryItem,
   addProgressRewards,
@@ -78,9 +98,12 @@ const bootRuntime = new Function(
   "createEquipmentState",
   "equipItemToSlot",
   "slotForItem",
+  "EQUIPMENT_SETS",
+  "calculateSetProgress",
   "INVENTORY_SLOT_COUNT",
   "addInventoryStack",
   "normalizeInventory",
+  "removeInventoryItems",
   "applyQuestEvent",
   "applyQuestKill",
   "createQuestProgress",
@@ -89,6 +112,8 @@ const bootRuntime = new Function(
   "ZONE_DEFS",
   "canEnterZone",
   "unlockWaypoint",
+  "BOUNTIES",
+  "createBountyState",
   "ACHIEVEMENTS",
   "TITLES",
   "calculateZoneCompletion",
@@ -108,8 +133,8 @@ const bootRuntime = new Function(
   "createCameraRelativeMove",
   "smoothAngleToward",
   "visualYawForMoveDirection",
-  "ICEZERO_MIGRATION_ID",
-  "migrateIceZeroSave",
+  "FROSTFORGED_MIGRATION_ID",
+  "migrateFrostforgedSave",
   "applyProgressionStats",
   "regenerateMana",
   "spendAttributePoint",
@@ -123,6 +148,20 @@ const bootRuntime = new Function(
   "saveLoadout",
   "SKILL_NODES",
   "SKILL_TREES",
+  "BUYBACK_LIMIT",
+  "SHOP_STOCK",
+  "createBuybackEntry",
+  "isItemSellable",
+  "itemSellUnitValue",
+  "itemSellValue",
+  "normalizeBuyback",
+  "FROSTFORGE_MAX_RANK",
+  "frostforgeUpgradeCost",
+  "frostforgeUpgradePreview",
+  "getFrostforgeRank",
+  "isFrostforgeUpgradeable",
+  "upgradeDisplayName",
+  "upgradeFrostforgeItem",
   "env",
   `"use strict";\n${runtimeSource}`
 );
@@ -151,9 +190,12 @@ bootRuntime(
   createEquipmentState,
   equipItemToSlot,
   slotForItem,
+  EQUIPMENT_SETS,
+  calculateSetProgress,
   INVENTORY_SLOT_COUNT,
   addInventoryStack,
   normalizeInventory,
+  removeInventoryItems,
   applyQuestEvent,
   applyQuestKill,
   createQuestProgress,
@@ -162,6 +204,8 @@ bootRuntime(
   ZONE_DEFS,
   canEnterZone,
   unlockWaypoint,
+  BOUNTIES,
+  createBountyState,
   ACHIEVEMENTS,
   TITLES,
   calculateZoneCompletion,
@@ -181,8 +225,8 @@ bootRuntime(
   createCameraRelativeMove,
   smoothAngleToward,
   visualYawForMoveDirection,
-  ICEZERO_MIGRATION_ID,
-  migrateIceZeroSave,
+  FROSTFORGED_MIGRATION_ID,
+  migrateFrostforgedSave,
   applyProgressionStats,
   regenerateMana,
   spendAttributePoint,
@@ -196,5 +240,19 @@ bootRuntime(
   saveLoadout,
   SKILL_NODES,
   SKILL_TREES,
+  BUYBACK_LIMIT,
+  SHOP_STOCK,
+  createBuybackEntry,
+  isItemSellable,
+  itemSellUnitValue,
+  itemSellValue,
+  normalizeBuyback,
+  FROSTFORGE_MAX_RANK,
+  frostforgeUpgradeCost,
+  frostforgeUpgradePreview,
+  getFrostforgeRank,
+  isFrostforgeUpgradeable,
+  upgradeDisplayName,
+  upgradeFrostforgeItem,
   import.meta.env
 );

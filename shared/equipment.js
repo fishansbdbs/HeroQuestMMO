@@ -2,6 +2,8 @@ import { STARTING_PLAYER, XP_TABLE } from "./constants.js";
 import { getItem } from "./items.js";
 import { applyProgressionStats, LEVEL_CAP } from "./progression.js";
 import { hasInventoryItem } from "./inventory.js";
+import { getFrostforgeRank, upgradedItemStats } from "./frostforge.js";
+import { applySetBonuses, calculateSetBonuses } from "./equipmentSets.js";
 
 export const EQUIPMENT_SLOTS = ["head", "chest", "hands", "legs", "boots", "weapon", "offhand", "accessory"];
 
@@ -53,7 +55,7 @@ export function equipItemToSlot(player, slot, itemId) {
   };
 }
 
-export function computeEquipmentBonuses(equipment) {
+export function computeEquipmentBonuses(equipment, upgradeRanks = {}) {
   let attack = 0;
   let defense = 0;
   let magicPower = 0;
@@ -61,7 +63,7 @@ export function computeEquipmentBonuses(equipment) {
   let speedMultiplier = 1;
 
   for (const itemId of Object.values(equipment)) {
-    const item = getItem(itemId);
+    const item = upgradedItemStats(getItem(itemId), getFrostforgeRank({ upgradeRanks }, itemId));
     if (!item) continue;
     attack += item.attack || 0;
     defense += item.defense || 0;
@@ -74,23 +76,31 @@ export function computeEquipmentBonuses(equipment) {
 }
 
 function computeLevelFromXp(xp) {
+  const safeXp = normalizeXp(xp);
   let level = 1;
   for (let i = 1; i < XP_TABLE.length; i += 1) {
-    if ((xp || 0) >= XP_TABLE[i]) level = i + 1;
+    if (safeXp >= XP_TABLE[i]) level = i + 1;
   }
   return Math.min(level, LEVEL_CAP);
 }
 
+function normalizeXp(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.floor(number));
+}
+
 export function applyEquipmentSlots(player) {
   const equipment = normalizeEquipment(player);
-  const bonuses = computeEquipmentBonuses(equipment);
+  const bonuses = computeEquipmentBonuses(equipment, player.upgradeRanks || {});
   const level = computeLevelFromXp(player.xp || 0);
   const maxHealth = STARTING_PLAYER.maxHealth + (level - 1) * 14 + bonuses.health;
   const attack = STARTING_PLAYER.attack + (level - 1) * 2 + bonuses.attack;
   const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + bonuses.defense;
   const speed = STARTING_PLAYER.speed * bonuses.speedMultiplier;
 
-  return applyProgressionStats({
+  const setBonuses = calculateSetBonuses(equipment);
+  return applySetBonuses(applyProgressionStats({
     ...player,
     level,
     equipment,
@@ -105,5 +115,5 @@ export function applyEquipmentSlots(player) {
     attack,
     defense,
     speed
-  });
+  }), setBonuses);
 }

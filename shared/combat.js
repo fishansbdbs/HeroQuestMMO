@@ -2,6 +2,8 @@ import { XP_TABLE, STARTING_PLAYER } from "./constants.js";
 import { getItem } from "./items.js";
 import { applyProgressionStats, calculateDamageReduction, LEVEL_CAP } from "./progression.js";
 import { normalizeEquipment } from "./equipment.js";
+import { getFrostforgeRank, upgradedItemStats } from "./frostforge.js";
+import { applySetBonuses, calculateSetBonuses } from "./equipmentSets.js";
 
 export function randomInt(min, max, rng = Math.random) {
   return Math.floor(rng() * (max - min + 1)) + min;
@@ -18,21 +20,26 @@ export function isPlayerDead(player) {
 }
 
 export function computeLevelFromXp(xp) {
+  const safeXp = normalizeXp(xp);
   let level = 1;
   for (let i = 1; i < XP_TABLE.length; i += 1) {
-    if (xp >= XP_TABLE[i]) level = i + 1;
+    if (safeXp >= XP_TABLE[i]) level = i + 1;
   }
   return Math.min(level, LEVEL_CAP);
 }
 
 export function xpToNextLevel(level) {
-  return XP_TABLE[level] ?? XP_TABLE[XP_TABLE.length - 1];
+  const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+  if (safeLevel >= LEVEL_CAP) return null;
+  return XP_TABLE[safeLevel] ?? null;
 }
 
 export function applyEquipment(basePlayer) {
   const player = { ...STARTING_PLAYER, ...basePlayer };
   const equipment = normalizeEquipment(player);
-  const equippedItems = Object.values(equipment).map(getItem).filter(Boolean);
+  const equippedItems = Object.values(equipment)
+    .map((itemId) => upgradedItemStats(getItem(itemId), getFrostforgeRank(player, itemId)))
+    .filter(Boolean);
   const level = computeLevelFromXp(player.xp || 0);
   const itemAttack = equippedItems.reduce((total, item) => total + (item.attack || 0), 0);
   const itemDefense = equippedItems.reduce((total, item) => total + (item.defense || 0), 0);
@@ -43,7 +50,8 @@ export function applyEquipment(basePlayer) {
   const attack = STARTING_PLAYER.attack + (level - 1) * 2 + itemAttack;
   const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + itemDefense;
   const speed = STARTING_PLAYER.speed * itemSpeedMultiplier;
-  return applyProgressionStats({
+  const setBonuses = calculateSetBonuses(equipment);
+  return applySetBonuses(applyProgressionStats({
     ...player,
     equipment,
     equippedWeapon: equipment.weapon || STARTING_PLAYER.equippedWeapon,
@@ -58,7 +66,7 @@ export function applyEquipment(basePlayer) {
     attack,
     defense,
     speed
-  });
+  }), setBonuses);
 }
 
 export function calculatePlayerDamage(player, rng = Math.random) {
@@ -69,13 +77,21 @@ export function calculatePlayerDamage(player, rng = Math.random) {
 
 export function calculateIncomingDamage(rawDamage, player) {
   const stats = player?.baseDefense != null || player?.baseMaxHealth != null ? applyProgressionStats(player) : applyEquipment(player);
-  return Math.max(1, Math.round(rawDamage * (1 - calculateDamageReduction(stats.defense))));
+  const now = Date.now();
+  const timedReduction =
+    now < (player?.setGuardUntil || 0)
+      ? Number(player.setGuardReduction) || 0
+      : now < (player?.radiantWardUntil || 0)
+        ? Number(player.radiantWardReduction) || 0
+        : 0;
+  const reduced = rawDamage * (1 - timedReduction);
+  return Math.max(1, Math.round(reduced * (1 - calculateDamageReduction(stats.defense))));
 }
 
 export function addProgressRewards(player, reward) {
   const before = applyEquipment(player);
-  const xp = (before.xp || 0) + (reward.xp || 0);
-  const coins = (before.coins || 0) + (reward.coins || 0);
+  const xp = normalizeXp(normalizeXp(before.xp) + normalizeXp(reward.xp));
+  const coins = Math.max(0, Math.floor((Number(before.coins) || 0) + (Number(reward.coins) || 0)));
   const afterLevel = computeLevelFromXp(xp);
   const leveledUp = afterLevel > before.level;
   const after = applyEquipment({
@@ -89,6 +105,12 @@ export function addProgressRewards(player, reward) {
     health: leveledUp ? after.maxHealth : after.health,
     mana: leveledUp ? after.maxMana : after.mana
   };
+}
+
+function normalizeXp(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.floor(number));
 }
 
 export function addInventoryItem(inventory, itemId, quantity = 1) {

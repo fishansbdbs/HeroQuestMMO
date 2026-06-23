@@ -1,14 +1,26 @@
 import { PLAYER_STATES, RESPAWN_DELAY_MS, SNAPSHOT_MS, SERVER_TICK_MS, ZONES } from "../../shared/constants.js";
+import { ABILITIES } from "../../shared/abilities.js";
 import { BOSS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { NET } from "../../shared/netMessages.js";
-import { addProgressRewards, distance2d, isPlayerDead } from "../../shared/combat.js";
-import { equipItemToSlot } from "../../shared/equipment.js";
-import { addInventoryStack } from "../../shared/inventory.js";
+import { addProgressRewards, applyEquipment, consumeInventoryItem, distance2d, isPlayerDead } from "../../shared/combat.js";
+import { equipItemToSlot, normalizeEquipment } from "../../shared/equipment.js";
+import { addInventoryStack, removeInventoryItems } from "../../shared/inventory.js";
+import { getItem } from "../../shared/items.js";
 import { spendAttributePoint, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, purchaseTrainerAbility } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
 import { applyQuestEvent, applyQuestKill } from "../../shared/quests.js";
+import {
+  BUYBACK_LIMIT,
+  createBuybackEntry,
+  isItemSellable,
+  itemSellValue,
+  normalizeBuyback,
+  normalizeTradeQuantity
+} from "../../shared/shop.js";
+import { upgradeFrostforgeItem } from "../../shared/frostforge.js";
 import { canEnterZone, unlockWaypoint } from "../../shared/zones.js";
+import { BOUNTIES, createBountyState, recordBountyProgress } from "../../shared/bounties.js";
 import { recordBestiaryKill, refreshMetaProgress as refreshPlayerMetaProgress } from "../../shared/metaProgress.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
 import { LootSystem } from "./LootSystem.js";
@@ -95,6 +107,13 @@ export class RoomManager {
         zoneCompletion: payload.zoneCompletion ?? player.zoneCompletion,
         achievements: payload.achievements ?? player.achievements,
         firstClearRewards: payload.firstClearRewards ?? player.firstClearRewards,
+        publicEventClaims: payload.publicEventClaims ?? player.publicEventClaims,
+        buyback: payload.buyback ?? player.buyback,
+        upgradeRanks: payload.upgradeRanks ?? player.upgradeRanks,
+        setProgress: payload.setProgress ?? player.setProgress,
+        activeSetBonuses: payload.activeSetBonuses ?? player.activeSetBonuses,
+        bounties: payload.bounties ?? player.bounties,
+        dungeonProgress: payload.dungeonProgress ?? player.dungeonProgress,
         title: payload.title ?? player.title
       });
     });
@@ -109,6 +128,13 @@ export class RoomManager {
     socket.on(NET.PLAYER_USE_REST_STONE, (_payload, ack) => {
       const player = this.players.get(socket.id);
       const result = this.resetWithRestStone(player);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_USE_CONSUMABLE, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.usePotion(player, payload?.itemId);
       ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
       if (result.ok) this.broadcastSnapshots();
     });
@@ -155,6 +181,27 @@ export class RoomManager {
       if (result.ok) this.broadcastSnapshots();
     });
 
+    socket.on(NET.PLAYER_SELL_ITEM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.sellItem(player, payload?.itemId, payload?.quantity, { confirmed: Boolean(payload?.confirmed) });
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_BUYBACK_ITEM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.buyBackItem(player, payload?.buybackId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
+    socket.on(NET.PLAYER_UPGRADE_ITEM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.upgradeItem(player, payload?.itemId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
     socket.on(NET.COMBAT_ATTACK, (payload, ack) => {
       const player = this.players.get(socket.id);
       if (!player) return;
@@ -174,6 +221,23 @@ export class RoomManager {
       this.broadcastSnapshots();
     });
 
+    socket.on(NET.HEALING_ORB_CLAIM, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.combat.consumeHealingOrb(player, payload?.orbId, this.players);
+      if (result.ok) {
+        this.refreshMetaProgress(player);
+        const caster = this.players.get(result.healingOrb?.casterId);
+        if (caster && caster.id !== player.id) this.refreshMetaProgress(caster);
+        this.io.to(player.zone).emit(NET.WORLD_EVENT, {
+          type: "healing_orb_consumed",
+          healingOrb: result.healingOrb,
+          heals: result.heals
+        });
+      }
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      this.broadcastSnapshots();
+    });
+
     socket.on(NET.LOOT_CLAIM, (payload, ack) => {
       const player = this.players.get(socket.id);
       const result = this.claimLoot(player, payload?.lootId);
@@ -188,15 +252,22 @@ export class RoomManager {
       if (result.ok) this.broadcastSnapshots();
     });
 
+    socket.on(NET.PUBLIC_EVENT_ACTIVATE, (payload, ack) => {
+      const player = this.players.get(socket.id);
+      const result = this.activatePublicEvent(player, payload?.eventId, Date.now(), payload?.wardId);
+      ack?.(result.ok ? { ...result, player: sanitizePlayer(player) } : result);
+      if (result.ok) this.broadcastSnapshots();
+    });
+
     socket.on(NET.PLAYER_RESPAWN, (_payload, ack) => {
       const player = this.players.get(socket.id);
       if (!player) return;
-      if (!isPlayerDead(player) || Date.now() < (player.respawnAt || 0)) {
-        ack?.({ ok: false, reason: "not_ready", player: sanitizePlayer(player) });
+      const oldZone = player.zone;
+      const result = this.requestRespawn(player);
+      if (!result.ok) {
+        ack?.({ ...result, player: sanitizePlayer(player) });
         return;
       }
-      const oldZone = player.zone;
-      this.respawnPlayer(player);
       socket.leave(oldZone);
       socket.join(ZONES.HUB);
       ack?.({ ok: true, player: sanitizePlayer(player), snapshot: this.snapshotForZone(player.zone) });
@@ -246,6 +317,8 @@ export class RoomManager {
         player.questProgress = questUpdate.progress;
         const bestiary = recordBestiaryKill(player, enemyDef, { elite: defeat.enemy?.eliteModifier || enemyDef.elite });
         if (bestiary.ok) Object.assign(player, bestiary.player);
+        this.updateBounties(player, { type: "kill", enemyId: enemyDef.id, family: enemyDef.family, elite: defeat.enemy?.eliteModifier || enemyDef.elite });
+        if (enemyDef.id === "runebound_colossus") this.awardFrostboundVaultClear(player);
       }
       this.refreshMetaProgress(player);
     }
@@ -265,6 +338,23 @@ export class RoomManager {
     if (result?.player) Object.assign(player, result.player);
   }
 
+  updateBounties(player, event) {
+    if (!player) return;
+    const result = recordBountyProgress(player, event);
+    Object.assign(player, result.player);
+    player.bounties = createBountyState(player.bounties);
+    player.bounties.claimed = Array.isArray(player.bounties.claimed) ? player.bounties.claimed : [];
+    for (const bounty of result.rewards || []) {
+      if (player.bounties.claimed.includes(bounty.id)) continue;
+      Object.assign(player, addProgressRewards(player, bounty.reward || {}));
+      for (const item of bounty.reward?.items || []) {
+        const added = addInventoryStack(player.inventory || [], item.itemId, item.quantity || 1);
+        if (added.ok) player.inventory = added.inventory;
+      }
+      player.bounties.claimed.push(bounty.id);
+    }
+  }
+
   allocateAttribute(player, attributeId, count = 1) {
     if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
     const result = spendAttributePoint(player, attributeId, count);
@@ -279,6 +369,46 @@ export class RoomManager {
     if (!result.ok) return result;
     Object.assign(player, result.player);
     return { ok: true };
+  }
+
+  usePotion(player, itemId = "small_health_potion") {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    if (itemId !== "small_health_potion") return { ok: false, reason: "item" };
+
+    const maxHealth = Math.max(1, Number(player.maxHealth) || 1);
+    const currentHealth = Math.max(0, Number(player.health) || 0);
+    if (currentHealth >= maxHealth) return { ok: false, reason: "full" };
+
+    const now = Date.now();
+    const cooldownMs = ABILITIES.potion.cooldownMs;
+    const lastPotionAt = Number(player.lastPotionAt) || 0;
+    if (lastPotionAt && now - lastPotionAt < cooldownMs) {
+      return {
+        ok: false,
+        reason: "cooldown",
+        remainingMs: Math.max(0, cooldownMs - (now - lastPotionAt))
+      };
+    }
+
+    const consumed = consumeInventoryItem(player.inventory || [], itemId, 1);
+    if (!consumed.consumed) return { ok: false, reason: "missing" };
+
+    const healCap = maxHealth - currentHealth;
+    const configuredHeal = Math.max(1, Math.round((ABILITIES.potion.heal || 30) + (Number(player.potionBonus) || 0)));
+    const amount = Math.min(healCap, configuredHeal);
+    player.inventory = consumed.inventory;
+    player.health = currentHealth + amount;
+    player.lastPotionAt = now;
+    return {
+      ok: true,
+      itemId,
+      heal: {
+        amount,
+        health: player.health,
+        maxHealth
+      },
+      cooldownMs
+    };
   }
 
   buyAbility(player, abilityId) {
@@ -351,6 +481,74 @@ export class RoomManager {
     return { ok: true };
   }
 
+  sellItem(player, itemId, quantity = 1, options = {}) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+
+    const item = getItem(itemId);
+    if (!item) return { ok: false, reason: "item" };
+
+    const count = normalizeTradeQuantity(quantity);
+    if (count <= 0) return { ok: false, reason: "quantity" };
+    if (!isItemSellable(itemId)) return { ok: false, reason: "not_sellable" };
+    if (isEquippedItem(player, itemId)) return { ok: false, reason: "equipped" };
+    if (requiresSellConfirmation(player, item) && !options.confirmed) return { ok: false, reason: "confirm_required" };
+    if (inventoryQuantity(player.inventory, itemId) < count) return { ok: false, reason: "missing" };
+
+    const coins = itemSellValue(itemId, count);
+    if (coins <= 0) return { ok: false, reason: "not_sellable" };
+
+    const removed = removeInventoryItems(player.inventory, itemId, count);
+    if (!removed.ok) return { ok: false, reason: "missing" };
+
+    player.inventory = removed.inventory;
+    player.coins = nonNegativeInt(player.coins) + coins;
+    const buybackEntry = createBuybackEntry(itemId, count, coins);
+    player.buyback = [buybackEntry, ...normalizeBuyback(player.buyback)].slice(0, BUYBACK_LIMIT);
+    return { ok: true, itemId, quantity: count, coins, buyback: buybackEntry };
+  }
+
+  buyBackItem(player, buybackId) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+
+    const entries = normalizeBuyback(player.buyback);
+    const index = entries.findIndex((entry) => entry.id === buybackId);
+    if (index < 0) {
+      player.buyback = entries;
+      return { ok: false, reason: "missing" };
+    }
+
+    const entry = entries[index];
+    const cost = nonNegativeInt(entry.cost ?? entry.saleValue);
+    if (nonNegativeInt(player.coins) < cost) {
+      player.buyback = entries;
+      return { ok: false, reason: "coins" };
+    }
+
+    const inventoryResult = addInventoryStack(player.inventory || [], entry.itemId, entry.quantity);
+    if (!inventoryResult.ok) {
+      player.buyback = entries;
+      return {
+        ok: false,
+        reason: inventoryResult.reason === "full" ? "inventory_full" : inventoryResult.reason,
+        overflow: inventoryResult.overflow
+      };
+    }
+
+    player.coins = nonNegativeInt(player.coins) - cost;
+    player.inventory = inventoryResult.inventory;
+    entries.splice(index, 1);
+    player.buyback = entries;
+    return { ok: true, itemId: entry.itemId, quantity: entry.quantity, cost };
+  }
+
+  upgradeItem(player, itemId) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    const result = upgradeFrostforgeItem(player, itemId);
+    if (!result.ok) return result;
+    Object.assign(player, applyEquipment(result.player));
+    return { ok: true, itemId: result.itemId, rank: result.rank, cost: result.cost };
+  }
+
   claimLoot(player, lootId) {
     const inspected = lootId ? this.loot.inspectForPlayer({ lootId, player, range: 4 }) : { ok: false, reason: "missing" };
     if (!inspected.ok) return { ok: false, reason: inspected.reason };
@@ -403,6 +601,7 @@ export class RoomManager {
       }
       player.title = "Wyrm-Touched";
       this.refreshMetaProgress(player);
+      this.updateBounties(player, { type: "boss", bossId: BOSS.id });
     }
     this.io.to(ZONES.BOSS).emit(NET.WORLD_EVENT, {
       type: "boss_defeated",
@@ -446,6 +645,7 @@ export class RoomManager {
         if (rare.ok) player.inventory = rare.inventory;
       }
       this.refreshMetaProgress(player);
+      this.updateBounties(player, { type: "boss", bossId: ICE_MAGE_BOSS.id });
     }
 
     this.io.to(ZONES.PALACE).emit(NET.WORLD_EVENT, {
@@ -454,6 +654,39 @@ export class RoomManager {
       reward,
       lootBag: bossResult.lootBag || null
     });
+  }
+
+  awardFrostboundVaultClear(triggeringPlayer) {
+    const eligibleIds = new Set([triggeringPlayer?.id].filter(Boolean));
+    const party = this.parties.getPartyForPlayer(triggeringPlayer?.id);
+    if (party) {
+      for (const memberId of party.members) {
+        const member = this.players.get(memberId);
+        if (member?.zone === ZONES.FROSTBOUND_VAULT) eligibleIds.add(memberId);
+      }
+    }
+
+    for (const id of eligibleIds) {
+      const player = this.players.get(id);
+      if (!player || isPlayerDead(player)) continue;
+      player.dungeonProgress = player.dungeonProgress || {};
+      const current = player.dungeonProgress.frostbound_vault || {};
+      const firstClear = Boolean(current.firstClear);
+      player.dungeonProgress.frostbound_vault = {
+        ...current,
+        bestEncounterLevel: Math.max(current.bestEncounterLevel || 0, player.level || 15),
+        clears: Math.max(0, Number(current.clears) || 0) + 1,
+        firstClear: true,
+        personalChestClaims: Array.from(new Set([...(current.personalChestClaims || []), `colossus:${Date.now()}`]))
+      };
+      if (!firstClear) {
+        Object.assign(player, addProgressRewards(player, { xp: 500, coins: 240 }));
+        const core = addInventoryStack(player.inventory || [], "runic_core", 1);
+        if (core.ok) player.inventory = core.inventory;
+      }
+      this.updateBounties(player, { type: "boss", bossId: "runebound_colossus" });
+      this.updateBounties(player, { type: "dungeon_clear", dungeonId: "frostbound_vault" });
+    }
   }
 
   syncPartyIds() {
@@ -473,9 +706,10 @@ export class RoomManager {
     this.handleBossEvents(bossEvents);
     const iceMageEvents = this.iceMage.update(this.players);
     this.handleIceMageEvents(iceMageEvents);
-    this.handlePublicEvents(this.publicEvents.update(this.players, dt));
+    this.handlePublicEvents(this.publicEvents.update(this.players));
     this.processDeaths();
     this.processRespawns();
+    this.handleHealingOrbExpirations(this.combat.expireHealingOrbs(now));
     this.loot.cleanup();
   }
 
@@ -490,6 +724,15 @@ export class RoomManager {
     for (const event of events || []) {
       if (event.type === "ice_mage_summon") this.spawnIceMageServants(event.attack?.shape?.points);
       this.io.to(ZONES.PALACE).emit(NET.WORLD_EVENT, event);
+    }
+  }
+
+  handleHealingOrbExpirations(orbs = []) {
+    for (const orb of orbs) {
+      this.io.to(orb.zone).emit(NET.WORLD_EVENT, {
+        type: "healing_orb_expired",
+        healingOrb: orb
+      });
     }
   }
 
@@ -534,26 +777,33 @@ export class RoomManager {
   processRespawns() {
     for (const player of this.players.values()) {
       if (player.state === PLAYER_STATES.DEAD && Date.now() >= (player.respawnAt || 0)) {
-        const oldZone = player.zone;
-        this.respawnPlayer(player);
-        const socket = this.io.sockets?.sockets?.get?.(player.id);
-        if (socket) {
-          socket.leave(oldZone);
-          socket.join(player.zone);
+        if (!player.respawnReadyNotified) {
+          player.respawnReadyNotified = true;
+          this.io.to(player.zone).emit(NET.WORLD_EVENT, { type: "player_respawn_ready", playerId: player.id });
         }
-        this.io.to(player.zone).emit(NET.WORLD_EVENT, { type: "player_respawned", playerId: player.id });
       }
     }
   }
 
+  requestRespawn(player) {
+    if (!player || !isPlayerDead(player)) return { ok: false, reason: "not_dead" };
+    if (Date.now() < (player.respawnAt || 0)) return { ok: false, reason: "not_ready" };
+    this.respawnPlayer(player);
+    return { ok: true };
+  }
+
   respawnPlayer(player) {
+    const now = Date.now();
     Object.assign(player, {
       state: PLAYER_STATES.ALIVE,
       health: player.maxHealth,
+      mana: player.maxMana,
       zone: ZONES.HUB,
       position: defaultZonePosition(ZONES.HUB),
       defeatedAt: null,
       respawnAt: null,
+      respawnReadyNotified: false,
+      respawnProtectionUntil: now + 3000,
       lastAttackAt: 0,
       lastAbilityAt: 0
     });
@@ -586,7 +836,55 @@ export class RoomManager {
 
   handlePublicEvents(events) {
     for (const event of events || []) {
+      if (event.type === "public_event_completed") this.awardPublicEventCompletion(event);
       this.io.to(event.zone || ZONES.FROSTVEIL).emit(NET.WORLD_EVENT, event);
+    }
+  }
+
+  activatePublicEvent(player, eventId, now = Date.now(), wardId = null) {
+    if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    if (eventId !== "defend_frost_ward") return { ok: false, reason: "event" };
+    const result = this.publicEvents.activate(player, this.players, now, wardId);
+    if (!result.ok) return result;
+    this.handlePublicEvents(result.events);
+    return { ok: true, event: result.events[0] || null };
+  }
+
+  awardPublicEventCompletion(event) {
+    if (event?.eventId !== "defend_frost_ward") return;
+    const participantIds = new Set(Array.isArray(event.participants) ? event.participants : []);
+    if (participantIds.size === 0 && this.publicEvents?.state?.participants) {
+      for (const id of this.publicEvents.state.participants) participantIds.add(id);
+    }
+
+    const claimKey = publicEventClaimKey(event);
+    const creditedPlayerIds = [];
+    for (const id of participantIds) {
+      const player = this.players.get(id);
+      if (!player || isPlayerDead(player)) continue;
+      player.publicEventClaims = uniqueStringList(player.publicEventClaims);
+      if (player.publicEventClaims.includes(claimKey)) continue;
+
+      player.publicEventClaims.push(claimKey);
+      const questUpdate = applyQuestEvent(player.questProgress, "activate_frost_ward");
+      player.questProgress = questUpdate.progress;
+      this.grantQuestCompletionRewards(player, questUpdate.completed);
+      this.refreshMetaProgress(player);
+      this.updateBounties(player, { type: "event", eventId: event.eventId });
+      creditedPlayerIds.push(id);
+    }
+    event.creditedPlayerIds = creditedPlayerIds;
+  }
+
+  grantQuestCompletionRewards(player, completedQuests = []) {
+    for (const quest of completedQuests) {
+      if (!quest?.reward) continue;
+      Object.assign(player, addProgressRewards(player, quest.reward));
+      if (quest.reward.itemId) {
+        const item = addInventoryStack(player.inventory || [], quest.reward.itemId, 1);
+        if (item.ok) player.inventory = item.inventory;
+      }
+      if (quest.reward.title) player.title = quest.reward.title;
     }
   }
 
@@ -604,10 +902,12 @@ export class RoomManager {
       players: [...this.players.values()].filter((player) => player.zone === zone).map(sanitizePlayer),
       enemies: this.enemies.snapshot(zone),
       loot: this.loot.snapshot(zone),
+      healingOrbs: this.combat.snapshotHealingOrbs(zone),
       chests: this.snapshotChests(zone),
       boss: this.boss.snapshot(),
       iceMage: this.iceMage.snapshot(),
       publicEvent: this.publicEvents.snapshot(zone),
+      bounties: { definitions: BOUNTIES, active: createBountyState({}, Date.now()).active },
       parties: this.parties.snapshot(),
       serverTime: Date.now()
     };
@@ -625,6 +925,32 @@ export class RoomManager {
   }
 }
 
+function inventoryQuantity(inventory, itemId) {
+  return (inventory || [])
+    .filter((entry) => entry?.itemId === itemId)
+    .reduce((total, entry) => total + (Number(entry.quantity) || 0), 0);
+}
+
+function isEquippedItem(player, itemId) {
+  return Object.values(normalizeEquipment(player)).includes(itemId);
+}
+
+function requiresSellConfirmation(player, item) {
+  if (!item) return false;
+  if (item.id === "rest_stone") return true;
+  if (item.rarity === "Rare" || item.rarity === "Epic") return true;
+  if (item.boss || item.setId) return true;
+  if (Array.isArray(player?.favoriteItems) && player.favoriteItems.includes(item.id)) return true;
+  if (nonNegativeInt(player?.upgradeRanks?.[item.id]) > 0) return true;
+  return false;
+}
+
+function nonNegativeInt(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.floor(number));
+}
+
 function applyRewardItems(inventory, items = []) {
   let nextInventory = inventory || [];
   for (const item of items) {
@@ -635,8 +961,22 @@ function applyRewardItems(inventory, items = []) {
   return { ok: true, inventory: nextInventory, overflow: [] };
 }
 
+function publicEventClaimKey(event) {
+  if (event?.eventId === "defend_frost_ward") {
+    const wardId = typeof event.wardId === "string" ? event.wardId.trim() : "";
+    if (wardId) return `${event.eventId}:${wardId}`;
+  }
+  const instanceId = typeof event?.eventInstanceId === "string" ? event.eventInstanceId.trim() : "";
+  return instanceId || `${event?.eventId || "public_event"}:completed`;
+}
+
+function uniqueStringList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((entry) => typeof entry === "string"))];
+}
+
 function clampPosition(position, zone) {
-  const bounds = zone === ZONES.FIELD ? 54 : zone === ZONES.FROSTVEIL ? 58 : zone === ZONES.PALACE ? 32 : zone === ZONES.BOSS ? 30 : 42;
+  const bounds = zone === ZONES.FIELD ? 54 : zone === ZONES.FROSTVEIL ? 58 : zone === ZONES.FROSTBOUND_VAULT ? 34 : zone === ZONES.PALACE ? 32 : zone === ZONES.BOSS ? 30 : 42;
   return {
     x: Math.max(-bounds, Math.min(bounds, Number(position.x) || 0)),
     y: 0,
@@ -648,6 +988,7 @@ function clampPosition(position, zone) {
 function defaultZonePosition(zone) {
   if (zone === ZONES.FIELD) return { x: 0, y: 0, z: 31, rot: Math.PI };
   if (zone === ZONES.FROSTVEIL) return { x: 0, y: 0, z: 24, rot: Math.PI };
+  if (zone === ZONES.FROSTBOUND_VAULT) return { x: 0, y: 0, z: 18, rot: Math.PI };
   if (zone === ZONES.PALACE) return { x: 0, y: 0, z: 18, rot: Math.PI };
   if (zone === ZONES.BOSS) return { x: 0, y: 0, z: 22, rot: Math.PI };
   return { x: 0, y: 0, z: 6, rot: 0 };

@@ -1,4 +1,4 @@
-import { ELITE_MODIFIERS, FIELD_SPAWNS, FROSTVEIL_SPAWNS, ENEMIES, getEnemy } from "../../shared/enemies.js";
+import { ELITE_MODIFIERS, FIELD_SPAWNS, FROSTBOUND_VAULT_SPAWNS, FROSTVEIL_SPAWNS, ENEMIES, getEnemy } from "../../shared/enemies.js";
 import { ZONES } from "../../shared/constants.js";
 import { distance2d, calculateIncomingDamage } from "../../shared/combat.js";
 import { LootSystem } from "./LootSystem.js";
@@ -16,6 +16,7 @@ export class EnemySystem {
     this.enemies.clear();
     this.spawnConfigured(FIELD_SPAWNS, ZONES.FIELD);
     this.spawnConfigured(FROSTVEIL_SPAWNS, ZONES.FROSTVEIL);
+    this.spawnConfigured(FROSTBOUND_VAULT_SPAWNS, ZONES.FROSTBOUND_VAULT);
   }
 
   spawnField() {
@@ -52,6 +53,10 @@ export class EnemySystem {
       maxHealth,
       eliteModifier: modifier?.id || null,
       eventId: options.eventId || null,
+      eventInstanceId: options.eventInstanceId || null,
+      eventWave: options.eventWave || null,
+      eventSpawnId: options.eventSpawnId || null,
+      wardId: options.wardId || null,
       targetId: null,
       lastAttackAt: 0,
       respawnAt: 0
@@ -137,7 +142,11 @@ export class EnemySystem {
       health: enemy.health,
       maxHealth: enemy.maxHealth,
       eliteModifier: enemy.eliteModifier || null,
-      eventId: enemy.eventId || null
+      eventId: enemy.eventId || null,
+      eventInstanceId: enemy.eventInstanceId || null,
+      eventWave: enemy.eventWave || null,
+      eventSpawnId: enemy.eventSpawnId || null,
+      wardId: enemy.wardId || null
     }));
   }
 }

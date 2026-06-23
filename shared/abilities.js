@@ -93,6 +93,9 @@ export const ABILITIES = {
     manaCost: 25,
     range: 16,
     damageScale: 1,
+    slowMultiplier: 0.55,
+    slowDurationMs: 3500,
+    knockback: 1.2,
     description: "A water spell that damages and slows a hostile target."
   },
   healing_orb: {
@@ -107,6 +110,7 @@ export const ABILITIES = {
     cooldownMs: 12000,
     manaCost: 25,
     durationMs: 10000,
+    pickupRadius: 3.2,
     description: "Creates a healing orb that damaged friendly players can consume."
   },
   mend_ally: {
@@ -122,6 +126,49 @@ export const ABILITIES = {
     manaCost: 30,
     range: 15,
     description: "Restores health to a friendly target or yourself."
+  },
+  whirlwind_cleave: {
+    id: "whirlwind_cleave",
+    name: "Whirlwind Cleave",
+    trainerId: "skill_tree",
+    scalingStat: "strength",
+    targetType: "area_hostile",
+    levelRequirement: 15,
+    cooldownMs: 12000,
+    manaCost: 0,
+    radius: 5.4,
+    damageScale: 1.05,
+    knockback: 3.2,
+    description: "A circular sword attack learned from the Might tier-two tree."
+  },
+  chain_frost: {
+    id: "chain_frost",
+    name: "Chain Frost",
+    trainerId: "skill_tree",
+    scalingStat: "magic",
+    targetType: "hostile_chain",
+    levelRequirement: 15,
+    cooldownMs: 11000,
+    manaCost: 32,
+    range: 17,
+    jumpRange: 7,
+    maxTargets: 4,
+    damageScale: 0.86,
+    description: "A cold spell that jumps between nearby unique enemies."
+  },
+  radiant_ward: {
+    id: "radiant_ward",
+    name: "Radiant Ward",
+    trainerId: "skill_tree",
+    scalingStat: "magic",
+    targetType: "friendly_area",
+    levelRequirement: 15,
+    cooldownMs: 16000,
+    manaCost: 35,
+    radius: 6,
+    durationMs: 4500,
+    damageReduction: 0.22,
+    description: "A friendly shield pulse learned from the Restoration tier-two tree."
   },
   guard: {
     id: "guard",
