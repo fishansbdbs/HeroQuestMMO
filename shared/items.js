@@ -1,3 +1,5 @@
+import { V22_ITEMS } from "./expansionV22.js";
+
 export const RARITIES = {
   COMMON: "Common",
   UNCOMMON: "Uncommon",
@@ -586,7 +588,8 @@ export const ITEMS = {
     type: "material",
     rarity: RARITIES.RARE,
     description: "A cold rune engine used for advanced Frostforge upgrades."
-  }
+  },
+  ...V22_ITEMS
 };
 
 export const STARTER_INVENTORY = [

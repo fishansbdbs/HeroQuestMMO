@@ -1,3 +1,5 @@
+import { V22_QUESTS } from "./expansionV22.js";
+
 export const QUESTS = {
   slime_trouble: {
     id: "slime_trouble",
@@ -97,7 +99,8 @@ export const QUESTS = {
     targetEnemyId: "zero_ice_mage",
     required: 1,
     reward: { coins: 420, xp: 520, title: "Icebreaker" }
-  }
+  },
+  ...V22_QUESTS
 };
 
 export function getQuestList() {

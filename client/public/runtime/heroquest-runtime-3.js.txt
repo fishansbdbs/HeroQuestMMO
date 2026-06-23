@@ -13,8 +13,14 @@ function updateQuestTracker() {
   }
   const frostQuestIds = new Set(["frozen_road", "cold_blooded", "howling_white", "shattered_ward", "heart_of_the_blizzard", "palace_of_zero"]);
   const palaceQuestIds = new Set(["palace_of_zero", "icezero"]);
+  const flameburgQuestIds = new Set(["steam_through_the_ice", "welcome_to_flameburg", "stones_that_walk", "hounds_of_ash_road", "ashes_in_the_sky", "seal_the_eruption", "into_emberdeep", "crownforge_approach", "the_flame_king"]);
+  const aquaQuestIds = new Set(["tidegate_opens", "welcome_to_the_palace", "bubble_trouble", "raiders_of_the_reef", "pearl_recovery", "into_the_sunken_sanctum", "deep_current", "tide_empress"]);
   const quests = game.zone === ZONES.PALACE
     ? getQuestList().filter((quest) => palaceQuestIds.has(quest.id))
+    : [ZONES.FLAMEBURG, ZONES.ASHEN_EXPANSE, ZONES.EMBERDEEP_MINES, ZONES.CROWNFORGE_CITADEL].includes(game.zone)
+      ? getQuestList().filter((quest) => flameburgQuestIds.has(quest.id))
+    : [ZONES.AQUA_PALACE, ZONES.TIDERUIN_GARDENS, ZONES.SUNKEN_SANCTUM, ZONES.TIDE_EMPRESS_ARENA].includes(game.zone)
+      ? getQuestList().filter((quest) => aquaQuestIds.has(quest.id))
     : game.zone === ZONES.FROSTVEIL
       ? getQuestList().filter((quest) => frostQuestIds.has(quest.id))
     : getQuestList().slice(0, 5);
@@ -304,6 +310,12 @@ function updatePrompt() {
     ui.prompt.classList.remove("hidden");
     return;
   }
+  if (game.zone === ZONES.ASHEN_EXPANSE && distance2d(player, { x: -10, z: -8 }) < 5) {
+    game.promptAction = () => activatePublicEvent("seal_the_eruption");
+    ui.prompt.textContent = game.publicEvent?.active ? "Eruption sealing is underway." : "E: Seal the Eruption";
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
   if (game.zone === ZONES.HUB && distance2d(player, { x: 16, z: -12 }) < 4) {
     game.promptAction = () => {
       selectTarget("training_dummy");
@@ -352,6 +364,21 @@ function currentBreadcrumb() {
   }
   if (game.zone === ZONES.PALACE && !game.save.questProgress?.icezero?.complete) {
     return "Marker: Zero waits in the central chamber.";
+  }
+  if (game.zone === ZONES.FLAMEBURG && !game.save.questProgress?.welcome_to_flameburg?.complete) {
+    return "Marker: Ashen Expanse waits beyond Flameburg's south road.";
+  }
+  if (game.zone === ZONES.ASHEN_EXPANSE && !game.save.questProgress?.seal_the_eruption?.complete) {
+    return "Marker: The Eruption Core burns west of the road.";
+  }
+  if (game.zone === ZONES.ASHEN_EXPANSE && game.save.level >= 20 && !game.save.questProgress?.tidegate_opens?.complete) {
+    return "Marker: The Tidegate glows on the southwest ridge.";
+  }
+  if (game.zone === ZONES.AQUA_PALACE && !game.save.questProgress?.welcome_to_the_palace?.complete) {
+    return "Marker: Tideruin Gardens waits beyond the palace walk.";
+  }
+  if (game.zone === ZONES.TIDERUIN_GARDENS && !game.save.questProgress?.tide_empress?.complete) {
+    return "Marker: Queen Nereida's arena churns southeast.";
   }
   return "";
 }

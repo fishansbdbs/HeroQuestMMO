@@ -1,5 +1,6 @@
 import { ZONES } from "./constants.js";
 import { BOSS, ENEMIES, ICE_MAGE_BOSS } from "./enemies.js";
+import { V22_ZONE_COMPLETION_REQUIREMENTS } from "./expansionV22.js";
 
 export const ACHIEVEMENTS = {
   first_spell: {
@@ -37,6 +38,42 @@ export const ACHIEVEMENTS = {
     name: "Frostveil Explorer",
     description: "Discover Frostveil Camp.",
     title: "Frostveil Explorer"
+  },
+  through_the_molten_gate: {
+    id: "through_the_molten_gate",
+    name: "Through the Molten Gate",
+    description: "Enter Flameburg.",
+    title: "Gatewalker"
+  },
+  eruption_sealed: {
+    id: "eruption_sealed",
+    name: "Eruption Sealed",
+    description: "Complete Seal the Eruption.",
+    title: "Eruption Sealer"
+  },
+  the_crown_falls: {
+    id: "the_crown_falls",
+    name: "The Crown Falls",
+    description: "Defeat Ignivar.",
+    title: "Kingsflame"
+  },
+  tidegate_opened: {
+    id: "tidegate_opened",
+    name: "Tidegate Opened",
+    description: "Enter Aqua Palace.",
+    title: "Tidegate Walker"
+  },
+  sanctum_diver: {
+    id: "sanctum_diver",
+    name: "Sanctum Diver",
+    description: "Clear Sunken Sanctum.",
+    title: "Sanctum Diver"
+  },
+  tidebreaker: {
+    id: "tidebreaker",
+    name: "Tidebreaker",
+    description: "Defeat Queen Nereida.",
+    title: "Tidebreaker"
   }
 };
 
@@ -67,7 +104,8 @@ export const ZONE_COMPLETION_REQUIREMENTS = {
   [ZONES.BOSS]: {
     quests: ["shadow_at_the_peak"],
     boss: BOSS.id
-  }
+  },
+  ...V22_ZONE_COMPLETION_REQUIREMENTS
 };
 
 export function recordBestiaryKill(player, enemyDef, options = {}) {
@@ -103,6 +141,12 @@ export function evaluateAchievements(player) {
   unlockWhen(Boolean(firstClearRewards[ICE_MAGE_BOSS.id]) || questComplete(player, "icezero"), "icebreaker", achievements, unlocked);
   unlockWhen(bestiaryEntries.some((entry) => nonNegativeInt(entry.eliteKills) > 0), "elite_hunter", achievements, unlocked);
   unlockWhen(waypoints.includes("frostveil_camp") || questComplete(player, "frozen_road"), "frostveil_explorer", achievements, unlocked);
+  unlockWhen(waypoints.includes("flameburg_waypoint") || questComplete(player, "steam_through_the_ice"), "through_the_molten_gate", achievements, unlocked);
+  unlockWhen(questComplete(player, "seal_the_eruption"), "eruption_sealed", achievements, unlocked);
+  unlockWhen(Boolean(firstClearRewards.ignivar_flame_king) || questComplete(player, "the_flame_king"), "the_crown_falls", achievements, unlocked);
+  unlockWhen(waypoints.includes("aqua_palace_waypoint") || questComplete(player, "tidegate_opens"), "tidegate_opened", achievements, unlocked);
+  unlockWhen(Boolean(firstClearRewards.marrowfin_leviathan) || questComplete(player, "into_the_sunken_sanctum"), "sanctum_diver", achievements, unlocked);
+  unlockWhen(Boolean(firstClearRewards.queen_nereida) || questComplete(player, "tide_empress"), "tidebreaker", achievements, unlocked);
 
   return { player: { ...player, achievements: [...achievements] }, unlocked };
 }
@@ -218,7 +262,7 @@ function bossComplete(player, bossId) {
   if (player?.firstClearRewards?.[bossId]) return true;
   if (bossId === BOSS.id) return questComplete(player, "shadow_at_the_peak") || bestiaryDiscovered(player, BOSS.id);
   if (bossId === ICE_MAGE_BOSS.id) return questComplete(player, "icezero") || bestiaryDiscovered(player, ICE_MAGE_BOSS.id);
-  return false;
+  return Boolean(player?.firstClearRewards?.[bossId]) || bestiaryDiscovered(player, bossId);
 }
 
 function nonNegativeInt(value) {

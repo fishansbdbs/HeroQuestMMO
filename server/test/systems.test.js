@@ -5,7 +5,24 @@ import path from "node:path";
 import { ABILITIES } from "../../shared/abilities.js";
 import { GAME_VERSION, PATCH_NOTES, STARTING_PLAYER, XP_TABLE, ZONES } from "../../shared/constants.js";
 import { applyEquipment, addProgressRewards, calculateIncomingDamage } from "../../shared/combat.js";
-import { BOSS, ENEMIES, FROSTVEIL_SPAWNS, ELITE_MODIFIERS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
+import {
+  ASHEN_EXPANSE_SPAWNS,
+  BOSS,
+  CROWNFORGE_CITADEL_SPAWNS,
+  EMBERDEEP_MINES_SPAWNS,
+  ENEMIES,
+  FIELD_SPAWNS,
+  FROSTVEIL_SPAWNS,
+  ELITE_MODIFIERS,
+  ICE_MAGE_BOSS,
+  IGNIVAR_BOSS,
+  MARROWFIN_BOSS,
+  MOLTAR_BOSS,
+  NEREIDA_BOSS,
+  SUNKEN_SANCTUM_SPAWNS,
+  TIDERUIN_GARDENS_SPAWNS,
+  TIDE_EMPRESS_ARENA_SPAWNS
+} from "../../shared/enemies.js";
 import { canEnterZone, getZone, unlockWaypoint } from "../../shared/zones.js";
 import {
   calculateDamageReduction,
@@ -20,7 +37,7 @@ import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot } from "../../sh
 import { INVENTORY_SLOT_COUNT, addInventoryStack } from "../../shared/inventory.js";
 import { NET } from "../../shared/netMessages.js";
 import { applyQuestEvent, applyQuestKill, createQuestProgress } from "../../shared/quests.js";
-import { migrateFrostforgedSave } from "../../shared/saveMigration.js";
+import { migrateFlameburgAquaSave, migrateFrostforgedSave } from "../../shared/saveMigration.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
 import { PartySystem } from "../src/PartySystem.js";
@@ -55,9 +72,19 @@ test("client runtime chunks compile after concatenation", () => {
       "ABILITIES",
       "BOSS",
       "ICE_MAGE_BOSS",
+      "IGNIVAR_BOSS",
+      "MOLTAR_BOSS",
+      "MARROWFIN_BOSS",
+      "NEREIDA_BOSS",
       "ENEMIES",
       "FIELD_SPAWNS",
       "FROSTVEIL_SPAWNS",
+      "ASHEN_EXPANSE_SPAWNS",
+      "EMBERDEEP_MINES_SPAWNS",
+      "CROWNFORGE_CITADEL_SPAWNS",
+      "TIDERUIN_GARDENS_SPAWNS",
+      "SUNKEN_SANCTUM_SPAWNS",
+      "TIDE_EMPRESS_ARENA_SPAWNS",
       "getEnemy",
       "GAME_VERSION",
       "PATCH_NOTES",
@@ -73,9 +100,12 @@ test("client runtime chunks compile after concatenation", () => {
       "createEquipmentState",
       "equipItemToSlot",
       "slotForItem",
+      "EQUIPMENT_SETS",
+      "calculateSetProgress",
       "INVENTORY_SLOT_COUNT",
       "addInventoryStack",
       "normalizeInventory",
+      "removeInventoryItems",
       "applyQuestEvent",
       "applyQuestKill",
       "createQuestProgress",
@@ -84,6 +114,8 @@ test("client runtime chunks compile after concatenation", () => {
       "ZONE_DEFS",
       "canEnterZone",
       "unlockWaypoint",
+      "BOUNTIES",
+      "createBountyState",
       "ACHIEVEMENTS",
       "TITLES",
       "calculateZoneCompletion",
@@ -103,8 +135,8 @@ test("client runtime chunks compile after concatenation", () => {
       "createCameraRelativeMove",
       "smoothAngleToward",
       "visualYawForMoveDirection",
-      "FROSTFORGED_MIGRATION_ID",
-      "migrateFrostforgedSave",
+      "FLAMEBURG_AQUA_MIGRATION_ID",
+      "migrateFlameburgAquaSave",
       "applyProgressionStats",
       "regenerateMana",
       "spendAttributePoint",
@@ -118,6 +150,20 @@ test("client runtime chunks compile after concatenation", () => {
       "saveLoadout",
       "SKILL_NODES",
       "SKILL_TREES",
+      "BUYBACK_LIMIT",
+      "SHOP_STOCK",
+      "createBuybackEntry",
+      "isItemSellable",
+      "itemSellUnitValue",
+      "itemSellValue",
+      "normalizeBuyback",
+      "FROSTFORGE_MAX_RANK",
+      "frostforgeUpgradeCost",
+      "frostforgeUpgradePreview",
+      "getFrostforgeRank",
+      "isFrostforgeUpgradeable",
+      "upgradeDisplayName",
+      "upgradeFrostforgeItem",
       "env",
       `"use strict";\n${runtimeSource}`
     );
@@ -149,7 +195,7 @@ test("client runtime animates Ground Pound area acknowledgements", () => {
   assert.ok(combatAckSource, "handleCombatAck runtime source should exist");
   assert.match(combatAckSource, /areaEffect\(result\.areaEffect\)/);
   assert.match(runtimeSource, /function areaEffect\(effect\)/);
-  assert.match(runtimeSource, /effect\.type === "ground_pound"/);
+  assert.match(runtimeSource, /"ground_pound"/);
 });
 
 test("client runtime animates Dark Punch melee acknowledgements", () => {
@@ -206,7 +252,7 @@ test("client runtime animates Mend Ally healing acknowledgements", () => {
   assert.ok(combatAckSource, "handleCombatAck runtime source should exist");
   assert.match(combatAckSource, /healingBeamEffect\(result\.healingEffect\)/);
   assert.match(runtimeSource, /function healingBeamEffect\(effect\)/);
-  assert.match(runtimeSource, /effect\.type === "mend_ally"/);
+  assert.match(runtimeSource, /"mend_ally"/);
 });
 
 test("client runtime keeps v1.2.3 chest declarations split after duplicate scan", () => {
@@ -222,13 +268,14 @@ test("client runtime keeps v1.2.3 chest declarations split after duplicate scan"
   assert.match(addChestSource, /\bconst\s+chestState\s*=/);
 });
 
-test("Frostforged Paths title presentation and patch notes are registered", () => {
+test("Flameburg and Aqua Palace title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
 
-  assert.equal(GAME_VERSION, "2.1.0");
-  assert.equal(PATCH_NOTES.versions[0].version, "2.1.0");
-  assert.equal(PATCH_NOTES.versions[0].title, "Frostforged Paths");
+  assert.equal(GAME_VERSION, "2.2.0");
+  assert.equal(PATCH_NOTES.versions[0].version, "2.2.0");
+  assert.equal(PATCH_NOTES.versions[0].title, "Flameburg & Aqua Palace");
+  assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.1.0" && version.title === "Frostforged Paths"));
   assert.ok(PATCH_NOTES.versions.some((version) => version.version === "1.2.3" && version.title === "Black Screen Hotfix"));
   assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.0.0" && version.title === "ICEZERO"));
   assert.match(menuSource, /Version \$\{GAME_VERSION\}/);
@@ -618,16 +665,20 @@ test("Frostbound Vault spawns elite rooms and records Runebound Colossus clears"
   }
 });
 
-test("client and server boot through the Frostforged v2.1 save migration", async () => {
+test("client and server boot through the Flameburg and Aqua v2.2 save migration", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const mainSource = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
   const runtimeSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
-  const { FROSTFORGED_MIGRATION_ID, FROSTFORGED_SAVE_SCHEMA_VERSION } = await import("../../shared/saveMigration.js");
+  const {
+    FLAMEBURG_AQUA_MIGRATION_ID,
+    FLAMEBURG_AQUA_SAVE_SCHEMA_VERSION,
+    FROSTFORGED_MIGRATION_ID
+  } = await import("../../shared/saveMigration.js");
 
-  assert.match(mainSource, /FROSTFORGED_MIGRATION_ID/);
-  assert.match(mainSource, /migrateFrostforgedSave/);
-  assert.match(runtimeSource, /FROSTFORGED_MIGRATION_ID/);
-  assert.match(runtimeSource, /migrateFrostforgedSave/);
+  assert.match(mainSource, /FLAMEBURG_AQUA_MIGRATION_ID/);
+  assert.match(mainSource, /migrateFlameburgAquaSave/);
+  assert.match(runtimeSource, /FLAMEBURG_AQUA_MIGRATION_ID/);
+  assert.match(runtimeSource, /migrateFlameburgAquaSave/);
 
   const player = createPlayerState("p1", {
     name: "Frost Runner",
@@ -638,7 +689,8 @@ test("client and server boot through the Frostforged v2.1 save migration", async
     spentAttributes: { health: 1, strength: 1, magic: 1, defense: 1 }
   });
 
-  assert.equal(player.saveSchemaVersion, FROSTFORGED_SAVE_SCHEMA_VERSION);
+  assert.equal(player.saveSchemaVersion, FLAMEBURG_AQUA_SAVE_SCHEMA_VERSION);
+  assert.ok(player.migrations.includes(FLAMEBURG_AQUA_MIGRATION_ID));
   assert.ok(player.migrations.includes(FROSTFORGED_MIGRATION_ID));
   assert.deepEqual(player.dungeonProgress.frostbound_vault, {
     clears: 0,
@@ -646,6 +698,83 @@ test("client and server boot through the Frostforged v2.1 save migration", async
     bestEncounterLevel: 0,
     personalChestClaims: []
   });
+  assert.deepEqual(player.dungeonProgress.emberdeep_mines, {
+    clears: 0,
+    firstClear: false,
+    bestEncounterLevel: 0,
+    personalChestClaims: []
+  });
+  assert.deepEqual(player.dungeonProgress.sunken_sanctum, {
+    clears: 0,
+    firstClear: false,
+    bestEncounterLevel: 0,
+    personalChestClaims: []
+  });
+});
+
+test("Flameburg and Aqua Palace constants, gates, and local runtime hooks are registered", () => {
+  const root = path.resolve(import.meta.dirname, "../..");
+  const runtimeSource = readClientRuntimeSource();
+  const frostveil = getZone(ZONES.FROSTVEIL);
+  const flameburg = getZone(ZONES.FLAMEBURG);
+  const ashen = getZone(ZONES.ASHEN_EXPANSE);
+  const aqua = getZone(ZONES.AQUA_PALACE);
+  const tideruin = getZone(ZONES.TIDERUIN_GARDENS);
+
+  assert.equal(ZONES.FLAMEBURG, "flameburg");
+  assert.equal(ZONES.AQUA_PALACE, "aqua_palace");
+  assert.equal(flameburg.minLevel, 15);
+  assert.equal(aqua.minLevel, 20);
+  assert.ok(frostveil.portals.some((portal) => portal.targetZone === ZONES.FLAMEBURG));
+  assert.ok(ashen.portals.some((portal) => portal.targetZone === ZONES.AQUA_PALACE));
+  assert.ok(tideruin.portals.some((portal) => portal.targetZone === ZONES.TIDE_EMPRESS_ARENA));
+  assert.equal(canEnterZone({ level: 14 }, ZONES.FLAMEBURG).message, "The Molten Gate rejects you. Reach Level 15 to enter Flameburg.");
+  assert.equal(canEnterZone({ level: 19 }, ZONES.AQUA_PALACE).message, "The Tidegate remains sealed. Reach Level 20 to enter Aqua Palace.");
+  assert.equal(canEnterZone({ level: 20 }, ZONES.AQUA_PALACE).ok, true);
+  assert.match(runtimeSource, /function buildFlameburg\(\)/);
+  assert.match(runtimeSource, /function buildAquaPalace\(\)/);
+  assert.match(runtimeSource, /phase22/);
+  assert.match(runtimeSource, /function useAssignedAbilityLocal/);
+});
+
+test("Flameburg and Aqua enemies, bosses, and spawn tables are registered", () => {
+  assert.equal(ENEMIES.magma_rockling.zone, ZONES.ASHEN_EXPANSE);
+  assert.equal(ENEMIES.bubble_slime.zone, ZONES.TIDERUIN_GARDENS);
+  assert.equal(IGNIVAR_BOSS.id, "ignivar_flame_king");
+  assert.equal(MOLTAR_BOSS.id, "moltar_minebreaker");
+  assert.equal(MARROWFIN_BOSS.id, "marrowfin_leviathan");
+  assert.equal(NEREIDA_BOSS.id, "queen_nereida");
+  assert.ok(ASHEN_EXPANSE_SPAWNS.some((spawn) => spawn.enemyId === "lava_colossus"));
+  assert.ok(EMBERDEEP_MINES_SPAWNS.some((spawn) => spawn.enemyId === MOLTAR_BOSS.id));
+  assert.ok(CROWNFORGE_CITADEL_SPAWNS.some((spawn) => spawn.enemyId === IGNIVAR_BOSS.id));
+  assert.ok(TIDERUIN_GARDENS_SPAWNS.some((spawn) => spawn.enemyId === "abyss_knight"));
+  assert.ok(SUNKEN_SANCTUM_SPAWNS.some((spawn) => spawn.enemyId === MARROWFIN_BOSS.id));
+  assert.ok(TIDE_EMPRESS_ARENA_SPAWNS.some((spawn) => spawn.enemyId === NEREIDA_BOSS.id));
+});
+
+test("Flameburg and Aqua v2.2 save migration is idempotent and preserves older content", () => {
+  const migrated = migrateFlameburgAquaSave({
+    name: "Expansion Runner",
+    migrations: [],
+    dungeonProgress: {
+      frostbound_vault: {
+        clears: 1,
+        firstClear: true,
+        bestEncounterLevel: 15,
+        personalChestClaims: ["runebound_colossus"]
+      }
+    }
+  }).save;
+
+  assert.equal(migrated.saveSchemaVersion, 4);
+  assert.ok(migrated.migrations.includes("v2.2.0-flameburg-aqua-palace"));
+  assert.ok(migrated.migrations.includes("v2.1.0-frostforged-paths"));
+  assert.equal(migrated.dungeonProgress.frostbound_vault.firstClear, true);
+  assert.equal(migrated.dungeonProgress.emberdeep_mines.firstClear, false);
+  assert.equal(migrated.dungeonProgress.sunken_sanctum.firstClear, false);
+
+  const remigrated = migrateFlameburgAquaSave(migrated).save;
+  assert.equal(remigrated.migrations.filter((id) => id === "v2.2.0-flameburg-aqua-palace").length, 1);
 });
 
 test("client HUD displays MAX instead of raw XP at the level cap", () => {

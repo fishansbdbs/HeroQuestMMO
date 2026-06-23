@@ -100,6 +100,7 @@ export function applyProgressionStats(player) {
   const baseAttack = finiteNumber(player.baseAttack, finiteNumber(player.attack, 10));
   const baseDefense = Math.max(0, finiteNumber(player.baseDefense, finiteNumber(player.defense, 0)));
   const itemMagicPower = Math.max(0, finiteNumber(player.itemMagicPower, finiteNumber(player.magicPower, 0)));
+  const itemHealingPower = Math.max(0, finiteNumber(player.itemHealingPower, finiteNumber(player.healingPower, 0)));
   const oldMaxHealth = Math.max(1, finiteNumber(player.maxHealth, baseMaxHealth));
   const oldMaxMana = Math.max(1, finiteNumber(player.maxMana, BASE_MANA));
   const maxHealth = baseMaxHealth + bonuses.maxHealth;
@@ -129,7 +130,7 @@ export function applyProgressionStats(player) {
     physicalPower: bonuses.physicalPower,
     magicPower: itemMagicPower,
     spellPower: bonuses.spellPower + itemMagicPower,
-    healingPower: bonuses.healingPower + itemMagicPower,
+    healingPower: bonuses.healingPower + itemMagicPower + itemHealingPower,
     potionBonus: bonuses.potionBonus,
     guardBonus: bonuses.guardBonus,
     maxMana,

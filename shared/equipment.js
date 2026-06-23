@@ -59,6 +59,9 @@ export function computeEquipmentBonuses(equipment, upgradeRanks = {}) {
   let attack = 0;
   let defense = 0;
   let magicPower = 0;
+  let healingPower = 0;
+  let fireResistance = 0;
+  let waterResistance = 0;
   let health = 0;
   let speedMultiplier = 1;
 
@@ -68,11 +71,14 @@ export function computeEquipmentBonuses(equipment, upgradeRanks = {}) {
     attack += item.attack || 0;
     defense += item.defense || 0;
     magicPower += item.magicPower || 0;
+    healingPower += item.healingPower || 0;
+    fireResistance += item.fireResistance || 0;
+    waterResistance += item.waterResistance || 0;
     health += item.health || 0;
     speedMultiplier *= item.speed || 1;
   }
 
-  return { attack, defense, magicPower, health, speedMultiplier };
+  return { attack, defense, magicPower, healingPower, fireResistance, waterResistance, health, speedMultiplier };
 }
 
 function computeLevelFromXp(xp) {
@@ -110,6 +116,9 @@ export function applyEquipmentSlots(player) {
     baseAttack: attack,
     baseDefense: defense,
     itemMagicPower: bonuses.magicPower,
+    itemHealingPower: bonuses.healingPower,
+    fireResistance: bonuses.fireResistance,
+    waterResistance: bonuses.waterResistance,
     maxHealth,
     health: Math.min(player.health ?? maxHealth, maxHealth),
     attack,

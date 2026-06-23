@@ -1,4 +1,17 @@
-import { ELITE_MODIFIERS, FIELD_SPAWNS, FROSTBOUND_VAULT_SPAWNS, FROSTVEIL_SPAWNS, ENEMIES, getEnemy } from "../../shared/enemies.js";
+import {
+  ASHEN_EXPANSE_SPAWNS,
+  CROWNFORGE_CITADEL_SPAWNS,
+  ELITE_MODIFIERS,
+  EMBERDEEP_MINES_SPAWNS,
+  FIELD_SPAWNS,
+  FROSTBOUND_VAULT_SPAWNS,
+  FROSTVEIL_SPAWNS,
+  SUNKEN_SANCTUM_SPAWNS,
+  TIDERUIN_GARDENS_SPAWNS,
+  TIDE_EMPRESS_ARENA_SPAWNS,
+  ENEMIES,
+  getEnemy
+} from "../../shared/enemies.js";
 import { ZONES } from "../../shared/constants.js";
 import { distance2d, calculateIncomingDamage } from "../../shared/combat.js";
 import { LootSystem } from "./LootSystem.js";
@@ -17,6 +30,12 @@ export class EnemySystem {
     this.spawnConfigured(FIELD_SPAWNS, ZONES.FIELD);
     this.spawnConfigured(FROSTVEIL_SPAWNS, ZONES.FROSTVEIL);
     this.spawnConfigured(FROSTBOUND_VAULT_SPAWNS, ZONES.FROSTBOUND_VAULT);
+    this.spawnConfigured(ASHEN_EXPANSE_SPAWNS, ZONES.ASHEN_EXPANSE);
+    this.spawnConfigured(EMBERDEEP_MINES_SPAWNS, ZONES.EMBERDEEP_MINES);
+    this.spawnConfigured(CROWNFORGE_CITADEL_SPAWNS, ZONES.CROWNFORGE_CITADEL);
+    this.spawnConfigured(TIDERUIN_GARDENS_SPAWNS, ZONES.TIDERUIN_GARDENS);
+    this.spawnConfigured(SUNKEN_SANCTUM_SPAWNS, ZONES.SUNKEN_SANCTUM);
+    this.spawnConfigured(TIDE_EMPRESS_ARENA_SPAWNS, ZONES.TIDE_EMPRESS_ARENA);
   }
 
   spawnField() {

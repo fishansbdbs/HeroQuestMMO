@@ -25,7 +25,10 @@ export class CombatSystem {
     player.lastAttackAt = now;
     const kind = options.kind === "slash" ? "slash" : "auto";
     const damageScale = kind === "slash" ? ABILITIES.slash.damageScale : 1;
-    if (kind === "slash") applyIceguardGuard(player, now);
+    if (kind === "slash") {
+      applyIceguardGuard(player, now);
+      applyAshenCrownAura(player, ABILITIES.slash, now);
+    }
 
     if (targetId === "shadow_wyrm") {
       const dist = distance2d(player.position, { x: 0, z: 0 });
@@ -70,6 +73,7 @@ export class CombatSystem {
       if (!manaSpend.ok) return { ok: false, reason: "mana" };
       Object.assign(player, manaSpend.player);
       player.lastAbilityAt = now;
+      applyTideguardShield(player, ability, now);
       return {
         ok: true,
         abilityId: ability.id,
@@ -84,6 +88,7 @@ export class CombatSystem {
       if (!manaSpend.ok) return { ok: false, reason: "mana" };
       Object.assign(player, manaSpend.player);
       player.lastAbilityAt = now;
+      applyTideguardShield(player, ability, now);
       const healResult = applyFriendlyHeal(player, target.player, ability);
       return {
         ...healResult,
@@ -104,11 +109,13 @@ export class CombatSystem {
         damage,
         attackerId: player.id
       });
+      const statusEffect = applyEnemyStatusEffect(target.enemy, createBurnStatusEffect(ability, now));
       return applyZeroBornRefund(player, ability, {
         ok: true,
         abilityId: ability.id,
         damage,
         result,
+        statusEffect,
         projectile: createProjectilePayload(ability.id, player.position, target.enemy.position, target.enemy.id)
       });
     }
@@ -127,6 +134,7 @@ export class CombatSystem {
         attackerId: player.id
       });
       const statusEffect = applyEnemyStatusEffect(target.enemy, createSlowStatusEffect(ability, now));
+      applyTideguardShield(player, ability, now);
       return applyZeroBornRefund(player, ability, {
         ok: true,
         abilityId: ability.id,
@@ -158,12 +166,13 @@ export class CombatSystem {
         meleeEffect: createMeleeEffectPayload(ability.id, player.position, target.enemy.position, target.enemy.id)
       };
     }
-    if (ability.id === "ground_pound") {
+    if (["ground_pound", "magma_breaker", "flame_wave"].includes(ability.id)) {
       const manaSpend = spendMana(player, ability.manaCost || 0);
       if (!manaSpend.ok) return { ok: false, reason: "mana" };
       Object.assign(player, manaSpend.player);
       player.lastAbilityAt = now;
       applyIceguardGuard(player, now);
+      applyAshenCrownAura(player, ability, now);
       const damage = calculateAbilityDamage(player, ability, this.rng);
       const hits = [];
       const hitIds = new Set();
@@ -177,6 +186,7 @@ export class CombatSystem {
           damage,
           attackerId: player.id
         }));
+        if (ability.id === "flame_wave") applyEnemyStatusEffect(enemy, createBurnStatusEffect(ability, now));
       }
       return {
         ok: true,
@@ -248,7 +258,7 @@ export class CombatSystem {
         }
       });
     }
-    if (ability.id === "radiant_ward") {
+    if (ability.id === "radiant_ward" || ability.id === "hearth_ward") {
       const manaSpend = spendMana(player, ability.manaCost || 0);
       if (!manaSpend.ok) return { ok: false, reason: "mana" };
       Object.assign(player, manaSpend.player);
@@ -259,8 +269,10 @@ export class CombatSystem {
         if (distance2d(player.position, target.position) > ability.radius) continue;
         target.radiantWardUntil = now + ability.durationMs;
         target.radiantWardReduction = ability.damageReduction;
+        if (ability.fireResistance) target.fireResistance = Math.max(Number(target.fireResistance) || 0, ability.fireResistance);
         affected.push(target.id);
       }
+      applyTideguardShield(player, ability, now);
       return {
         ok: true,
         abilityId: ability.id,
@@ -273,7 +285,7 @@ export class CombatSystem {
           from: { x: player.position?.x || 0, y: (player.position?.y || 0) + 1.2, z: player.position?.z || 0 },
           to: { x: player.position?.x || 0, y: (player.position?.y || 0) + 1.2, z: player.position?.z || 0 },
           beamMs: ability.durationMs,
-          pulseEffect: "radiant_ward",
+          pulseEffect: ability.id,
           amount: 0
         }
       };
@@ -398,6 +410,15 @@ function createSlowStatusEffect(ability, now) {
   };
 }
 
+function createBurnStatusEffect(ability, now) {
+  return {
+    type: "burn",
+    damagePerTick: Math.max(1, Math.round((ability.damageScale || 1) * 3)),
+    expiresAt: now + 4000,
+    sourceAbility: ability.id
+  };
+}
+
 function applyEnemyStatusEffect(enemy, effect) {
   if (!enemy || !effect?.type) return null;
   enemy.statusEffects = {
@@ -508,6 +529,21 @@ function applyIceguardGuard(player, now = Date.now()) {
   if (!effects.physicalGuardMs) return;
   player.setGuardUntil = now + effects.physicalGuardMs;
   player.setGuardReduction = effects.physicalGuardReduction || 0.25;
+}
+
+function applyAshenCrownAura(player, ability, now = Date.now()) {
+  const effects = player?.setBonusEffects || {};
+  if (!effects.flameAuraMs || !["slash", "ground_pound", "whirlwind_cleave", "magma_breaker"].includes(ability.id)) return;
+  if (now < (player.flameAuraCooldownUntil || 0)) return;
+  player.flameAuraUntil = now + effects.flameAuraMs;
+  player.flameAuraCooldownUntil = now + (effects.flameAuraCooldownMs || 9000);
+}
+
+function applyTideguardShield(player, ability, now = Date.now()) {
+  const effects = player?.setBonusEffects || {};
+  if (!effects.tideShieldMs || !["water_blast", "healing_orb", "mend_ally", "hearth_ward"].includes(ability.id)) return;
+  player.radiantWardUntil = now + effects.tideShieldMs;
+  player.radiantWardReduction = effects.tideShieldReduction || 0.16;
 }
 
 function applyZeroBornRefund(player, ability, result) {

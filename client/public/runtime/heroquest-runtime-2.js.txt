@@ -48,6 +48,7 @@ function buildFrostveil() {
   addPortal(0, 32, "Greenvale Outskirts", ZONES.FIELD, 0x75ff99);
   addPortal(34, -34, "Palace of Zero", ZONES.PALACE, 0x9ae8ff, 8, "The palace gate is sealed. Reach Level 8 to enter.");
   addPortal(-36, 34, "Frostbound Vault", ZONES.FROSTBOUND_VAULT, 0xb8fbff, 15, "Frostbound Vault requires Level 15.");
+  addPortal(-42, -36, "Molten Gate", ZONES.FLAMEBURG, 0xff7a2f, 15, "The Molten Gate rejects you. Reach Level 15 to enter Flameburg.");
   addWorldLabel("Frostveil Camp", 2, 3.1, 22);
 }
 
@@ -142,6 +143,141 @@ function buildBossArena() {
   addPortal(0, 26, "Dawnrest", ZONES.HUB, 0x84bdff);
   game.bossGroup = createBossMesh();
   game.world.add(game.bossGroup);
+}
+
+function buildFlameburg() {
+  game.scene.background = new THREE.Color(0x241611);
+  game.scene.fog = new THREE.Fog(0x442116, 36, 108);
+  addGround(104, 0x5c2d22, 0x3a211b);
+  addPath([{ x: -32, z: 28 }, { x: 0, z: 12 }, { x: 0, z: -34 }], 5, 0x9a5a34);
+  addPath([{ x: -18, z: 4 }, { x: 18, z: 4 }, { x: 28, z: -18 }], 4, 0x7d4a31);
+  for (let i = 0; i < 18; i += 1) addRock(randomRange(-48, 48), randomRange(-44, 44), 0.8 + Math.random() * 1.2, 0x4b2d27);
+  for (let i = 0; i < 10; i += 1) addLavaCrack(randomRange(-42, 42), randomRange(-40, 38));
+  addHouse(-18, 10, 8, 7, 0x6e3d2a);
+  addHouse(16, 10, 9, 7, 0x74402d);
+  addForge(-4, -6);
+  addCampfire(10, 18);
+  addNpc(-12, 18, "Flameburg Guard", "flameburg_guard", 0xff8a3d);
+  addNpc(8, -8, "Cinder Smith", "flameburg_smith", 0xf0c06d);
+  addChest(-16, -12, "flameburg_forge_cache");
+  addPortal(-32, 28, "Frostveil Reach", ZONES.FROSTVEIL, 0x9ae8ff);
+  addPortal(0, -34, "Ashen Expanse", ZONES.ASHEN_EXPANSE, 0xff7a2f, 15);
+  addPortal(28, -18, "Emberdeep Mines", ZONES.EMBERDEEP_MINES, 0xff4c24, 17, "Emberdeep Mines requires Level 17.");
+  addWorldLabel("Flameburg", 0, 5.2, 4);
+}
+
+function buildAshenExpanse() {
+  game.scene.background = new THREE.Color(0x21100c);
+  game.scene.fog = new THREE.Fog(0x55251a, 42, 124);
+  addGround(120, 0x4c271f, 0x2b1b18);
+  addPath([{ x: 0, z: 38 }, { x: 5, z: 6 }, { x: 36, z: -36 }], 4.5, 0x825133);
+  addPath([{ x: -38, z: -36 }, { x: -12, z: -8 }, { x: 0, z: 8 }], 3.5, 0x6f412d);
+  for (let i = 0; i < 32; i += 1) addRock(randomRange(-56, 56), randomRange(-54, 54), 0.7 + Math.random() * 1.3, i % 3 ? 0x3b2925 : 0x5c3027);
+  for (let i = 0; i < 18; i += 1) addLavaCrack(randomRange(-54, 54), randomRange(-52, 52));
+  addCrystal(16, -22, 0xff8a3d);
+  addCrystal(-28, 18, 0xffc65a);
+  addEruptionCore(-10, -8);
+  addChest(-24, -20, "ashen_ember_cache");
+  addPortal(0, 38, "Flameburg", ZONES.FLAMEBURG, 0xffb25a);
+  addPortal(36, -36, "Crownforge Citadel", ZONES.CROWNFORGE_CITADEL, 0xff3d20, 18, "Crownforge Citadel requires Level 18.");
+  addPortal(-38, -36, "Tidegate", ZONES.AQUA_PALACE, 0x69d8ff, 20, "The Tidegate remains sealed. Reach Level 20 to enter Aqua Palace.");
+  addWorldLabel("Ashen Expanse", 0, 4.1, 8);
+}
+
+function buildEmberdeepMines() {
+  game.scene.background = new THREE.Color(0x0f0b0a);
+  game.scene.fog = new THREE.Fog(0x2b1610, 18, 76);
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(64, 0.7, 64), mat(0x2d211f, 0.98));
+  floor.position.y = -0.35;
+  floor.receiveShadow = true;
+  game.world.add(floor);
+  addPath([{ x: 0, z: 24 }, { x: -8, z: 4 }, { x: 0, z: -18 }], 4.4, 0x5f3929);
+  addPath([{ x: -16, z: 8 }, { x: 16, z: -8 }], 3.2, 0x4f3027);
+  for (let i = 0; i < 18; i += 1) addRock(randomRange(-28, 28), randomRange(-28, 20), 1 + Math.random() * 1.4, 0x342828);
+  for (let i = 0; i < 10; i += 1) addCrystal(randomRange(-25, 25), randomRange(-24, 14), 0xff6a24);
+  addPortal(0, 24, "Flameburg", ZONES.FLAMEBURG, 0xffb25a);
+  addWorldLabel("Emberdeep Mines", 0, 4.4, -18);
+}
+
+function buildCrownforgeCitadel() {
+  game.scene.background = new THREE.Color(0x160a09);
+  game.scene.fog = new THREE.Fog(0x3d1511, 20, 78);
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(30, 30, 1, 64), mat(0x3a1d18, 0.97));
+  floor.position.y = -0.5;
+  floor.receiveShadow = true;
+  game.world.add(floor);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(23, 0.24, 8, 96), mat(0xff5a2f, 0.78, true));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.08;
+  game.world.add(ring);
+  for (let i = 0; i < 12; i += 1) addLavaCrack(randomRange(-20, 20), randomRange(-18, 18));
+  addForge(0, -16);
+  addPortal(0, 26, "Ashen Expanse", ZONES.ASHEN_EXPANSE, 0xffb25a);
+  addWorldLabel("Crownforge Citadel", 0, 5.2, -18);
+}
+
+function buildAquaPalace() {
+  game.scene.background = new THREE.Color(0x082134);
+  game.scene.fog = new THREE.Fog(0x65cfff, 34, 110);
+  addGround(104, 0x1c6575, 0x174a65);
+  addPath([{ x: -32, z: 28 }, { x: 0, z: 12 }, { x: 0, z: -34 }], 5, 0x77c6cd);
+  addPath([{ x: -12, z: 0 }, { x: 18, z: 4 }, { x: 28, z: -18 }], 4, 0x5daebf);
+  for (let i = 0; i < 24; i += 1) addCoral(randomRange(-48, 48), randomRange(-44, 44));
+  addWaterChannel(-20, -10, 18, 3);
+  addCrystal(-18, 18, 0xb8fbff);
+  addCrystal(16, -20, 0x67dfff);
+  addNpc(-12, 18, "Pearl Oracle", "aqua_oracle", 0x8ceaff);
+  addChest(-16, -14, "aqua_pearl_cache");
+  addPortal(-32, 28, "Ashen Expanse", ZONES.ASHEN_EXPANSE, 0xff8a3d);
+  addPortal(0, -34, "Tideruin Gardens", ZONES.TIDERUIN_GARDENS, 0x67dfff, 20);
+  addPortal(28, -18, "Sunken Sanctum", ZONES.SUNKEN_SANCTUM, 0x35c7ff, 24, "Sunken Sanctum requires Level 24.");
+  addWorldLabel("Aqua Palace", 0, 5.2, 4);
+}
+
+function buildTideruinGardens() {
+  game.scene.background = new THREE.Color(0x09283a);
+  game.scene.fog = new THREE.Fog(0x6bdfff, 42, 124);
+  addGround(120, 0x226f7a, 0x184f68);
+  addPath([{ x: 0, z: 38 }, { x: 8, z: 8 }, { x: 36, z: -36 }], 4.5, 0x82ccd4);
+  addPath([{ x: -30, z: 20 }, { x: -6, z: -6 }, { x: 12, z: -22 }], 3.5, 0x62adbc);
+  for (let i = 0; i < 38; i += 1) addCoral(randomRange(-56, 56), randomRange(-54, 54));
+  addWaterChannel(-22, -4, 42, 4);
+  addCrystal(26, 22, 0xf4fbff);
+  addChest(-22, -18, "tideruin_coral_cache");
+  addPortal(0, 38, "Aqua Palace", ZONES.AQUA_PALACE, 0x9ae8ff);
+  addPortal(36, -36, "Tide Empress Arena", ZONES.TIDE_EMPRESS_ARENA, 0x8ceaff, 25, "Queen Nereida requires Level 25.");
+  addWorldLabel("Tideruin Gardens", 0, 4.2, 8);
+}
+
+function buildSunkenSanctum() {
+  game.scene.background = new THREE.Color(0x061424);
+  game.scene.fog = new THREE.Fog(0x2d9ed1, 18, 72);
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(64, 0.7, 64), mat(0x163c55, 0.98));
+  floor.position.y = -0.35;
+  floor.receiveShadow = true;
+  game.world.add(floor);
+  addPath([{ x: 0, z: 24 }, { x: 0, z: 6 }, { x: -10, z: -16 }], 4.4, 0x4fa9bf);
+  for (let i = 0; i < 20; i += 1) addCoral(randomRange(-28, 28), randomRange(-28, 18));
+  for (let i = 0; i < 9; i += 1) addCrystal(randomRange(-24, 24), randomRange(-24, 12), 0x9be8ff);
+  addPortal(0, 24, "Aqua Palace", ZONES.AQUA_PALACE, 0x9ae8ff);
+  addWorldLabel("Sunken Sanctum", 0, 4.4, -18);
+}
+
+function buildTideEmpressArena() {
+  game.scene.background = new THREE.Color(0x041724);
+  game.scene.fog = new THREE.Fog(0x69d8ff, 20, 78);
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(30, 30, 1, 64), mat(0x174f68, 0.97));
+  floor.position.y = -0.5;
+  floor.receiveShadow = true;
+  game.world.add(floor);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(23, 0.24, 8, 96), mat(0x8ceaff, 0.78, true));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.08;
+  game.world.add(ring);
+  for (let i = 0; i < 24; i += 1) addCoral(randomRange(-24, 24), randomRange(-24, 24));
+  addWaterChannel(-18, 0, 36, 4);
+  addPortal(0, 26, "Tideruin Gardens", ZONES.TIDERUIN_GARDENS, 0x9ae8ff);
+  addWorldLabel("Tide Empress Arena", 0, 5.2, -18);
 }
 
 function addGround(size, color, altColor) {
@@ -337,6 +473,61 @@ function addCrack() {
   crack.position.set(x, 0.06, z);
   crack.rotation.y = Math.random() * Math.PI;
   game.world.add(crack);
+}
+
+function addLavaCrack(x, z) {
+  const crack = new THREE.Mesh(new THREE.BoxGeometry(randomRange(3, 7), 0.05, 0.2), mat(0xff6a24, 0.86, true));
+  crack.position.set(x, 0.065, z);
+  crack.rotation.y = Math.random() * Math.PI;
+  const light = new THREE.PointLight(0xff6a24, 1.1, 7);
+  light.position.set(x, 0.5, z);
+  game.world.add(crack, light);
+}
+
+function addForge(x, z) {
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.8, 1, 8), mat(0x3a2520));
+  base.position.set(x, 0.5, z);
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.4, 8), mat(0xff7a2f, 0.78, true));
+  flame.position.set(x, 2.0, z);
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.5, 3.4), mat(0x5a3428));
+  hood.position.set(x, 3.2, z);
+  const light = new THREE.PointLight(0xff7a2f, 2.8, 14);
+  light.position.set(x, 2.4, z);
+  game.world.add(base, flame, hood, light);
+  game.blockers.push({ x, z, halfX: 2.6, halfZ: 2.2 });
+}
+
+function addEruptionCore(x, z) {
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(1.7, 0), mat(0xff3d20, 0.84, true));
+  core.position.set(x, 1.8, z);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.12, 8, 48), mat(0xffb25a, 0.64, true));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(x, 0.1, z);
+  const light = new THREE.PointLight(0xff5a2f, 3.2, 14);
+  light.position.set(x, 2.5, z);
+  game.world.add(core, ring, light);
+  game.npcs.push({ x, z, label: "Eruption Core", dialogueId: "eruption_core", radius: 3.4 });
+  addWorldLabel("Eruption Core", x, 3.8, z);
+}
+
+function addCoral(x, z) {
+  const color = Math.random() > 0.5 ? 0xff7f98 : 0x67dfff;
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.24, 1.2, 6), mat(color, 0.78, true));
+  stem.position.set(x, 0.6, z);
+  const branchA = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 0.9, 5), mat(color, 0.78, true));
+  branchA.position.set(x - 0.32, 1.1, z);
+  branchA.rotation.z = 0.65;
+  const branchB = branchA.clone();
+  branchB.position.set(x + 0.32, 1.05, z);
+  branchB.rotation.z = -0.65;
+  game.world.add(stem, branchA, branchB);
+}
+
+function addWaterChannel(x, z, length, width) {
+  const stream = new THREE.Mesh(new THREE.BoxGeometry(length, 0.04, width), mat(0x6bdfff, 0.54, true));
+  stream.position.set(x, 0.055, z);
+  stream.rotation.y = Math.PI * 0.08;
+  game.world.add(stream);
 }
 
 function createPlayerMesh(name, color, local, loadout = {}) {
@@ -588,6 +779,88 @@ function createEnemyMesh(enemy) {
     const light = new THREE.PointLight(def.color, 2, 7);
     light.position.y = 1.5;
     group.add(orb, light);
+  } else if (def.family === "rockling") {
+    const core = new THREE.Mesh(new THREE.DodecahedronGeometry(0.9, 0), mat(0x4b2d27));
+    core.scale.y = 0.72;
+    core.position.y = 0.75;
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), mat(def.color, 0.88, true));
+    glow.position.set(0, 0.92, -0.62);
+    group.add(core, glow);
+  } else if (def.family === "fire_golem" || def.family === "golem") {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.55, 1.7, 1.15), mat(def.color || 0x77736b));
+    body.position.y = 1.45;
+    const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.62, 0), mat(def.family === "fire_golem" ? 0x2d1c17 : 0x5f908b));
+    head.position.y = 2.65;
+    const armA = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.8, 0.62), mat(0x3a2823));
+    const armB = armA.clone();
+    armA.position.set(-1.12, 1.35, 0);
+    armB.position.set(1.12, 1.35, 0);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), mat(def.family === "fire_golem" ? 0xff6a24 : 0x67dfff, 0.9, true));
+    glow.position.set(0, 1.55, -0.62);
+    group.add(body, head, armA, armB, glow);
+  } else if (def.family === "hound") {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.62, 0.62), mat(def.color));
+    body.position.y = 0.74;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.8, 6), mat(0x251814));
+    head.position.set(0, 0.95, -0.82);
+    head.rotation.x = -Math.PI / 2;
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.8, 6), mat(0xff6a24, 0.72, true));
+    tail.position.set(0, 0.95, 0.9);
+    tail.rotation.x = Math.PI / 2;
+    group.add(body, head, tail);
+  } else if (def.family === "bat") {
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 8), mat(def.color, 0.8, true));
+    body.position.y = 1.55;
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.52), mat(0x3a1f1b));
+    wing.position.y = 1.52;
+    const light = new THREE.PointLight(def.color, 1.3, 6);
+    light.position.y = 1.7;
+    group.add(body, wing, light);
+  } else if (def.family === "fire_wisp") {
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.4, 9), mat(def.color, 0.76, true));
+    flame.position.y = 1.45;
+    const light = new THREE.PointLight(def.color, 2.4, 8);
+    light.position.y = 1.5;
+    group.add(flame, light);
+  } else if (def.family === "raider" || def.family === "imp") {
+    populateGoblinMesh(group, def);
+    const spear = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.8, 0.08), mat(def.family === "imp" ? 0x8ceaff : 0xffb25a, 0.72, true));
+    spear.position.set(0.82, 1.25, -0.2);
+    spear.rotation.z = -0.35;
+    group.add(spear);
+  } else if (def.family === "flame_king") {
+    populateKnightMesh(group, def);
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(0.85, 0.7, 6), mat(0xffc65a, 0.86, true));
+    crown.position.y = 3.38;
+    const aura = new THREE.PointLight(0xff3d20, 2.5, 9);
+    aura.position.y = 2.4;
+    group.add(crown, aura);
+  } else if (def.family === "crab") {
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(0.85, 16, 10), mat(def.color));
+    shell.scale.set(1.25, 0.55, 0.9);
+    shell.position.y = 0.58;
+    const clawA = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), mat(0xffb3c1));
+    const clawB = clawA.clone();
+    clawA.position.set(-0.95, 0.7, -0.38);
+    clawB.position.set(0.95, 0.7, -0.38);
+    group.add(shell, clawA, clawB);
+  } else if (def.family === "leviathan") {
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.9, 3.8, 6, 12), mat(def.color, 0.84, true));
+    body.position.y = 1.55;
+    body.rotation.z = Math.PI / 2;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.85, 1.4, 8), mat(0x174f68));
+    head.position.set(0, 1.72, -2.15);
+    head.rotation.x = -Math.PI / 2;
+    const light = new THREE.PointLight(def.color, 2, 9);
+    light.position.y = 1.7;
+    group.add(body, head, light);
+  } else if (def.family === "tide_empress") {
+    populateKnightMesh(group, def);
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.78, 7), mat(0xf4fbff, 0.88, true));
+    crown.position.y = 3.42;
+    const aura = new THREE.PointLight(0x8ceaff, 2.8, 10);
+    aura.position.y = 2.5;
+    group.add(crown, aura);
   } else if (def.family === "dummy") {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 2.6, 8), mat(0xc19458));
     body.position.y = 1.3;
@@ -841,7 +1114,7 @@ function updateMovement(dt) {
 }
 
 function updateLocalEnemies(dt) {
-  if (game.online || isLocallyDead() || ![ZONES.FIELD, ZONES.FROSTVEIL].includes(game.zone)) return;
+  if (game.online || isLocallyDead() || !zoneHasLocalSpawns(game.zone)) return;
   for (const enemy of game.enemies.values()) {
     const def = getEnemy(enemy.enemyId);
     if (enemy.health <= 0) continue;

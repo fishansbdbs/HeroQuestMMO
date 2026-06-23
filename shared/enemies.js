@@ -1,4 +1,17 @@
 import { ZONES } from "./constants.js";
+import {
+  ASHEN_EXPANSE_SPAWNS,
+  CROWNFORGE_CITADEL_SPAWNS,
+  EMBERDEEP_MINES_SPAWNS,
+  IGNIVAR_BOSS,
+  MARROWFIN_BOSS,
+  MOLTAR_BOSS,
+  NEREIDA_BOSS,
+  SUNKEN_SANCTUM_SPAWNS,
+  TIDERUIN_GARDENS_SPAWNS,
+  TIDE_EMPRESS_ARENA_SPAWNS,
+  V22_ENEMIES
+} from "./expansionV22.js";
 
 export const ENEMIES = {
   green_slime: {
@@ -366,7 +379,8 @@ export const ENEMIES = {
     attackCooldownMs: 999999,
     color: 0xc19458,
     loot: []
-  }
+  },
+  ...V22_ENEMIES
 };
 
 export const BOSS = {
@@ -409,6 +423,8 @@ export const ICE_MAGE_BOSS = {
   ]
 };
 
+export { IGNIVAR_BOSS, MARROWFIN_BOSS, MOLTAR_BOSS, NEREIDA_BOSS };
+
 export const FIELD_SPAWNS = [
   { enemyId: "green_slime", count: 6, center: [-16, 0, -8], radius: 10 },
   { enemyId: "blue_slime", count: 4, center: [-24, 0, 14], radius: 8 },
@@ -434,6 +450,15 @@ export const FROSTBOUND_VAULT_SPAWNS = [
   { enemyId: "rune_wraith", count: 2, center: [0, 0, -22], radius: 4, eliteChance: 0.25 },
   { enemyId: "runebound_colossus", count: 1, center: [0, 0, -26], radius: 1, eliteChance: 1 }
 ];
+
+export {
+  ASHEN_EXPANSE_SPAWNS,
+  CROWNFORGE_CITADEL_SPAWNS,
+  EMBERDEEP_MINES_SPAWNS,
+  SUNKEN_SANCTUM_SPAWNS,
+  TIDERUIN_GARDENS_SPAWNS,
+  TIDE_EMPRESS_ARENA_SPAWNS
+};
 
 export const ELITE_MODIFIERS = {
   armored: { id: "armored", label: "Armored", healthMultiplier: 1.45, damageMultiplier: 1.08, speedMultiplier: 0.92, rewardMultiplier: 1.25 },

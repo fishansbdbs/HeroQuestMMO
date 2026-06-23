@@ -45,6 +45,9 @@ export function applyEquipment(basePlayer) {
   const itemDefense = equippedItems.reduce((total, item) => total + (item.defense || 0), 0);
   const itemHealth = equippedItems.reduce((total, item) => total + (item.health || 0), 0);
   const itemMagicPower = equippedItems.reduce((total, item) => total + (item.magicPower || 0), 0);
+  const itemHealingPower = equippedItems.reduce((total, item) => total + (item.healingPower || 0), 0);
+  const itemFireResistance = equippedItems.reduce((total, item) => total + (item.fireResistance || 0), 0);
+  const itemWaterResistance = equippedItems.reduce((total, item) => total + (item.waterResistance || 0), 0);
   const itemSpeedMultiplier = equippedItems.reduce((total, item) => total * (item.speed || 1), 1);
   const maxHealth = STARTING_PLAYER.maxHealth + (level - 1) * 14 + itemHealth;
   const attack = STARTING_PLAYER.attack + (level - 1) * 2 + itemAttack;
@@ -61,6 +64,9 @@ export function applyEquipment(basePlayer) {
     baseAttack: attack,
     baseDefense: defense,
     itemMagicPower,
+    itemHealingPower,
+    fireResistance: itemFireResistance,
+    waterResistance: itemWaterResistance,
     maxHealth,
     health: Math.min(player.health ?? maxHealth, maxHealth),
     attack,

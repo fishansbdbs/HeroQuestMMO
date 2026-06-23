@@ -114,6 +114,7 @@ export class RoomManager {
         activeSetBonuses: payload.activeSetBonuses ?? player.activeSetBonuses,
         bounties: payload.bounties ?? player.bounties,
         dungeonProgress: payload.dungeonProgress ?? player.dungeonProgress,
+        spellbookHotbarVersion: payload.spellbookHotbarVersion ?? player.spellbookHotbarVersion,
         title: payload.title ?? player.title
       });
     });
@@ -319,6 +320,7 @@ export class RoomManager {
         if (bestiary.ok) Object.assign(player, bestiary.player);
         this.updateBounties(player, { type: "kill", enemyId: enemyDef.id, family: enemyDef.family, elite: defeat.enemy?.eliteModifier || enemyDef.elite });
         if (enemyDef.id === "runebound_colossus") this.awardFrostboundVaultClear(player);
+        if (V22_CLEAR_REWARDS[enemyDef.id]) this.awardV22Clear(enemyDef.id, player);
       }
       this.refreshMetaProgress(player);
     }
@@ -843,6 +845,14 @@ export class RoomManager {
 
   activatePublicEvent(player, eventId, now = Date.now(), wardId = null) {
     if (!player || isPlayerDead(player)) return { ok: false, reason: "dead" };
+    if (eventId === "seal_the_eruption") {
+      if (player.zone !== ZONES.ASHEN_EXPANSE) return { ok: false, reason: "zone" };
+      this.enemies.spawnEnemy("magma_rockling", { x: -4, y: 0, z: -34 }, ZONES.ASHEN_EXPANSE, { eventId });
+      this.enemies.spawnEnemy("mini_fire_golem", { x: 4, y: 0, z: -34 }, ZONES.ASHEN_EXPANSE, { eventId, eliteModifier: "armored" });
+      this.enemies.spawnEnemy("lava_colossus", { x: 0, y: 0, z: -42 }, ZONES.ASHEN_EXPANSE, { eventId, eliteModifier: "armored" });
+      this.awardPublicEventCompletion({ eventId, eventInstanceId: `${eventId}:${now}`, zone: ZONES.ASHEN_EXPANSE, participants: [player.id] });
+      return { ok: true, event: { type: "public_event_started", eventId, zone: ZONES.ASHEN_EXPANSE, name: "Seal the Eruption" } };
+    }
     if (eventId !== "defend_frost_ward") return { ok: false, reason: "event" };
     const result = this.publicEvents.activate(player, this.players, now, wardId);
     if (!result.ok) return result;
@@ -851,7 +861,7 @@ export class RoomManager {
   }
 
   awardPublicEventCompletion(event) {
-    if (event?.eventId !== "defend_frost_ward") return;
+    if (!["defend_frost_ward", "seal_the_eruption"].includes(event?.eventId)) return;
     const participantIds = new Set(Array.isArray(event.participants) ? event.participants : []);
     if (participantIds.size === 0 && this.publicEvents?.state?.participants) {
       for (const id of this.publicEvents.state.participants) participantIds.add(id);
@@ -866,7 +876,7 @@ export class RoomManager {
       if (player.publicEventClaims.includes(claimKey)) continue;
 
       player.publicEventClaims.push(claimKey);
-      const questUpdate = applyQuestEvent(player.questProgress, "activate_frost_ward");
+      const questUpdate = applyQuestEvent(player.questProgress, event.eventId === "seal_the_eruption" ? "seal_the_eruption" : "activate_frost_ward");
       player.questProgress = questUpdate.progress;
       this.grantQuestCompletionRewards(player, questUpdate.completed);
       this.refreshMetaProgress(player);
@@ -874,6 +884,48 @@ export class RoomManager {
       creditedPlayerIds.push(id);
     }
     event.creditedPlayerIds = creditedPlayerIds;
+  }
+
+  awardV22Clear(enemyId, triggeringPlayer) {
+    const config = V22_CLEAR_REWARDS[enemyId];
+    if (!config) return;
+    const eligibleIds = new Set([triggeringPlayer?.id].filter(Boolean));
+    const party = this.parties.getPartyForPlayer(triggeringPlayer?.id);
+    if (party) {
+      for (const memberId of party.members) {
+        const member = this.players.get(memberId);
+        if (member?.zone === config.zone) eligibleIds.add(memberId);
+      }
+    }
+
+    for (const id of eligibleIds) {
+      const player = this.players.get(id);
+      if (!player || isPlayerDead(player)) continue;
+      Object.assign(player, addProgressRewards(player, config.reward));
+      const questUpdate = applyQuestKill(player.questProgress, { id: enemyId, family: config.family || "boss" });
+      player.questProgress = questUpdate.progress;
+      this.grantQuestCompletionRewards(player, questUpdate.completed);
+      player.firstClearRewards = player.firstClearRewards || {};
+      const firstClear = !player.firstClearRewards[enemyId];
+      player.firstClearRewards[enemyId] = true;
+      player.dungeonProgress = player.dungeonProgress || {};
+      const dungeon = player.dungeonProgress[config.dungeonId] || {};
+      player.dungeonProgress[config.dungeonId] = {
+        ...dungeon,
+        bestEncounterLevel: Math.max(dungeon.bestEncounterLevel || 0, player.level || config.level || 1),
+        clears: Math.max(0, Number(dungeon.clears) || 0) + 1,
+        firstClear: true,
+        personalChestClaims: Array.from(new Set([...(dungeon.personalChestClaims || []), `${enemyId}:${Date.now()}`]))
+      };
+      if (firstClear && config.firstClearItem) {
+        const item = addInventoryStack(player.inventory || [], config.firstClearItem, 1);
+        if (item.ok) player.inventory = item.inventory;
+      }
+      if (config.title) player.title = config.title;
+      this.refreshMetaProgress(player);
+      this.updateBounties(player, { type: "boss", bossId: enemyId });
+      this.updateBounties(player, { type: "dungeon_clear", dungeonId: config.dungeonId });
+    }
   }
 
   grantQuestCompletionRewards(player, completedQuests = []) {
@@ -976,7 +1028,14 @@ function uniqueStringList(value) {
 }
 
 function clampPosition(position, zone) {
-  const bounds = zone === ZONES.FIELD ? 54 : zone === ZONES.FROSTVEIL ? 58 : zone === ZONES.FROSTBOUND_VAULT ? 34 : zone === ZONES.PALACE ? 32 : zone === ZONES.BOSS ? 30 : 42;
+  const bounds =
+    zone === ZONES.FIELD ? 54 :
+    zone === ZONES.FROSTVEIL ? 58 :
+    zone === ZONES.ASHEN_EXPANSE || zone === ZONES.TIDERUIN_GARDENS ? 60 :
+    zone === ZONES.FLAMEBURG || zone === ZONES.AQUA_PALACE ? 52 :
+    zone === ZONES.FROSTBOUND_VAULT || zone === ZONES.EMBERDEEP_MINES || zone === ZONES.SUNKEN_SANCTUM || zone === ZONES.CROWNFORGE_CITADEL || zone === ZONES.TIDE_EMPRESS_ARENA ? 36 :
+    zone === ZONES.PALACE ? 32 :
+    zone === ZONES.BOSS ? 30 : 42;
   return {
     x: Math.max(-bounds, Math.min(bounds, Number(position.x) || 0)),
     y: 0,
@@ -989,6 +1048,10 @@ function defaultZonePosition(zone) {
   if (zone === ZONES.FIELD) return { x: 0, y: 0, z: 31, rot: Math.PI };
   if (zone === ZONES.FROSTVEIL) return { x: 0, y: 0, z: 24, rot: Math.PI };
   if (zone === ZONES.FROSTBOUND_VAULT) return { x: 0, y: 0, z: 18, rot: Math.PI };
+  if (zone === ZONES.FLAMEBURG || zone === ZONES.AQUA_PALACE) return { x: 0, y: 0, z: 26, rot: Math.PI };
+  if (zone === ZONES.ASHEN_EXPANSE || zone === ZONES.TIDERUIN_GARDENS) return { x: 0, y: 0, z: 32, rot: Math.PI };
+  if (zone === ZONES.EMBERDEEP_MINES || zone === ZONES.SUNKEN_SANCTUM) return { x: 0, y: 0, z: 20, rot: Math.PI };
+  if (zone === ZONES.CROWNFORGE_CITADEL || zone === ZONES.TIDE_EMPRESS_ARENA) return { x: 0, y: 0, z: 22, rot: Math.PI };
   if (zone === ZONES.PALACE) return { x: 0, y: 0, z: 18, rot: Math.PI };
   if (zone === ZONES.BOSS) return { x: 0, y: 0, z: 22, rot: Math.PI };
   return { x: 0, y: 0, z: 6, rot: 0 };
@@ -1039,6 +1102,83 @@ function createChests() {
         items: [{ itemId: "ice_shard", quantity: 2 }],
         openedBy: new Set()
       }
+    ],
+    [
+      "flameburg_forge_cache",
+      {
+        id: "flameburg_forge_cache",
+        zone: ZONES.FLAMEBURG,
+        position: { x: -18, y: 0.25, z: 12 },
+        coins: 90,
+        items: [{ itemId: "emberstone", quantity: 3 }],
+        openedBy: new Set()
+      }
+    ],
+    [
+      "ashen_ember_cache",
+      {
+        id: "ashen_ember_cache",
+        zone: ZONES.ASHEN_EXPANSE,
+        position: { x: 18, y: 0.25, z: -18 },
+        coins: 140,
+        items: [{ itemId: "magma_core", quantity: 1 }],
+        openedBy: new Set()
+      }
+    ],
+    [
+      "aqua_pearl_cache",
+      {
+        id: "aqua_pearl_cache",
+        zone: ZONES.AQUA_PALACE,
+        position: { x: -18, y: 0.25, z: 12 },
+        coins: 130,
+        items: [{ itemId: "pearl_shard", quantity: 3 }],
+        openedBy: new Set()
+      }
+    ],
+    [
+      "tideruin_coral_cache",
+      {
+        id: "tideruin_coral_cache",
+        zone: ZONES.TIDERUIN_GARDENS,
+        position: { x: 18, y: 0.25, z: -18 },
+        coins: 180,
+        items: [{ itemId: "tide_essence", quantity: 1 }],
+        openedBy: new Set()
+      }
     ]
   ]);
 }
+
+const V22_CLEAR_REWARDS = {
+  moltar_minebreaker: {
+    zone: ZONES.EMBERDEEP_MINES,
+    dungeonId: "emberdeep_mines",
+    reward: { xp: 680, coins: 300 },
+    firstClearItem: "magma_core",
+    level: 18
+  },
+  ignivar_flame_king: {
+    zone: ZONES.CROWNFORGE_CITADEL,
+    dungeonId: "crownforge_citadel",
+    reward: { xp: 1150, coins: 520 },
+    firstClearItem: "royal_cinder",
+    title: "Kingsflame",
+    level: 20
+  },
+  marrowfin_leviathan: {
+    zone: ZONES.SUNKEN_SANCTUM,
+    dungeonId: "sunken_sanctum",
+    reward: { xp: 1250, coins: 560 },
+    firstClearItem: "leviathan_scale",
+    level: 24
+  },
+  queen_nereida: {
+    zone: ZONES.TIDE_EMPRESS_ARENA,
+    dungeonId: "tide_empress_arena",
+    reward: { xp: 1800, coins: 780 },
+    firstClearItem: "royal_pearl",
+    title: "Tidebreaker",
+    level: 30
+  }
+};

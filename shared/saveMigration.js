@@ -8,6 +8,8 @@ export const ICEZERO_SAVE_SCHEMA_VERSION = 2;
 export const ICEZERO_MIGRATION_ID = "icezero-v2-save-migration";
 export const FROSTFORGED_SAVE_SCHEMA_VERSION = 3;
 export const FROSTFORGED_MIGRATION_ID = "v2.1.0-frostforged-paths";
+export const FLAMEBURG_AQUA_SAVE_SCHEMA_VERSION = 4;
+export const FLAMEBURG_AQUA_MIGRATION_ID = "v2.2.0-flameburg-aqua-palace";
 export const HERO_PULSE_REFUND_MESSAGE =
   "Combat training has changed. Visit the Mage Trainer in Dawnrest to relearn Hero Pulse.";
 
@@ -268,5 +270,55 @@ export function migrateFrostforgedSave(input) {
     ...iceZeroResult,
     save,
     migrated: iceZeroResult.migrated || !alreadyMigrated
+  };
+}
+
+export function migrateFlameburgAquaSave(input) {
+  const frostforgedResult = migrateFrostforgedSave(input);
+  const source = frostforgedResult.save;
+  const existingMigrations = uniqueStrings(source.migrations);
+  const alreadyMigrated = existingMigrations.includes(FLAMEBURG_AQUA_MIGRATION_ID);
+  const migrations = alreadyMigrated ? existingMigrations : [...existingMigrations, FLAMEBURG_AQUA_MIGRATION_ID];
+  const dungeonProgress = asObject(source.dungeonProgress);
+
+  const save = {
+    ...source,
+    migrations,
+    saveSchemaVersion: FLAMEBURG_AQUA_SAVE_SCHEMA_VERSION,
+    questProgress: { ...createQuestProgress(), ...asObject(source.questProgress) },
+    waypoints: uniqueStrings(source.waypoints).length ? uniqueStrings(source.waypoints) : ["dawnrest"],
+    achievements: uniqueStrings(source.achievements),
+    firstClearRewards: asObject(source.firstClearRewards),
+    bestiaryProgress: asObject(source.bestiaryProgress),
+    zoneCompletion: asObject(source.zoneCompletion),
+    bounties: {
+      active: uniqueObjects(asObject(source.bounties).active),
+      progress: asObject(asObject(source.bounties).progress),
+      completed: uniqueStrings(asObject(source.bounties).completed),
+      claimed: uniqueStrings(asObject(source.bounties).claimed)
+    },
+    dungeonProgress: {
+      ...dungeonProgress,
+      emberdeep_mines: normalizeDungeonProgress(dungeonProgress.emberdeep_mines),
+      sunken_sanctum: normalizeDungeonProgress(dungeonProgress.sunken_sanctum),
+      crownforge_citadel: normalizeDungeonProgress(dungeonProgress.crownforge_citadel),
+      tide_empress_arena: normalizeDungeonProgress(dungeonProgress.tide_empress_arena)
+    }
+  };
+
+  return {
+    ...frostforgedResult,
+    save,
+    migrated: frostforgedResult.migrated || !alreadyMigrated
+  };
+}
+
+function normalizeDungeonProgress(progress) {
+  const current = asObject(progress);
+  return {
+    bestEncounterLevel: nonNegativeInt(current.bestEncounterLevel, 0),
+    clears: nonNegativeInt(current.clears, 0),
+    firstClear: Boolean(current.firstClear),
+    personalChestClaims: uniqueStrings(current.personalChestClaims)
   };
 }

@@ -2,14 +2,31 @@ import "./styles/main.css";
 import * as THREE from "three";
 import { io } from "socket.io-client";
 import { ABILITIES } from "../../shared/abilities.js";
-import { BOSS, ICE_MAGE_BOSS, ENEMIES, FIELD_SPAWNS, FROSTVEIL_SPAWNS, getEnemy } from "../../shared/enemies.js";
+import {
+  ASHEN_EXPANSE_SPAWNS,
+  BOSS,
+  CROWNFORGE_CITADEL_SPAWNS,
+  EMBERDEEP_MINES_SPAWNS,
+  ENEMIES,
+  FIELD_SPAWNS,
+  FROSTVEIL_SPAWNS,
+  ICE_MAGE_BOSS,
+  IGNIVAR_BOSS,
+  MARROWFIN_BOSS,
+  MOLTAR_BOSS,
+  NEREIDA_BOSS,
+  SUNKEN_SANCTUM_SPAWNS,
+  TIDERUIN_GARDENS_SPAWNS,
+  TIDE_EMPRESS_ARENA_SPAWNS,
+  getEnemy
+} from "../../shared/enemies.js";
 import { GAME_VERSION, PATCH_NOTES, PLAYER_LIMITS, STARTING_PLAYER, XP_TABLE, ZONES } from "../../shared/constants.js";
 import { getItem, ITEMS, STARTER_INVENTORY } from "../../shared/items.js";
 import { NET } from "../../shared/netMessages.js";
 import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot, slotForItem } from "../../shared/equipment.js";
 import { EQUIPMENT_SETS, calculateSetProgress } from "../../shared/equipmentSets.js";
 import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory, removeInventoryItems } from "../../shared/inventory.js";
-import { FROSTFORGED_MIGRATION_ID, migrateFrostforgedSave } from "../../shared/saveMigration.js";
+import { FLAMEBURG_AQUA_MIGRATION_ID, migrateFlameburgAquaSave } from "../../shared/saveMigration.js";
 import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout, SKILL_NODES, SKILL_TREES } from "../../shared/skillTrees.js";
@@ -80,9 +97,19 @@ const bootRuntime = new Function(
   "ABILITIES",
   "BOSS",
   "ICE_MAGE_BOSS",
+  "IGNIVAR_BOSS",
+  "MOLTAR_BOSS",
+  "MARROWFIN_BOSS",
+  "NEREIDA_BOSS",
   "ENEMIES",
   "FIELD_SPAWNS",
   "FROSTVEIL_SPAWNS",
+  "ASHEN_EXPANSE_SPAWNS",
+  "EMBERDEEP_MINES_SPAWNS",
+  "CROWNFORGE_CITADEL_SPAWNS",
+  "TIDERUIN_GARDENS_SPAWNS",
+  "SUNKEN_SANCTUM_SPAWNS",
+  "TIDE_EMPRESS_ARENA_SPAWNS",
   "getEnemy",
   "GAME_VERSION",
   "PATCH_NOTES",
@@ -133,8 +160,8 @@ const bootRuntime = new Function(
   "createCameraRelativeMove",
   "smoothAngleToward",
   "visualYawForMoveDirection",
-  "FROSTFORGED_MIGRATION_ID",
-  "migrateFrostforgedSave",
+  "FLAMEBURG_AQUA_MIGRATION_ID",
+  "migrateFlameburgAquaSave",
   "applyProgressionStats",
   "regenerateMana",
   "spendAttributePoint",
@@ -172,9 +199,19 @@ bootRuntime(
   ABILITIES,
   BOSS,
   ICE_MAGE_BOSS,
+  IGNIVAR_BOSS,
+  MOLTAR_BOSS,
+  MARROWFIN_BOSS,
+  NEREIDA_BOSS,
   ENEMIES,
   FIELD_SPAWNS,
   FROSTVEIL_SPAWNS,
+  ASHEN_EXPANSE_SPAWNS,
+  EMBERDEEP_MINES_SPAWNS,
+  CROWNFORGE_CITADEL_SPAWNS,
+  TIDERUIN_GARDENS_SPAWNS,
+  SUNKEN_SANCTUM_SPAWNS,
+  TIDE_EMPRESS_ARENA_SPAWNS,
   getEnemy,
   GAME_VERSION,
   PATCH_NOTES,
@@ -225,8 +262,8 @@ bootRuntime(
   createCameraRelativeMove,
   smoothAngleToward,
   visualYawForMoveDirection,
-  FROSTFORGED_MIGRATION_ID,
-  migrateFrostforgedSave,
+  FLAMEBURG_AQUA_MIGRATION_ID,
+  migrateFlameburgAquaSave,
   applyProgressionStats,
   regenerateMana,
   spendAttributePoint,

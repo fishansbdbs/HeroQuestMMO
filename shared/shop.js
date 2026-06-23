@@ -6,7 +6,16 @@ export const SHOP_STOCK = [
   { itemId: "goblin_dagger", price: 65 },
   { itemId: "wolf_fang_blade", price: 120 },
   { itemId: "stone_club", price: 155 },
-  { itemId: "small_health_potion", price: 15 }
+  { itemId: "small_health_potion", price: 15 },
+  { itemId: "greater_health_potion", price: 55 },
+  { itemId: "burn_salve", price: 28 },
+  { itemId: "fire_resistance_tonic", price: 48 },
+  { itemId: "cinderbrand_sword", price: 540 },
+  { itemId: "ashfang_dagger", price: 320 },
+  { itemId: "emberstaff", price: 560 },
+  { itemId: "coral_blade", price: 680 },
+  { itemId: "pearl_wand", price: 700 },
+  { itemId: "reefguard_shield", price: 620 }
 ];
 
 export const SELL_VALUE_RATE = 0.4;

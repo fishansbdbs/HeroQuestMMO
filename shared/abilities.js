@@ -1,3 +1,5 @@
+import { V22_ABILITIES } from "./expansionV22.js";
+
 export const ABILITIES = {
   auto_attack: {
     id: "auto_attack",
@@ -194,5 +196,6 @@ export const ABILITIES = {
     cooldownMs: 5000,
     distance: 7,
     description: "Burst forward with a short movement trail."
-  }
+  },
+  ...V22_ABILITIES
 };

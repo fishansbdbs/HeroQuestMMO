@@ -6,13 +6,13 @@ export const TRAINERS = {
     id: "mage",
     name: "Arcanist Mira",
     label: "Mage Trainer",
-    abilityIds: ["hero_pulse", "ground_pound", "fireball", "dark_punch", "water_blast"]
+    abilityIds: ["hero_pulse", "ground_pound", "fireball", "dark_punch", "water_blast", "magma_breaker", "flame_wave"]
   },
   healer: {
     id: "healer",
     name: "Sister Elara",
     label: "Healer",
-    abilityIds: ["healing_orb", "mend_ally"]
+    abilityIds: ["healing_orb", "mend_ally", "hearth_ward"]
   }
 };
 

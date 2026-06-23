@@ -2,10 +2,10 @@ import { STARTER_INVENTORY } from "../../shared/items.js";
 import { PLAYER_STATES, STARTING_PLAYER, ZONES } from "../../shared/constants.js";
 import { applyEquipment } from "../../shared/combat.js";
 import { createQuestProgress } from "../../shared/quests.js";
-import { migrateFrostforgedSave } from "../../shared/saveMigration.js";
+import { migrateFlameburgAquaSave } from "../../shared/saveMigration.js";
 
 export function createPlayerState(socketId, profile = {}) {
-  const migrated = migrateFrostforgedSave(profile).save;
+  const migrated = migrateFlameburgAquaSave(profile).save;
   const color = Number(migrated.color || 0x4da7ff);
   const rawIncomingHealth = Number(profile.health ?? STARTING_PLAYER.health);
   const incomingHealth = Number(migrated.health ?? STARTING_PLAYER.health);

@@ -26,7 +26,17 @@ function claimHealingOrb(orbId) {
     });
     return;
   }
-  toast("Healing Orb needs the online combat server.");
+  const before = game.save.health || 0;
+  game.save.health = Math.min(game.save.maxHealth || before, before + (orb.amount || ABILITIES.healing_orb?.heal || 55));
+  game.healingOrbs.delete(orbId);
+  const mesh = game.healingOrbMeshes.get(orbId);
+  if (mesh) {
+    game.scene.remove(mesh);
+    game.healingOrbMeshes.delete(orbId);
+  }
+  floatingText(`+${Math.max(0, game.save.health - before)}`, groupPosition(game.playerGroup), "#6df08a");
+  toast("Healing Orb absorbed.");
+  saveGame();
 }
 
 function applyLootBag(bag) {
@@ -197,6 +207,7 @@ function beginDefeat(respawnAt = Date.now() + 5000) {
   game.autoAttack = false;
   selectTarget(null);
   clearTelegraphs();
+  clearFlashMesh(game.playerGroup);
   closePanel();
   toast("You were defeated.");
   logCombat("Defeated. Respawning at Dawnrest soon.");
@@ -237,6 +248,7 @@ function finishRespawn(serverPlayer = null) {
   game.defeatedAt = null;
   game.respawnAt = null;
   game.respawnRequested = false;
+  clearFlashMesh(game.playerGroup);
   ui.defeatOverlay?.classList.add("hidden");
   loadZone(ZONES.HUB, true);
   game.save.health = game.save.maxHealth;
@@ -308,7 +320,7 @@ function completeIceMageQuestLocal(reward = { xp: ICE_MAGE_BOSS.xp, coins: ICE_M
 
 function spawnLocalEnemies() {
   game.enemies.clear();
-  const spawns = game.zone === ZONES.FROSTVEIL ? FROSTVEIL_SPAWNS : FIELD_SPAWNS;
+  const spawns = localSpawnTable()[game.zone] || [];
   for (const spawn of spawns) {
     for (let i = 0; i < spawn.count; i += 1) {
       const angle = Math.random() * Math.PI * 2;
@@ -328,6 +340,23 @@ function spawnLocalEnemies() {
       });
     }
   }
+}
+
+function localSpawnTable() {
+  return {
+    [ZONES.FIELD]: FIELD_SPAWNS,
+    [ZONES.FROSTVEIL]: FROSTVEIL_SPAWNS,
+    [ZONES.ASHEN_EXPANSE]: ASHEN_EXPANSE_SPAWNS,
+    [ZONES.EMBERDEEP_MINES]: EMBERDEEP_MINES_SPAWNS,
+    [ZONES.CROWNFORGE_CITADEL]: CROWNFORGE_CITADEL_SPAWNS,
+    [ZONES.TIDERUIN_GARDENS]: TIDERUIN_GARDENS_SPAWNS,
+    [ZONES.SUNKEN_SANCTUM]: SUNKEN_SANCTUM_SPAWNS,
+    [ZONES.TIDE_EMPRESS_ARENA]: TIDE_EMPRESS_ARENA_SPAWNS
+  };
+}
+
+function zoneHasLocalSpawns(zoneId) {
+  return Boolean(localSpawnTable()[zoneId]?.length);
 }
 
 function startCombatDemo() {

@@ -77,20 +77,21 @@ function healingOrbEffect(orb) {
 
 function healingBeamEffect(effect) {
   if (!effect || !game.scene) return;
-  if (effect.type === "mend_ally") {
+  if (["mend_ally", "radiant_ward", "hearth_ward"].includes(effect.type)) {
     const from = new THREE.Vector3(effect.from?.x || 0, effect.from?.y || 1.2, effect.from?.z || 0);
     const to = new THREE.Vector3(effect.to?.x || 0, effect.to?.y || 1.2, effect.to?.z || 0);
     const direction = to.clone().sub(from);
     const length = Math.max(0.2, direction.length());
     if (direction.lengthSq() > 0.001) direction.normalize();
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, length, 10), mat(0x8cff9d, 0.48, true));
+    const color = effect.type === "hearth_ward" ? 0xffb25a : effect.type === "radiant_ward" ? 0xffe38b : 0x8cff9d;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, length, 10), mat(color, 0.48, true));
     beam.position.copy(from).lerp(to, 0.5);
     beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.lengthSq() > 0.001 ? direction : new THREE.Vector3(0, 1, 0));
-    const pulse = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.55, 32), mat(0xffdd7a, 0.58, true));
+    const pulse = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.55, 32), mat(color, 0.58, true));
     pulse.rotation.x = -Math.PI / 2;
     pulse.position.copy(to);
     pulse.position.y = Math.max(0.1, to.y - 1.05);
-    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), mat(0xb8ff9c, 0.2, true));
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), mat(color, 0.2, true));
     glow.position.copy(to);
     game.scene.add(beam, pulse, glow);
     if (effect.amount) floatingText(`+${effect.amount}`, to, "#6df08a");
@@ -368,10 +369,10 @@ function darkPunchImpactEffect(position) {
 
 function areaEffect(effect) {
   if (!effect || !game.scene) return;
-  if (effect.type === "ground_pound" || effect.type === "whirlwind_cleave" || effect.type === "radiant_ward") {
+  if (["ground_pound", "whirlwind_cleave", "radiant_ward", "magma_breaker", "flame_wave", "hearth_ward"].includes(effect.type)) {
     const origin = new THREE.Vector3(effect.origin?.x || 0, effect.origin?.y || 0, effect.origin?.z || 0);
     const radius = Math.max(1, effect.radius || 4.8);
-    const color = effect.type === "radiant_ward" ? 0xffe38b : effect.type === "whirlwind_cleave" ? 0xd8efff : 0xd0b27a;
+    const color = effect.type === "radiant_ward" ? 0xffe38b : effect.type === "hearth_ward" ? 0xffb25a : effect.type === "flame_wave" ? 0xff6a24 : effect.type === "magma_breaker" ? 0xff3d20 : effect.type === "whirlwind_cleave" ? 0xd8efff : 0xd0b27a;
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.52, 40), mat(color, 0.62, true));
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(origin.x, Math.max(0.09, origin.y + 0.09), origin.z);
@@ -379,7 +380,7 @@ function areaEffect(effect) {
     const stones = [];
     for (let i = 0; i < 14; i += 1) {
       const angle = (i / 14) * Math.PI * 2;
-      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.08 + (i % 3) * 0.025, 0), mat(effect.type === "ground_pound" ? (i % 2 ? 0x8a8170 : 0xb49a72) : color, 0.72, true));
+      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.08 + (i % 3) * 0.025, 0), mat(["ground_pound", "magma_breaker"].includes(effect.type) ? (i % 2 ? 0x8a8170 : color) : color, 0.72, true));
       stone.position.set(origin.x, 0.12, origin.z);
       stone.userData.velocity = new THREE.Vector3(Math.cos(angle) * (0.055 + (i % 4) * 0.01), 0.035 + (i % 3) * 0.012, Math.sin(angle) * (0.055 + (i % 4) * 0.01));
       stones.push(stone);
@@ -410,19 +411,32 @@ function areaEffect(effect) {
 
 function flashMesh(group, color) {
   if (!group) return;
-  const originals = [];
+  clearFlashMesh(group);
   group.traverse((child) => {
     if (!child.isMesh || !child.material?.emissive) return;
-    originals.push([child.material, child.material.emissive.clone(), child.material.emissiveIntensity || 0]);
+    child.userData.flashBaseEmissive = child.material.emissive.clone();
+    child.userData.flashBaseIntensity = child.material.emissiveIntensity || 0;
     child.material.emissive = new THREE.Color(color);
     child.material.emissiveIntensity = 0.8;
   });
-  setTimeout(() => {
-    for (const [material, emissive, intensity] of originals) {
-      material.emissive = emissive;
-      material.emissiveIntensity = intensity;
+  group.userData.flashTimeout = setTimeout(() => clearFlashMesh(group), 140);
+}
+
+function clearFlashMesh(group) {
+  if (!group) return;
+  if (group.userData.flashTimeout) {
+    clearTimeout(group.userData.flashTimeout);
+    group.userData.flashTimeout = null;
+  }
+  group.traverse((child) => {
+    if (!child.isMesh || !child.material?.emissive) return;
+    if (child.userData.flashBaseEmissive) {
+      child.material.emissive = child.userData.flashBaseEmissive;
+      child.material.emissiveIntensity = child.userData.flashBaseIntensity || 0;
+      child.userData.flashBaseEmissive = null;
+      child.userData.flashBaseIntensity = null;
     }
-  }, 140);
+  });
 }
 
 function screenShake(intensity = 0.12) {

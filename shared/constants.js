@@ -1,4 +1,4 @@
-export const GAME_VERSION = "2.1.0";
+export const GAME_VERSION = "2.2.0";
 
 export const ZONES = {
   HUB: "hub",
@@ -6,6 +6,14 @@ export const ZONES = {
   FROSTVEIL: "frostveil",
   PALACE: "palace",
   FROSTBOUND_VAULT: "frostbound_vault",
+  FLAMEBURG: "flameburg",
+  ASHEN_EXPANSE: "ashen_expanse",
+  EMBERDEEP_MINES: "emberdeep_mines",
+  CROWNFORGE_CITADEL: "crownforge_citadel",
+  AQUA_PALACE: "aqua_palace",
+  TIDERUIN_GARDENS: "tideruin_gardens",
+  SUNKEN_SANCTUM: "sunken_sanctum",
+  TIDE_EMPRESS_ARENA: "tide_empress_arena",
   BOSS: "boss"
 };
 
@@ -58,6 +66,32 @@ export const SNAPSHOT_MS = 120;
 export const PATCH_NOTES = {
   title: "HeroQuest MMO Patch Notes",
   versions: [
+    {
+      version: "2.2.0",
+      title: "Flameburg & Aqua Palace",
+      date: "2026-06-23",
+      summary: "Adds fire and water regions, combat-ready spell coverage, physical Healing Orb pickups, new dungeons, bosses, items, bounties, achievements, and save migration support.",
+      sections: [
+        {
+          title: "Regions",
+          items: [
+            "Added Flameburg Level 15-20 and Ashen Expanse.",
+            "Added Emberdeep Mines and Ignivar, the Flame King.",
+            "Added Aqua Palace Level 20-30 and Tideruin Gardens.",
+            "Added Sunken Sanctum and Queen Nereida, the Tide Empress."
+          ]
+        },
+        {
+          title: "Combat And Progression",
+          items: [
+            "Fixed combat-ready spells for online and solo/local play.",
+            "Ensured Healing Orb remains a physical pickup with server validation and solo pickup handling.",
+            "Fixed the red hit-flash so it expires and resets on zone changes, death, and respawn.",
+            "Added fire and water enemies, bosses, materials, bounties, Bestiary entries, achievements, titles, weapons, armor, and set bonuses."
+          ]
+        }
+      ]
+    },
     {
       version: "2.1.0",
       title: "Frostforged Paths",

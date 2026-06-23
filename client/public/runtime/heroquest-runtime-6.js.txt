@@ -878,9 +878,22 @@ function openChest(chestId) {
 
 function activatePublicEvent(eventId, wardId = null) {
   if (isLocallyDead()) return toast("You cannot activate events while defeated.");
-  if (eventId !== "defend_frost_ward") return;
+  if (!["defend_frost_ward", "seal_the_eruption"].includes(eventId)) return;
   if (!game.online) {
-    toast("Frost Ward defense requires the online server.");
+    if (eventId === "seal_the_eruption" && game.zone === ZONES.ASHEN_EXPANSE) {
+      const questUpdate = applyQuestEvent(game.save.questProgress, "seal_the_eruption");
+      game.save.questProgress = questUpdate.progress;
+      game.save = addProgressRewards(game.save, { xp: 460, coins: 220 });
+      const core = addInventoryStack(game.save.inventory || [], "magma_core", 1);
+      if (core.ok) game.save.inventory = core.inventory;
+      for (const quest of questUpdate.completed) toast(`Quest complete: ${quest.name}`);
+      refreshLocalMetaProgress();
+      saveGame();
+      toast("Eruption sealed.");
+      playUiSound("boss");
+      return;
+    }
+    toast("This public event requires the online server.");
     return;
   }
   game.socket.emit(NET.PUBLIC_EVENT_ACTIVATE, { eventId, wardId }, (ack) => {
@@ -902,6 +915,10 @@ function publicEventActivationReason(reason) {
 
 function localChestReward(chestId) {
   if (chestId === "frostveil_snow_cache") return { coins: 45, items: [{ itemId: "ice_shard", quantity: 2 }] };
+  if (chestId === "flameburg_forge_cache") return { coins: 140, items: [{ itemId: "emberstone", quantity: 3 }, { itemId: "fire_resistance_tonic", quantity: 1 }] };
+  if (chestId === "ashen_ember_cache") return { coins: 170, items: [{ itemId: "magma_core", quantity: 1 }, { itemId: "burn_salve", quantity: 2 }] };
+  if (chestId === "aqua_pearl_cache") return { coins: 180, items: [{ itemId: "pearl_shard", quantity: 3 }, { itemId: "greater_health_potion", quantity: 1 }] };
+  if (chestId === "tideruin_coral_cache") return { coins: 220, items: [{ itemId: "coral_chunk", quantity: 3 }, { itemId: "tide_essence", quantity: 1 }] };
   if (chestId === "field_south_cache") return { coins: 36, items: [{ itemId: "rusty_blade", quantity: 1 }] };
   if (chestId === "field_north_cache") return { coins: 28, items: [{ itemId: "small_health_potion", quantity: 1 }] };
   return { coins: 18, items: [{ itemId: "small_health_potion", quantity: 1 }] };

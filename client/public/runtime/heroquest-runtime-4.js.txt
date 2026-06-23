@@ -232,7 +232,7 @@ function useAssignedAbility(abilityId) {
   const now = performance.now();
   if (game.cooldowns[abilityId] && now - game.cooldowns[abilityId] < ability.cooldownMs) return;
   if (!game.online) {
-    toast(`${ability.name} needs the online combat server.`);
+    useAssignedAbilityLocal(abilityId, ability, now);
     return;
   }
   const target = getCurrentTarget();
@@ -251,6 +251,98 @@ function useAssignedAbility(abilityId) {
     }
     saveGame();
   });
+}
+
+function useAssignedAbilityLocal(abilityId, ability, now = performance.now()) {
+  const manaSpend = spendMana(game.save, ability.manaCost || 0);
+  if (!manaSpend.ok) {
+    toast("Not enough mana.");
+    logCombat(`Not enough mana for ${ability.name}.`);
+    return;
+  }
+  const target = getCurrentTarget();
+  const playerPos = groupPosition(game.playerGroup);
+  game.save = manaSpend.player;
+  game.cooldowns[abilityId] = now;
+  markCombat();
+
+  if (["healing_orb", "mend_ally", "radiant_ward", "hearth_ward"].includes(abilityId)) {
+    useSupportAbilityLocal(abilityId, ability, playerPos);
+    saveGame();
+    return;
+  }
+
+  if (["ground_pound", "whirlwind_cleave", "magma_breaker", "flame_wave"].includes(abilityId)) {
+    const radius = ability.radius || 5;
+    areaEffect({ type: abilityId, origin: playerPos, radius });
+    const damage = Math.max(1, Math.round(calculatePlayerDamage(game.save) * (ability.damageScale || 1)));
+    let hits = 0;
+    for (const enemy of [...game.enemies.values()]) {
+      if (enemy.health > 0 && distance2d(enemy.position, playerPos) <= radius) {
+        damageLocalEnemy(enemy.id, damage, { kind: abilityId });
+        hits += 1;
+      }
+    }
+    if (game.zone === ZONES.BOSS && game.boss && distance2d(playerPos, { x: 0, z: 0 }) <= radius) hitBoss(damage, abilityId);
+    if (game.zone === ZONES.PALACE && game.iceMage && distance2d(playerPos, { x: 0, z: 0 }) <= radius) hitIceMage(damage, abilityId);
+    logCombat(`${ability.name} hit ${hits} target${hits === 1 ? "" : "s"}.`);
+    saveGame();
+    return;
+  }
+
+  if (!target) {
+    toast("Select a target first.");
+    logCombat(`${ability.name} needs a target.`);
+    game.cooldowns[abilityId] = 0;
+    game.save = { ...game.save, mana: Math.min(game.save.maxMana, (game.save.mana || 0) + (ability.manaCost || 0)) };
+    return;
+  }
+  if (distance2d(playerPos, target.position) > (ability.range || PLAYER_LIMITS.meleeRange)) {
+    toast("Target is out of range.");
+    logCombat(`${targetDisplayName(target)} is out of range.`);
+    return;
+  }
+
+  const damage = Math.max(1, Math.round(calculatePlayerDamage(game.save) * (ability.damageScale || 1)));
+  if (abilityId === "dark_punch") meleeEffect({ type: abilityId, from: playerPos, to: target.position });
+  else if (abilityId === "chain_frost") projectileEffect({ type: abilityId, from: playerPos, chainTargets: [{ position: target.position }] });
+  else projectileEffect({ type: abilityId, from: playerPos, to: target.position });
+  if (target.id === "shadow_wyrm") hitBoss(damage, abilityId);
+  else if (target.id === ICE_MAGE_BOSS.id) hitIceMage(damage, abilityId);
+  else damageLocalEnemy(target.id, damage, { kind: abilityId });
+  logCombat(`${ability.name} hit ${targetDisplayName(target)} for ${damage}.`);
+  saveGame();
+}
+
+function useSupportAbilityLocal(abilityId, ability, playerPos) {
+  if (abilityId === "healing_orb") {
+    const orbId = `local_orb_${Date.now()}`;
+    const amount = Math.round(45 + (game.save.healingPower || 0) * 1.4);
+    const orb = {
+      id: orbId,
+      zone: game.zone,
+      amount,
+      expiresAt: Date.now() + (ability.durationMs || 10000),
+      position: { x: playerPos.x + 1.4, y: 0.45, z: playerPos.z }
+    };
+    game.healingOrbs.set(orbId, orb);
+    healingOrbEffect(orb);
+    toast("Healing Orb created.");
+    return;
+  }
+  const healAmount = ["mend_ally"].includes(abilityId) ? Math.round(50 + (game.save.healingPower || 0) * 1.8) : 0;
+  if (healAmount > 0) {
+    const before = game.save.health || 0;
+    game.save.health = Math.min(game.save.maxHealth || before, before + healAmount);
+    floatingText(`+${Math.max(0, game.save.health - before)}`, playerPos, "#6df08a");
+    healingBeamEffect({ type: abilityId, from: playerPos, to: playerPos, amount: healAmount });
+    toast(`${ability.name} restored health.`);
+    return;
+  }
+  game.guardUntil = Math.max(game.guardUntil || 0, performance.now() + (ability.durationMs || 3500));
+  areaEffect({ type: abilityId, origin: playerPos, radius: ability.radius || 6 });
+  shieldEffect();
+  toast(`${ability.name} active.`);
 }
 
 function abilityUseReason(reason, ability) {
