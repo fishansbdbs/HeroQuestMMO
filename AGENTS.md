@@ -1,0 +1,24 @@
+# HeroQuest MMO Repository Rules
+
+- Project structure is split into `client`, `server`, and `shared`.
+- `client` contains the Vite and Three.js browser client.
+- `server` contains the Node, Express, and Socket.IO authority.
+- `shared` contains stable gameplay contracts, registries, and pure helpers used by both sides.
+- Netlify hosts the Vite client.
+- Render hosts the Node, Express, and Socket.IO server.
+- Required local dependency command: `npm run install:all`.
+- Required repository check command: `npm run check`.
+- Required client production build command: `npm run build --prefix client`.
+- Required server test command: `npm test --prefix server`.
+- Shared data must use stable string IDs.
+- The server is authoritative for combat, inventory, currency, loot, progression, shops, upgrades, quests, and rewards.
+- Preserve versioned save migrations.
+- Never load a character with zero HP.
+- Do not modify `main` during feature implementation.
+- Do not commit unfinished work to `main`.
+- Use targeted tests during implementation.
+- Use full verification only during release preparation.
+- Avoid unrelated refactors.
+- Avoid checkpoint loops.
+- Use one final implementation commit per scoped task.
+- Do not monitor Netlify or Render during normal implementation.

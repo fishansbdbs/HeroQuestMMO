@@ -40,7 +40,7 @@ function handleHotbarSlot(slotNumber) {
 }
 
 function handleHotbarAction(action) {
-  const slot = HOTBAR_DEFS.find((entry) => entry.action === action);
+  const slot = HOTBAR_DEFS.find((entry) => entry.action === action) || (ABILITIES[action] ? { action, locked: false } : null);
   if (!slot || slot.locked) return;
   if (isLocallyDead()) {
     toast("You are defeated. Wait for respawn.");

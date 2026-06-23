@@ -249,6 +249,7 @@ export function migrateFrostforgedSave(input) {
     spellbookHotbarVersion: Math.max(2, nonNegativeInt(source.spellbookHotbarVersion, 2)),
     bounties: {
       active: uniqueObjects(bounties.active),
+      progress: asObject(bounties.progress),
       completed: uniqueStrings(bounties.completed),
       claimed: uniqueStrings(bounties.claimed)
     },

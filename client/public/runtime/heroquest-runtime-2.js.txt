@@ -435,6 +435,7 @@ function applyVisualEquipment(group, loadout = {}) {
   const armor = getItem(equipment.chest || "traveler_tunic");
   const slotColor = (item, fallback) => {
     if (!item) return fallback;
+    if (item.visualColor) return item.visualColor;
     if (item.rarity === "Legendary") return 0x93fff1;
     if (item.rarity === "Epic") return 0x6d5e8d;
     if (item.rarity === "Rare") return 0x7d92a6;

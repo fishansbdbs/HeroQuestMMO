@@ -3,6 +3,7 @@ import { getItem } from "./items.js";
 import { applyProgressionStats, calculateDamageReduction, LEVEL_CAP } from "./progression.js";
 import { normalizeEquipment } from "./equipment.js";
 import { getFrostforgeRank, upgradedItemStats } from "./frostforge.js";
+import { applySetBonuses, calculateSetBonuses } from "./equipmentSets.js";
 
 export function randomInt(min, max, rng = Math.random) {
   return Math.floor(rng() * (max - min + 1)) + min;
@@ -49,7 +50,8 @@ export function applyEquipment(basePlayer) {
   const attack = STARTING_PLAYER.attack + (level - 1) * 2 + itemAttack;
   const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + itemDefense;
   const speed = STARTING_PLAYER.speed * itemSpeedMultiplier;
-  return applyProgressionStats({
+  const setBonuses = calculateSetBonuses(equipment);
+  return applySetBonuses(applyProgressionStats({
     ...player,
     equipment,
     equippedWeapon: equipment.weapon || STARTING_PLAYER.equippedWeapon,
@@ -64,7 +66,7 @@ export function applyEquipment(basePlayer) {
     attack,
     defense,
     speed
-  });
+  }), setBonuses);
 }
 
 export function calculatePlayerDamage(player, rng = Math.random) {
@@ -75,7 +77,15 @@ export function calculatePlayerDamage(player, rng = Math.random) {
 
 export function calculateIncomingDamage(rawDamage, player) {
   const stats = player?.baseDefense != null || player?.baseMaxHealth != null ? applyProgressionStats(player) : applyEquipment(player);
-  return Math.max(1, Math.round(rawDamage * (1 - calculateDamageReduction(stats.defense))));
+  const now = Date.now();
+  const timedReduction =
+    now < (player?.setGuardUntil || 0)
+      ? Number(player.setGuardReduction) || 0
+      : now < (player?.radiantWardUntil || 0)
+        ? Number(player.radiantWardReduction) || 0
+        : 0;
+  const reduced = rawDamage * (1 - timedReduction);
+  return Math.max(1, Math.round(reduced * (1 - calculateDamageReduction(stats.defense))));
 }
 
 export function addProgressRewards(player, reward) {

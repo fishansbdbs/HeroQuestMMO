@@ -152,6 +152,35 @@ function projectileEffect(projectile) {
       }
     };
     animate();
+  } else if (projectile.type === "chain_frost") {
+    const points = [
+      new THREE.Vector3(projectile.from?.x || 0, projectile.from?.y || 1.2, projectile.from?.z || 0),
+      ...(projectile.chainTargets || []).map((target) => new THREE.Vector3(target.position?.x || 0, target.position?.y || 1, target.position?.z || 0))
+    ];
+    const bolts = [];
+    for (let i = 1; i < points.length; i += 1) {
+      const from = points[i - 1];
+      const to = points[i];
+      const direction = to.clone().sub(from);
+      const length = Math.max(0.2, direction.length());
+      if (direction.lengthSq() > 0.001) direction.normalize();
+      const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.055, length, 8), mat(0xb8fbff, 0.68, true));
+      bolt.position.copy(from).lerp(to, 0.5);
+      bolt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+      bolts.push(bolt);
+      game.scene.add(bolt);
+    }
+    const started = performance.now();
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - started) / 460);
+      bolts.forEach((bolt, index) => {
+        bolt.material.opacity = Math.max(0, 0.68 - t * 0.68);
+        bolt.scale.set(1 + Math.sin((t + index * 0.1) * Math.PI) * 0.2, 1, 1 + Math.sin(t * Math.PI) * 0.2);
+      });
+      if (t < 1) requestAnimationFrame(animate);
+      else bolts.forEach((bolt) => game.scene.remove(bolt));
+    };
+    animate();
   } else if (projectile.type === "water_blast") {
     const from = new THREE.Vector3(projectile.from?.x || 0, projectile.from?.y || 1.2, projectile.from?.z || 0);
     const to = new THREE.Vector3(projectile.to?.x || 0, projectile.to?.y || 1, projectile.to?.z || 0);
@@ -339,17 +368,18 @@ function darkPunchImpactEffect(position) {
 
 function areaEffect(effect) {
   if (!effect || !game.scene) return;
-  if (effect.type === "ground_pound") {
+  if (effect.type === "ground_pound" || effect.type === "whirlwind_cleave" || effect.type === "radiant_ward") {
     const origin = new THREE.Vector3(effect.origin?.x || 0, effect.origin?.y || 0, effect.origin?.z || 0);
     const radius = Math.max(1, effect.radius || 4.8);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.52, 40), mat(0xd0b27a, 0.62, true));
+    const color = effect.type === "radiant_ward" ? 0xffe38b : effect.type === "whirlwind_cleave" ? 0xd8efff : 0xd0b27a;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.52, 40), mat(color, 0.62, true));
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(origin.x, Math.max(0.09, origin.y + 0.09), origin.z);
     game.scene.add(ring);
     const stones = [];
     for (let i = 0; i < 14; i += 1) {
       const angle = (i / 14) * Math.PI * 2;
-      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.08 + (i % 3) * 0.025, 0), mat(i % 2 ? 0x8a8170 : 0xb49a72, 0.72, true));
+      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.08 + (i % 3) * 0.025, 0), mat(effect.type === "ground_pound" ? (i % 2 ? 0x8a8170 : 0xb49a72) : color, 0.72, true));
       stone.position.set(origin.x, 0.12, origin.z);
       stone.userData.velocity = new THREE.Vector3(Math.cos(angle) * (0.055 + (i % 4) * 0.01), 0.035 + (i % 3) * 0.012, Math.sin(angle) * (0.055 + (i % 4) * 0.01));
       stones.push(stone);

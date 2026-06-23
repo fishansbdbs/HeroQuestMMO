@@ -7,6 +7,7 @@ import { GAME_VERSION, PATCH_NOTES, PLAYER_LIMITS, STARTING_PLAYER, XP_TABLE, ZO
 import { getItem, ITEMS, STARTER_INVENTORY } from "../../shared/items.js";
 import { NET } from "../../shared/netMessages.js";
 import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot, slotForItem } from "../../shared/equipment.js";
+import { EQUIPMENT_SETS, calculateSetProgress } from "../../shared/equipmentSets.js";
 import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory, removeInventoryItems } from "../../shared/inventory.js";
 import { FROSTFORGED_MIGRATION_ID, migrateFrostforgedSave } from "../../shared/saveMigration.js";
 import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
@@ -14,6 +15,7 @@ import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from
 import { activateLoadout, purchaseSkillNode, saveLoadout, SKILL_NODES, SKILL_TREES } from "../../shared/skillTrees.js";
 import { applyQuestEvent, applyQuestKill, createQuestProgress, getQuestList } from "../../shared/quests.js";
 import { getZone, ZONE_DEFS, canEnterZone, unlockWaypoint } from "../../shared/zones.js";
+import { BOUNTIES, createBountyState } from "../../shared/bounties.js";
 import { ACHIEVEMENTS, TITLES, calculateZoneCompletion, recordBestiaryKill, refreshMetaProgress, refreshZoneCompletion, setActiveTitle } from "../../shared/metaProgress.js";
 import {
   BUYBACK_LIMIT,
@@ -96,6 +98,8 @@ const bootRuntime = new Function(
   "createEquipmentState",
   "equipItemToSlot",
   "slotForItem",
+  "EQUIPMENT_SETS",
+  "calculateSetProgress",
   "INVENTORY_SLOT_COUNT",
   "addInventoryStack",
   "normalizeInventory",
@@ -108,6 +112,8 @@ const bootRuntime = new Function(
   "ZONE_DEFS",
   "canEnterZone",
   "unlockWaypoint",
+  "BOUNTIES",
+  "createBountyState",
   "ACHIEVEMENTS",
   "TITLES",
   "calculateZoneCompletion",
@@ -184,6 +190,8 @@ bootRuntime(
   createEquipmentState,
   equipItemToSlot,
   slotForItem,
+  EQUIPMENT_SETS,
+  calculateSetProgress,
   INVENTORY_SLOT_COUNT,
   addInventoryStack,
   normalizeInventory,
@@ -196,6 +204,8 @@ bootRuntime(
   ZONE_DEFS,
   canEnterZone,
   unlockWaypoint,
+  BOUNTIES,
+  createBountyState,
   ACHIEVEMENTS,
   TITLES,
   calculateZoneCompletion,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { ABILITIES } from "../../shared/abilities.js";
-import { GAME_VERSION, PATCH_NOTES, STARTING_PLAYER, ZONES } from "../../shared/constants.js";
+import { GAME_VERSION, PATCH_NOTES, STARTING_PLAYER, XP_TABLE, ZONES } from "../../shared/constants.js";
 import { applyEquipment, addProgressRewards, calculateIncomingDamage } from "../../shared/combat.js";
 import { BOSS, ENEMIES, FROSTVEIL_SPAWNS, ELITE_MODIFIERS, ICE_MAGE_BOSS } from "../../shared/enemies.js";
 import { canEnterZone, getZone, unlockWaypoint } from "../../shared/zones.js";
@@ -205,14 +205,15 @@ test("client runtime animates Mend Ally healing acknowledgements", () => {
   assert.match(runtimeSource, /effect\.type === "mend_ally"/);
 });
 
-test("IceZero v2 title presentation and patch notes are registered", () => {
+test("Frostforged Paths title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
 
-  assert.equal(GAME_VERSION, "2.0.0");
-  assert.equal(PATCH_NOTES.versions[0].version, "2.0.0");
-  assert.equal(PATCH_NOTES.versions[0].title, "ICEZERO");
-  assert.match(menuSource, /HeroQuest MMO[\s\S]*ICEZERO/);
+  assert.equal(GAME_VERSION, "2.1.0");
+  assert.equal(PATCH_NOTES.versions[0].version, "2.1.0");
+  assert.equal(PATCH_NOTES.versions[0].title, "Frostforged Paths");
+  assert.match(menuSource, /Version \$\{GAME_VERSION\}/);
+  assert.match(menuSource, /HeroQuest MMO/);
   assert.match(menuSource, /Continue Game/);
   assert.match(menuSource, /Character/);
   assert.match(menuSource, /Settings/);
@@ -475,6 +476,124 @@ test("Frostbound Vault is a level 15 gate with clamped party encounter scaling",
     assert.equal(eligible.zone, ZONES.FROSTBOUND_VAULT);
     assert.deepEqual(eligible.position, { x: 0, y: 0, z: 18, rot: Math.PI });
   } finally {
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("Frostforged equipment sets activate and deactivate server-calculated bonuses", async () => {
+  const { calculateSetProgress } = await import("../../shared/equipmentSets.js");
+  const base = applyEquipment({
+    ...STARTING_PLAYER,
+    level: 15,
+    xp: XP_TABLE[14],
+    health: 100,
+    inventory: [
+      { itemId: "iceguard_helm", quantity: 1 },
+      { itemId: "iceguard_chestplate", quantity: 1 },
+      { itemId: "iceguard_gauntlets", quantity: 1 },
+      { itemId: "iceguard_boots", quantity: 1 },
+      { itemId: "zero_born_crown", quantity: 1 },
+      { itemId: "zero_born_robe", quantity: 1 },
+      { itemId: "dawnmender_circlet", quantity: 1 },
+      { itemId: "dawnmender_vestments", quantity: 1 }
+    ]
+  });
+  const iceTwo = applyEquipment({ ...base, equipment: { ...base.equipment, head: "iceguard_helm", chest: "iceguard_chestplate" } });
+  const iceFour = applyEquipment({
+    ...base,
+    equipment: {
+      ...base.equipment,
+      head: "iceguard_helm",
+      chest: "iceguard_chestplate",
+      hands: "iceguard_gauntlets",
+      boots: "iceguard_boots"
+    }
+  });
+  const zeroTwo = applyEquipment({ ...base, equipment: { ...base.equipment, head: "zero_born_crown", chest: "zero_born_robe" } });
+  const dawnTwo = applyEquipment({ ...base, equipment: { ...base.equipment, head: "dawnmender_circlet", chest: "dawnmender_vestments" } });
+
+  assert.ok(iceTwo.attack > base.attack);
+  assert.ok(iceTwo.defense > base.defense);
+  assert.ok(iceFour.activeSetBonuses.includes("iceguard_4"));
+  assert.equal(iceFour.setBonusEffects.physicalGuardMs, 2500);
+  assert.ok(zeroTwo.spellPower > base.spellPower);
+  assert.ok(zeroTwo.maxMana > base.maxMana);
+  assert.ok(dawnTwo.healingPower > base.healingPower);
+  assert.ok(dawnTwo.maxHealth > base.maxHealth);
+  assert.equal(calculateSetProgress({ head: "iceguard_helm" }).iceguard.count, 1);
+});
+
+test("tier-two skill trees unlock approved active abilities with level and investment gates", async () => {
+  const ready = createPlayerState("tier2", {
+    level: 15,
+    xp: XP_TABLE[14],
+    skillTreeNodes: {
+      might_training: 5,
+      heavy_slash: 3,
+      iron_body: 1,
+      warriors_rhythm: 1
+    },
+    learnedAbilities: []
+  });
+
+  const locked = purchaseSkillNode({ ...ready, level: 14, xp: XP_TABLE[13] }, "whirlwind_cleave_node");
+  assert.equal(locked.ok, false);
+  assert.equal(locked.reason, "level");
+
+  const unlocked = purchaseSkillNode(ready, "whirlwind_cleave_node");
+  assert.equal(unlocked.ok, true);
+  assert.equal(unlocked.node.activeAbilityId, "whirlwind_cleave");
+  assert.ok(unlocked.player.learnedAbilities.includes("whirlwind_cleave"));
+});
+
+test("Bounty Board progress grants deterministic rewards once", async () => {
+  const realNow = Date.now;
+  Date.now = () => 0;
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const player = createPlayerState("bounty", { xp: XP_TABLE[14], level: 15, coins: 0, inventory: [] });
+    room.updateBounties(player, { type: "event", eventId: "defend_frost_ward" });
+    const coinsAfterFirst = player.coins;
+    const claimedAfterFirst = [...player.bounties.claimed];
+    room.updateBounties(player, { type: "event", eventId: "defend_frost_ward" });
+
+    assert.ok(player.bounties.completed.includes("defend_frost_ward_bounty"));
+    assert.ok(player.bounties.claimed.includes("defend_frost_ward_bounty"));
+    assert.equal(player.coins, coinsAfterFirst);
+    assert.deepEqual(player.bounties.claimed, claimedAfterFirst);
+  } finally {
+    Date.now = realNow;
+    clearInterval(room.tickTimer);
+    clearInterval(room.snapshotTimer);
+  }
+});
+
+test("Frostbound Vault spawns elite rooms and records Runebound Colossus clears", () => {
+  const realNow = Date.now;
+  Date.now = () => 0;
+  const io = { to: () => ({ emit: () => {} }) };
+  const room = new RoomManager(io);
+  clearInterval(room.tickTimer);
+  clearInterval(room.snapshotTimer);
+  try {
+    const enemies = room.enemies.getZoneEnemies(ZONES.FROSTBOUND_VAULT);
+    assert.ok(enemies.some((enemy) => enemy.enemyId === "vault_sentinel"));
+    assert.ok(enemies.some((enemy) => enemy.enemyId === "runebound_colossus"));
+
+    const player = createPlayerState("vault_clear", { xp: XP_TABLE[14], level: 15, zone: ZONES.FROSTBOUND_VAULT, inventory: [] });
+    room.players.set(player.id, player);
+    room.awardFrostboundVaultClear(player);
+
+    assert.equal(player.dungeonProgress.frostbound_vault.firstClear, true);
+    assert.equal(player.dungeonProgress.frostbound_vault.clears, 1);
+    assert.equal(inventoryQuantity(player.inventory, "runic_core"), 2);
+    assert.ok(player.bounties.claimed.includes("vault_colossus_bounty"));
+  } finally {
+    Date.now = realNow;
     clearInterval(room.tickTimer);
     clearInterval(room.snapshotTimer);
   }

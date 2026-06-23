@@ -3,6 +3,7 @@ import { getItem } from "./items.js";
 import { applyProgressionStats, LEVEL_CAP } from "./progression.js";
 import { hasInventoryItem } from "./inventory.js";
 import { getFrostforgeRank, upgradedItemStats } from "./frostforge.js";
+import { applySetBonuses, calculateSetBonuses } from "./equipmentSets.js";
 
 export const EQUIPMENT_SLOTS = ["head", "chest", "hands", "legs", "boots", "weapon", "offhand", "accessory"];
 
@@ -98,7 +99,8 @@ export function applyEquipmentSlots(player) {
   const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + bonuses.defense;
   const speed = STARTING_PLAYER.speed * bonuses.speedMultiplier;
 
-  return applyProgressionStats({
+  const setBonuses = calculateSetBonuses(equipment);
+  return applySetBonuses(applyProgressionStats({
     ...player,
     level,
     equipment,
@@ -113,5 +115,5 @@ export function applyEquipmentSlots(player) {
     attack,
     defense,
     speed
-  });
+  }), setBonuses);
 }

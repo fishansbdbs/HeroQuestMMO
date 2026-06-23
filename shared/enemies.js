@@ -263,6 +263,75 @@ export const ENEMIES = {
       { itemId: "small_health_potion", chance: 0.12 }
     ]
   },
+  vault_sentinel: {
+    id: "vault_sentinel",
+    name: "Vault Sentinel",
+    family: "construct",
+    zone: ZONES.FROSTBOUND_VAULT,
+    level: 15,
+    elite: true,
+    maxHealth: 460,
+    damage: 34,
+    xp: 180,
+    coins: [90, 150],
+    speed: 1.18,
+    attackRange: 2.3,
+    attackCooldownMs: 1650,
+    color: 0x80c9df,
+    loot: [
+      { itemId: "iceguard_gauntlets", chance: 0.12 },
+      { itemId: "zero_born_gloves", chance: 0.12 },
+      { itemId: "dawnmender_wraps", chance: 0.12 },
+      { itemId: "runic_core", chance: 0.18 }
+    ]
+  },
+  rune_wraith: {
+    id: "rune_wraith",
+    name: "Rune Wraith",
+    family: "wraith",
+    zone: ZONES.FROSTBOUND_VAULT,
+    level: 15,
+    maxHealth: 240,
+    damage: 29,
+    ranged: true,
+    xp: 120,
+    coins: [62, 104],
+    speed: 1.9,
+    attackRange: 6,
+    attackCooldownMs: 1450,
+    color: 0xb8fbff,
+    loot: [
+      { itemId: "zero_born_crown", chance: 0.08 },
+      { itemId: "dawnmender_circlet", chance: 0.08 },
+      { itemId: "ice_shard", chance: 0.58, quantity: 2 }
+    ]
+  },
+  runebound_colossus: {
+    id: "runebound_colossus",
+    name: "The Runebound Colossus",
+    family: "construct",
+    zone: ZONES.FROSTBOUND_VAULT,
+    level: 16,
+    elite: true,
+    boss: true,
+    maxHealth: 3600,
+    damage: 42,
+    xp: 620,
+    coins: [280, 420],
+    speed: 0.72,
+    attackRange: 3,
+    attackCooldownMs: 2100,
+    color: 0x6ac9e6,
+    loot: [
+      { itemId: "iceguard_chestplate", chance: 0.2 },
+      { itemId: "zero_born_robe", chance: 0.2 },
+      { itemId: "dawnmender_vestments", chance: 0.2 },
+      { itemId: "iceguard_helm", chance: 0.14 },
+      { itemId: "zero_born_boots", chance: 0.14 },
+      { itemId: "dawnmender_sandals", chance: 0.14 },
+      { itemId: "runic_core", chance: 0.85, quantity: 2 }
+    ]
+  },
   shadow_slime: {
     id: "shadow_slime",
     name: "Shadow Slime",
@@ -357,6 +426,13 @@ export const FROSTVEIL_SPAWNS = [
   { enemyId: "frost_wisp", count: 3, center: [24, 0, -22], radius: 8, eliteChance: 0.12 },
   { enemyId: "ice_golem", count: 1, center: [-28, 0, -28], radius: 4, eliteChance: 1 },
   { enemyId: "frozen_knight", count: 2, center: [32, 0, 18], radius: 7, eliteChance: 0.16 }
+];
+
+export const FROSTBOUND_VAULT_SPAWNS = [
+  { enemyId: "rune_wraith", count: 3, center: [-12, 0, -8], radius: 5, eliteChance: 0.18 },
+  { enemyId: "vault_sentinel", count: 2, center: [12, 0, -10], radius: 5, eliteChance: 1 },
+  { enemyId: "rune_wraith", count: 2, center: [0, 0, -22], radius: 4, eliteChance: 0.25 },
+  { enemyId: "runebound_colossus", count: 1, center: [0, 0, -26], radius: 1, eliteChance: 1 }
 ];
 
 export const ELITE_MODIFIERS = {

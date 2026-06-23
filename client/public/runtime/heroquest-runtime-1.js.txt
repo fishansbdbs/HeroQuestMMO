@@ -62,6 +62,13 @@ const NPC_DIALOGUES = {
       "Every upgrade is predictable. No broken gear, no gambling."
     ]
   },
+  bounty_board: {
+    name: "Bounty Board",
+    lines: [
+      "Three posted contracts rotate on a stable schedule and pay once when completed.",
+      "Frostveil needs reasons for veterans to return: hunts, elites, events, and vault threats."
+    ]
+  },
   portal_keeper: {
     name: "Portal Keeper",
     lines: [
@@ -170,6 +177,7 @@ function installDebugHooks() {
         started: game.started,
         zone: game.zone,
         position,
+        remotePlayerCount: game.remotePlayers.size,
         rotationY: game.playerGroup?.rotation.y ?? 0,
         velocity: {
           x: game.playerVelocity.x,
@@ -263,7 +271,20 @@ function bootstrap() {
     const phase6Smoke = params.get("phase6") === "frostveil" || smoke === "frostveil";
     const phase7Smoke = params.get("phase7") === "ice_mage" || smoke === "palace";
     const phase8Smoke = params.get("phase8") === "meta";
-    const smokeInventory = phase5Smoke
+    const frostforgedSmoke = params.get("phase21") === "frostforged" || smoke === "vault";
+    const smokeInventory = frostforgedSmoke
+      ? [
+          { itemId: "iceguard_helm", quantity: 1 },
+          { itemId: "iceguard_chestplate", quantity: 1 },
+          { itemId: "zero_born_crown", quantity: 1 },
+          { itemId: "zero_born_robe", quantity: 1 },
+          { itemId: "dawnmender_circlet", quantity: 1 },
+          { itemId: "dawnmender_vestments", quantity: 1 },
+          { itemId: "runic_core", quantity: 2 },
+          { itemId: "ice_shard", quantity: 8 },
+          { itemId: "small_health_potion", quantity: 5 }
+        ]
+      : phase5Smoke
       ? [
           { itemId: "apprentice_staff", quantity: 1 },
           { itemId: "snowhide_helmet", quantity: 1 },
@@ -275,12 +296,12 @@ function bootstrap() {
       ...game.save,
       name: "SmokeTester",
       color: COLORS[1],
-      xp: phase7Smoke ? 1300 : phase6Smoke ? 420 : phase2Smoke || phase5Smoke ? 260 : game.save.xp,
-      coins: phase7Smoke ? 450 : phase2Smoke || phase5Smoke || phase6Smoke ? 150 : game.save.coins,
+      xp: frostforgedSmoke ? XP_TABLE[14] : phase7Smoke ? 1300 : phase6Smoke ? 420 : phase2Smoke || phase5Smoke ? 260 : game.save.xp,
+      coins: frostforgedSmoke ? 700 : phase7Smoke ? 450 : phase2Smoke || phase5Smoke || phase6Smoke ? 150 : game.save.coins,
       inventory: phase2Smoke ? addInventoryItem(game.save.inventory || [], "rest_stone", 1) : smokeInventory,
       equipment: phase5Smoke ? createEquipmentState() : game.save.equipment,
-      learnedAbilities: phase7Smoke || phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
-      hotbar: phase7Smoke || phase4Smoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null] : phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
+      learnedAbilities: frostforgedSmoke ? ["hero_pulse", "whirlwind_cleave", "chain_frost", "radiant_ward"] : phase7Smoke || phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
+      hotbar: frostforgedSmoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", "chain_frost", "radiant_ward"] : phase7Smoke || phase4Smoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null] : phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
       skillTreeNodes: phase4Smoke ? {} : game.save.skillTreeNodes,
       savedBuilds: phase4Smoke ? {} : game.save.savedBuilds,
       activeLoadout: phase4Smoke ? null : game.save.activeLoadout,
@@ -401,6 +422,8 @@ function saveGame() {
     inventory: game.save.inventory,
     buyback: game.save.buyback || [],
     upgradeRanks: game.save.upgradeRanks || {},
+    setProgress: game.save.setProgress || {},
+    activeSetBonuses: game.save.activeSetBonuses || [],
     equipment: game.save.equipment,
     equippedWeapon: game.save.equippedWeapon,
     equippedArmor: game.save.equippedArmor,
@@ -424,6 +447,8 @@ function saveGame() {
     achievements: game.save.achievements,
     firstClearRewards: game.save.firstClearRewards,
     publicEventClaims: game.save.publicEventClaims || [],
+    bounties: game.save.bounties,
+    dungeonProgress: game.save.dungeonProgress,
     restStones: game.save.restStones,
     mana: game.save.mana,
     maxMana: game.save.maxMana
@@ -567,6 +592,12 @@ function startGame() {
   loadZone(game.zone, true);
   if (game.debugDemo === "frostward" && game.zone === ZONES.FROSTVEIL) {
     game.playerGroup.position.set(8, 0, -8);
+  }
+  if (game.debugDemo === "frostforge" && game.zone === ZONES.HUB) {
+    game.playerGroup.position.set(-13, 0, 15);
+  }
+  if (game.debugDemo === "bounty" && game.zone === ZONES.HUB) {
+    game.playerGroup.position.set(10, 0, 15);
   }
   setupNetwork();
   game.started = true;
@@ -978,4 +1009,5 @@ function buildHub() {
   addNpc(-2, 8, "Healer", "healer_trainer", 0xffe1a3);
   addNpc(-5, 15, "Shopkeeper", "shopkeeper", 0xc4473d);
   addNpc(-13, 15, "Borin Frosthand", "frostforge_blacksmith", 0x9edcff);
+  addNpc(10, 15, "Bounty Board", "bounty_board", 0xf2c867);
   addNpc(24, 22, "Portal Keeper", "portal_keeper", 0x84bdff);

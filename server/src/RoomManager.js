@@ -20,6 +20,7 @@ import {
 } from "../../shared/shop.js";
 import { upgradeFrostforgeItem } from "../../shared/frostforge.js";
 import { canEnterZone, unlockWaypoint } from "../../shared/zones.js";
+import { BOUNTIES, createBountyState, recordBountyProgress } from "../../shared/bounties.js";
 import { recordBestiaryKill, refreshMetaProgress as refreshPlayerMetaProgress } from "../../shared/metaProgress.js";
 import { createPlayerState, sanitizePlayer } from "./PlayerState.js";
 import { LootSystem } from "./LootSystem.js";
@@ -109,6 +110,10 @@ export class RoomManager {
         publicEventClaims: payload.publicEventClaims ?? player.publicEventClaims,
         buyback: payload.buyback ?? player.buyback,
         upgradeRanks: payload.upgradeRanks ?? player.upgradeRanks,
+        setProgress: payload.setProgress ?? player.setProgress,
+        activeSetBonuses: payload.activeSetBonuses ?? player.activeSetBonuses,
+        bounties: payload.bounties ?? player.bounties,
+        dungeonProgress: payload.dungeonProgress ?? player.dungeonProgress,
         title: payload.title ?? player.title
       });
     });
@@ -312,6 +317,8 @@ export class RoomManager {
         player.questProgress = questUpdate.progress;
         const bestiary = recordBestiaryKill(player, enemyDef, { elite: defeat.enemy?.eliteModifier || enemyDef.elite });
         if (bestiary.ok) Object.assign(player, bestiary.player);
+        this.updateBounties(player, { type: "kill", enemyId: enemyDef.id, family: enemyDef.family, elite: defeat.enemy?.eliteModifier || enemyDef.elite });
+        if (enemyDef.id === "runebound_colossus") this.awardFrostboundVaultClear(player);
       }
       this.refreshMetaProgress(player);
     }
@@ -329,6 +336,23 @@ export class RoomManager {
     if (!player) return;
     const result = refreshPlayerMetaProgress(player);
     if (result?.player) Object.assign(player, result.player);
+  }
+
+  updateBounties(player, event) {
+    if (!player) return;
+    const result = recordBountyProgress(player, event);
+    Object.assign(player, result.player);
+    player.bounties = createBountyState(player.bounties);
+    player.bounties.claimed = Array.isArray(player.bounties.claimed) ? player.bounties.claimed : [];
+    for (const bounty of result.rewards || []) {
+      if (player.bounties.claimed.includes(bounty.id)) continue;
+      Object.assign(player, addProgressRewards(player, bounty.reward || {}));
+      for (const item of bounty.reward?.items || []) {
+        const added = addInventoryStack(player.inventory || [], item.itemId, item.quantity || 1);
+        if (added.ok) player.inventory = added.inventory;
+      }
+      player.bounties.claimed.push(bounty.id);
+    }
   }
 
   allocateAttribute(player, attributeId, count = 1) {
@@ -577,6 +601,7 @@ export class RoomManager {
       }
       player.title = "Wyrm-Touched";
       this.refreshMetaProgress(player);
+      this.updateBounties(player, { type: "boss", bossId: BOSS.id });
     }
     this.io.to(ZONES.BOSS).emit(NET.WORLD_EVENT, {
       type: "boss_defeated",
@@ -620,6 +645,7 @@ export class RoomManager {
         if (rare.ok) player.inventory = rare.inventory;
       }
       this.refreshMetaProgress(player);
+      this.updateBounties(player, { type: "boss", bossId: ICE_MAGE_BOSS.id });
     }
 
     this.io.to(ZONES.PALACE).emit(NET.WORLD_EVENT, {
@@ -628,6 +654,39 @@ export class RoomManager {
       reward,
       lootBag: bossResult.lootBag || null
     });
+  }
+
+  awardFrostboundVaultClear(triggeringPlayer) {
+    const eligibleIds = new Set([triggeringPlayer?.id].filter(Boolean));
+    const party = this.parties.getPartyForPlayer(triggeringPlayer?.id);
+    if (party) {
+      for (const memberId of party.members) {
+        const member = this.players.get(memberId);
+        if (member?.zone === ZONES.FROSTBOUND_VAULT) eligibleIds.add(memberId);
+      }
+    }
+
+    for (const id of eligibleIds) {
+      const player = this.players.get(id);
+      if (!player || isPlayerDead(player)) continue;
+      player.dungeonProgress = player.dungeonProgress || {};
+      const current = player.dungeonProgress.frostbound_vault || {};
+      const firstClear = Boolean(current.firstClear);
+      player.dungeonProgress.frostbound_vault = {
+        ...current,
+        bestEncounterLevel: Math.max(current.bestEncounterLevel || 0, player.level || 15),
+        clears: Math.max(0, Number(current.clears) || 0) + 1,
+        firstClear: true,
+        personalChestClaims: Array.from(new Set([...(current.personalChestClaims || []), `colossus:${Date.now()}`]))
+      };
+      if (!firstClear) {
+        Object.assign(player, addProgressRewards(player, { xp: 500, coins: 240 }));
+        const core = addInventoryStack(player.inventory || [], "runic_core", 1);
+        if (core.ok) player.inventory = core.inventory;
+      }
+      this.updateBounties(player, { type: "boss", bossId: "runebound_colossus" });
+      this.updateBounties(player, { type: "dungeon_clear", dungeonId: "frostbound_vault" });
+    }
   }
 
   syncPartyIds() {
@@ -811,6 +870,7 @@ export class RoomManager {
       player.questProgress = questUpdate.progress;
       this.grantQuestCompletionRewards(player, questUpdate.completed);
       this.refreshMetaProgress(player);
+      this.updateBounties(player, { type: "event", eventId: event.eventId });
       creditedPlayerIds.push(id);
     }
     event.creditedPlayerIds = creditedPlayerIds;
@@ -847,6 +907,7 @@ export class RoomManager {
       boss: this.boss.snapshot(),
       iceMage: this.iceMage.snapshot(),
       publicEvent: this.publicEvents.snapshot(zone),
+      bounties: { definitions: BOUNTIES, active: createBountyState({}, Date.now()).active },
       parties: this.parties.snapshot(),
       serverTime: Date.now()
     };

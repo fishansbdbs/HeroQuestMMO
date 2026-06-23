@@ -6,17 +6,17 @@ export const SKILL_TREES = {
   might: {
     id: "might",
     name: "Might",
-    nodeIds: ["might_training", "heavy_slash", "iron_body", "warriors_rhythm", "earthbreaker"]
+    nodeIds: ["might_training", "heavy_slash", "iron_body", "warriors_rhythm", "whirlwind_cleave_node"]
   },
   arcana: {
     id: "arcana",
     name: "Arcana",
-    nodeIds: ["mana_flow", "spell_focus", "pulse_mastery", "arcane_resonance", "elemental_nova"]
+    nodeIds: ["mana_flow", "spell_focus", "pulse_mastery", "arcane_resonance", "chain_frost_node"]
   },
   restoration: {
     id: "restoration",
     name: "Restoration",
-    nodeIds: ["healing_study", "orb_mastery", "protective_grace", "lifebinder", "sanctuary"]
+    nodeIds: ["healing_study", "orb_mastery", "protective_grace", "lifebinder", "radiant_ward_node"]
   }
 };
 
@@ -52,14 +52,16 @@ export const SKILL_NODES = {
     prerequisites: [{ nodeId: "heavy_slash", rank: 3 }],
     description: "Physical hits reward steady offense."
   },
-  earthbreaker: {
-    id: "earthbreaker",
+  whirlwind_cleave_node: {
+    id: "whirlwind_cleave_node",
     treeId: "might",
-    name: "Earthbreaker",
+    name: "Whirlwind Cleave",
     maxRank: 1,
     prerequisites: [{ nodeId: "warriors_rhythm", rank: 1 }],
-    activeAbilityId: "earthbreaker",
-    description: "Unlocks a large physical ground strike."
+    levelRequirement: 15,
+    requiredTreePoints: 10,
+    activeAbilityId: "whirlwind_cleave",
+    description: "Unlocks a circular sword attack."
   },
   mana_flow: {
     id: "mana_flow",
@@ -92,14 +94,16 @@ export const SKILL_NODES = {
     prerequisites: [{ nodeId: "pulse_mastery", rank: 3 }],
     description: "Spells resonate with trained magic."
   },
-  elemental_nova: {
-    id: "elemental_nova",
+  chain_frost_node: {
+    id: "chain_frost_node",
     treeId: "arcana",
-    name: "Elemental Nova",
+    name: "Chain Frost",
     maxRank: 1,
     prerequisites: [{ nodeId: "arcane_resonance", rank: 1 }],
-    activeAbilityId: "elemental_nova",
-    description: "Unlocks a long-cooldown elemental explosion."
+    levelRequirement: 15,
+    requiredTreePoints: 10,
+    activeAbilityId: "chain_frost",
+    description: "Unlocks a cold spell that jumps between enemies."
   },
   healing_study: {
     id: "healing_study",
@@ -132,14 +136,16 @@ export const SKILL_NODES = {
     prerequisites: [{ nodeId: "orb_mastery", rank: 3 }],
     description: "Support magic links allies together."
   },
-  sanctuary: {
-    id: "sanctuary",
+  radiant_ward_node: {
+    id: "radiant_ward_node",
     treeId: "restoration",
-    name: "Sanctuary",
+    name: "Radiant Ward",
     maxRank: 1,
     prerequisites: [{ nodeId: "lifebinder", rank: 1 }],
-    activeAbilityId: "sanctuary",
-    description: "Unlocks a healing zone."
+    levelRequirement: 15,
+    requiredTreePoints: 10,
+    activeAbilityId: "radiant_ward",
+    description: "Unlocks a friendly shield pulse."
   }
 };
 
@@ -166,23 +172,35 @@ export function purchaseSkillNode(player, nodeId) {
   const current = applyProgressionStats(player);
   const currentRank = current.skillTreeNodes[nodeId] || 0;
   if (currentRank >= node.maxRank) return { ok: false, reason: "max_rank" };
+  if ((current.level || 1) < (node.levelRequirement || 1)) return { ok: false, reason: "level" };
+  if (countTreePoints(current.skillTreeNodes, node.treeId) < (node.requiredTreePoints || 0)) return { ok: false, reason: "investment" };
   if (current.availableSkillPoints <= 0) return { ok: false, reason: "points" };
   for (const prerequisite of node.prerequisites || []) {
     if ((current.skillTreeNodes[prerequisite.nodeId] || 0) < prerequisite.rank) {
       return { ok: false, reason: "prerequisite", prerequisite };
     }
   }
+  const learnedAbilities = node.activeAbilityId
+    ? Array.from(new Set([...(current.learnedAbilities || []), node.activeAbilityId]))
+    : current.learnedAbilities || [];
   return {
     ok: true,
     node,
     player: applyProgressionStats({
       ...current,
+      learnedAbilities,
       skillTreeNodes: {
         ...current.skillTreeNodes,
         [nodeId]: currentRank + 1
       }
     })
   };
+}
+
+function countTreePoints(skillTreeNodes, treeId) {
+  return Object.entries(skillTreeNodes || {}).reduce((total, [nodeId, rank]) => {
+    return SKILL_NODES[nodeId]?.treeId === treeId ? total + (Math.max(0, Math.floor(Number(rank) || 0))) : total;
+  }, 0);
 }
 
 export function saveLoadout(player, slot, label = "Build") {

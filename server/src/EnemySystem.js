@@ -1,4 +1,4 @@
-import { ELITE_MODIFIERS, FIELD_SPAWNS, FROSTVEIL_SPAWNS, ENEMIES, getEnemy } from "../../shared/enemies.js";
+import { ELITE_MODIFIERS, FIELD_SPAWNS, FROSTBOUND_VAULT_SPAWNS, FROSTVEIL_SPAWNS, ENEMIES, getEnemy } from "../../shared/enemies.js";
 import { ZONES } from "../../shared/constants.js";
 import { distance2d, calculateIncomingDamage } from "../../shared/combat.js";
 import { LootSystem } from "./LootSystem.js";
@@ -16,6 +16,7 @@ export class EnemySystem {
     this.enemies.clear();
     this.spawnConfigured(FIELD_SPAWNS, ZONES.FIELD);
     this.spawnConfigured(FROSTVEIL_SPAWNS, ZONES.FROSTVEIL);
+    this.spawnConfigured(FROSTBOUND_VAULT_SPAWNS, ZONES.FROSTBOUND_VAULT);
   }
 
   spawnField() {

@@ -25,6 +25,7 @@ export class CombatSystem {
     player.lastAttackAt = now;
     const kind = options.kind === "slash" ? "slash" : "auto";
     const damageScale = kind === "slash" ? ABILITIES.slash.damageScale : 1;
+    if (kind === "slash") applyIceguardGuard(player, now);
 
     if (targetId === "shadow_wyrm") {
       const dist = distance2d(player.position, { x: 0, z: 0 });
@@ -103,13 +104,13 @@ export class CombatSystem {
         damage,
         attackerId: player.id
       });
-      return {
+      return applyZeroBornRefund(player, ability, {
         ok: true,
         abilityId: ability.id,
         damage,
         result,
         projectile: createProjectilePayload(ability.id, player.position, target.enemy.position, target.enemy.id)
-      };
+      });
     }
     if (ability.id === "water_blast") {
       const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.abilityRange);
@@ -126,14 +127,14 @@ export class CombatSystem {
         attackerId: player.id
       });
       const statusEffect = applyEnemyStatusEffect(target.enemy, createSlowStatusEffect(ability, now));
-      return {
+      return applyZeroBornRefund(player, ability, {
         ok: true,
         abilityId: ability.id,
         damage,
         result,
         statusEffect,
         projectile: createProjectilePayload(ability.id, player.position, target.enemy.position, target.enemy.id, { knockback: ability.knockback || 0 })
-      };
+      });
     }
     if (ability.id === "dark_punch") {
       const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.meleeRange);
@@ -162,6 +163,7 @@ export class CombatSystem {
       if (!manaSpend.ok) return { ok: false, reason: "mana" };
       Object.assign(player, manaSpend.player);
       player.lastAbilityAt = now;
+      applyIceguardGuard(player, now);
       const damage = calculateAbilityDamage(player, ability, this.rng);
       const hits = [];
       const hitIds = new Set();
@@ -182,6 +184,98 @@ export class CombatSystem {
         damage,
         hits,
         areaEffect: createAreaEffectPayload(ability.id, player.position, ability)
+      };
+    }
+    if (ability.id === "whirlwind_cleave") {
+      const manaSpend = spendMana(player, ability.manaCost || 0);
+      if (!manaSpend.ok) return { ok: false, reason: "mana" };
+      Object.assign(player, manaSpend.player);
+      player.lastAbilityAt = now;
+      applyIceguardGuard(player, now);
+      const damage = calculateAbilityDamage(player, ability, this.rng);
+      const hits = [];
+      const hitIds = new Set();
+      for (const enemy of this.enemySystem.getZoneEnemies(player.zone)) {
+        if (!enemy?.id || hitIds.has(enemy.id)) continue;
+        if (enemy.health <= 0 || distance2d(player.position, enemy.position) > ability.radius) continue;
+        hitIds.add(enemy.id);
+        hits.push(this.enemySystem.damageEnemy({
+          zone: player.zone,
+          enemyInstanceId: enemy.id,
+          damage,
+          attackerId: player.id
+        }));
+      }
+      return {
+        ok: true,
+        abilityId: ability.id,
+        damage,
+        hits,
+        areaEffect: createAreaEffectPayload(ability.id, player.position, ability)
+      };
+    }
+    if (ability.id === "chain_frost") {
+      const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.abilityRange);
+      if (!target.ok) return target;
+      const manaSpend = spendMana(player, ability.manaCost || 0);
+      if (!manaSpend.ok) return { ok: false, reason: "mana" };
+      Object.assign(player, manaSpend.player);
+      player.lastAbilityAt = now;
+      const damage = calculateAbilityDamage(player, ability, this.rng);
+      const targets = collectChainTargets(this.enemySystem, player.zone, target.enemy, ability);
+      const hits = targets.map((enemy) => this.enemySystem.damageEnemy({
+        zone: player.zone,
+        enemyInstanceId: enemy.id,
+        damage,
+        attackerId: player.id
+      }));
+      return applyZeroBornRefund(player, ability, {
+        ok: true,
+        abilityId: ability.id,
+        damage,
+        hits,
+        projectile: {
+          type: ability.id,
+          targetId: target.enemy.id,
+          chainTargets: targets.map((enemy) => ({
+            id: enemy.id,
+            position: { x: enemy.position?.x || 0, y: (enemy.position?.y || 0) + 1, z: enemy.position?.z || 0 }
+          })),
+          from: { x: player.position?.x || 0, y: (player.position?.y || 0) + 1.2, z: player.position?.z || 0 },
+          to: { x: target.enemy.position?.x || 0, y: (target.enemy.position?.y || 0) + 1, z: target.enemy.position?.z || 0 },
+          travelMs: 300,
+          impactEffect: "frost_jump"
+        }
+      });
+    }
+    if (ability.id === "radiant_ward") {
+      const manaSpend = spendMana(player, ability.manaCost || 0);
+      if (!manaSpend.ok) return { ok: false, reason: "mana" };
+      Object.assign(player, manaSpend.player);
+      player.lastAbilityAt = now;
+      const affected = [];
+      for (const target of players.values()) {
+        if (!target || isPlayerDead(target) || target.zone !== player.zone) continue;
+        if (distance2d(player.position, target.position) > ability.radius) continue;
+        target.radiantWardUntil = now + ability.durationMs;
+        target.radiantWardReduction = ability.damageReduction;
+        affected.push(target.id);
+      }
+      return {
+        ok: true,
+        abilityId: ability.id,
+        affected,
+        areaEffect: createAreaEffectPayload(ability.id, player.position, ability),
+        healingEffect: {
+          type: ability.id,
+          casterId: player.id,
+          targetId: player.id,
+          from: { x: player.position?.x || 0, y: (player.position?.y || 0) + 1.2, z: player.position?.z || 0 },
+          to: { x: player.position?.x || 0, y: (player.position?.y || 0) + 1.2, z: player.position?.z || 0 },
+          beamMs: ability.durationMs,
+          pulseEffect: "radiant_ward",
+          amount: 0
+        }
       };
     }
     if (ability.id !== "hero_pulse") {
@@ -393,6 +487,13 @@ function applyHealingToTarget(caster, target, amount, sourceAbility) {
 
 function applyFriendlyHeal(caster, target, ability) {
   const heal = applyHealingToTarget(caster, target, calculateHealingAmount(caster, ability), ability.id);
+  if (caster?.setBonusEffects?.allyHealGuardMs && target?.id !== caster.id) {
+    const now = Date.now();
+    for (const player of [caster, target]) {
+      player.radiantWardUntil = now + caster.setBonusEffects.allyHealGuardMs;
+      player.radiantWardReduction = caster.setBonusEffects.allyHealGuardReduction || 0.18;
+    }
+  }
   return {
     ok: true,
     abilityId: ability.id,
@@ -400,4 +501,36 @@ function applyFriendlyHeal(caster, target, ability) {
       heal
     ]
   };
+}
+
+function applyIceguardGuard(player, now = Date.now()) {
+  const effects = player?.setBonusEffects || {};
+  if (!effects.physicalGuardMs) return;
+  player.setGuardUntil = now + effects.physicalGuardMs;
+  player.setGuardReduction = effects.physicalGuardReduction || 0.25;
+}
+
+function applyZeroBornRefund(player, ability, result) {
+  const effects = player?.setBonusEffects || {};
+  if (!effects.spellCooldownRefundChance || !["fireball", "water_blast", "chain_frost"].includes(ability.id)) return result;
+  if (Math.random() > effects.spellCooldownRefundChance) return result;
+  const refundMs = Math.max(0, Number(effects.spellCooldownRefundMs) || 0);
+  player.lastAbilityAt = Math.max(0, (player.lastAbilityAt || 0) - refundMs);
+  return { ...result, cooldownRefundMs: refundMs };
+}
+
+function collectChainTargets(enemySystem, zone, firstEnemy, ability) {
+  const maxTargets = Math.max(1, Number(ability.maxTargets) || 1);
+  const jumpRange = Math.max(1, Number(ability.jumpRange) || 7);
+  const selected = [];
+  const used = new Set();
+  let current = firstEnemy;
+  while (current && selected.length < maxTargets) {
+    selected.push(current);
+    used.add(current.id);
+    current = enemySystem.getZoneEnemies(zone)
+      .filter((enemy) => !used.has(enemy.id) && enemy.health > 0 && distance2d(current.position, enemy.position) <= jumpRange)
+      .sort((a, b) => distance2d(current.position, a.position) - distance2d(current.position, b.position))[0];
+  }
+  return selected;
 }

@@ -357,6 +357,7 @@ function openPanel(panel) {
     settings: renderSettingsPanel,
     shop: renderShopPanel,
     frostforge: renderFrostforgePanel,
+    bounties: renderBountyPanel,
     spellbook: renderSpellbookPanel,
     skillTree: renderSkillTreePanel,
     loadouts: renderLoadoutPanel,
@@ -409,6 +410,7 @@ function renderInventoryPanel() {
         </div>`;
       }).join("")}
     </div>
+    ${renderSetBonusPanel(equipment)}
     <div class="inventory-grid">
       ${slots.map((entry, index) => {
         if (!entry) return `<div class="inventory-slot empty"><span>${index + 1}</span><small>Empty</small></div>`;
@@ -473,6 +475,19 @@ function equipItem(itemId) {
 
 function equipmentSlotLabel(slot) {
   return slot.charAt(0).toUpperCase() + slot.slice(1);
+}
+
+function renderSetBonusPanel(equipment) {
+  const progress = game.save.setProgress || calculateSetProgress(equipment || {});
+  return `<div class="item-row set-bonus-panel">
+    <div>
+      <strong>Set Bonuses</strong>
+      ${Object.values(EQUIPMENT_SETS).map((set) => {
+        const state = progress[set.id] || { count: 0, total: set.pieces.length, activeBonuses: [] };
+        return `<small>${set.name} ${state.count}/${state.total}: ${Object.values(set.bonuses).map((bonus) => `${state.activeBonuses.includes(bonus.id) ? "Active" : "Locked"} ${bonus.label}`).join(" ")}</small>`;
+      }).join("")}
+    </div>
+  </div>`;
 }
 
 function itemMatchesInventoryFilter(item, query, filter) {
@@ -820,6 +835,31 @@ function frostforgeReason(reason) {
   return "Upgrade failed.";
 }
 
+function renderBountyPanel() {
+  ui.panelTitle.textContent = "Bounty Board";
+  const state = createBountyState(game.save.bounties || {});
+  const active = state.active.map((entry) => ({
+    ...entry,
+    definition: BOUNTIES.find((bounty) => bounty.id === entry.id)
+  })).filter((entry) => entry.definition);
+  ui.panelContent.innerHTML = `
+    ${active.map((entry) => {
+      const bounty = entry.definition;
+      const progress = Math.min(entry.required, state.progress?.[entry.id] ?? entry.progress ?? 0);
+      const claimed = state.claimed?.includes(entry.id);
+      const completed = state.completed?.includes(entry.id) || progress >= entry.required;
+      const rewards = `${bounty.reward?.coins || 0} coins, ${bounty.reward?.xp || 0} XP${bounty.reward?.items?.length ? `, ${bounty.reward.items.map((item) => `${item.quantity || 1} ${getItem(item.itemId)?.name || item.itemId}`).join(", ")}` : ""}`;
+      return `<div class="item-row">
+        <div>
+          <strong>${bounty.title}</strong>
+          <small>${bounty.zone} | ${progress} / ${entry.required} | ${completed ? claimed ? "Claimed" : "Complete" : "Active"}</small>
+          <small>Reward: ${rewards}</small>
+        </div>
+      </div>`;
+    }).join("")}
+  `;
+}
+
 function openChest(chestId) {
   if (isLocallyDead()) return toast("You cannot open chests while defeated.");
   const chest = game.chests.get(chestId);
@@ -904,6 +944,7 @@ function openDialogue(dialogueId, index = 0) {
       <button id="dialogue-next">${index < dialogue.lines.length - 1 ? "Next" : "Restart"}</button>
       ${dialogueId === "shopkeeper" ? `<button id="dialogue-shop" class="primary">Open Shop</button>` : ""}
       ${dialogueId === "frostforge_blacksmith" ? `<button id="dialogue-frostforge" class="primary">Frostforge</button>` : ""}
+      ${dialogueId === "bounty_board" ? `<button id="dialogue-bounties" class="primary">Bounty Board</button>` : ""}
       ${dialogueId === "mage_trainer" ? `<button id="dialogue-mage" class="primary">Train Magic</button>` : ""}
       ${dialogueId === "healer_trainer" ? `<button id="dialogue-healer" class="primary">Train Healing</button>` : ""}
       <button id="dialogue-close">Close</button>
@@ -913,6 +954,7 @@ function openDialogue(dialogueId, index = 0) {
   ui.panelContent.querySelector("#dialogue-close").addEventListener("click", closePanel);
   ui.panelContent.querySelector("#dialogue-shop")?.addEventListener("click", () => openPanel("shop"));
   ui.panelContent.querySelector("#dialogue-frostforge")?.addEventListener("click", () => openPanel("frostforge"));
+  ui.panelContent.querySelector("#dialogue-bounties")?.addEventListener("click", () => openPanel("bounties"));
   ui.panelContent.querySelector("#dialogue-mage")?.addEventListener("click", () => openPanel("mageTrainer"));
   ui.panelContent.querySelector("#dialogue-healer")?.addEventListener("click", () => openPanel("healerTrainer"));
 }
@@ -1227,6 +1269,10 @@ function applyServerPlayerUpdate(player) {
     publicEventClaims: player.publicEventClaims || game.save.publicEventClaims,
     buyback: player.buyback || game.save.buyback || [],
     upgradeRanks: player.upgradeRanks || game.save.upgradeRanks || {},
+    setProgress: player.setProgress || game.save.setProgress || {},
+    activeSetBonuses: player.activeSetBonuses || game.save.activeSetBonuses || [],
+    bounties: player.bounties || game.save.bounties,
+    dungeonProgress: player.dungeonProgress || game.save.dungeonProgress,
     title: player.title || game.save.title
   });
   game.save = applyEquipment(game.save);
@@ -1309,6 +1355,7 @@ function renderCharacterPanel() {
         return `<div class="equipment-slot"><span>${equipmentSlotLabel(slot)}</span><strong>${item?.name || "Empty"}</strong></div>`;
       }).join("")}
     </div>
+    ${renderSetBonusPanel(equipment)}
     ${attributeRows.map((attribute) => `
       <div class="item-row">
         <div><strong>${attribute.label}</strong><small>${stats.spentAttributes?.[attribute.id] || 0} spent. Next point: ${attribute.benefit}.</small></div>
