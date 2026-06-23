@@ -37,12 +37,16 @@ const nearlyEqual = (actual, expected, epsilon = 0.000001) => {
 const inventoryQuantity = (inventory, itemId) =>
   (inventory || []).filter((entry) => entry?.itemId === itemId).reduce((total, entry) => total + (entry.quantity || 0), 0);
 
-test("client runtime chunks compile after concatenation", () => {
+const RUNTIME_PARTS = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
+const RECENT_INTERACTION_DECLARATIONS = ["chest", "shop", "npc", "dialogue", "boss", "telegraph", "loot", "reward", "dummy"];
+
+function readClientRuntimeSource() {
   const root = path.resolve(import.meta.dirname, "../..");
-  const runtimeParts = ["1", "2", "3", "4", "5", "6", "7", "7b", "8", "8b", "9"];
-  const runtimeSource = runtimeParts
-    .map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8"))
-    .join("\n");
+  return RUNTIME_PARTS.map((part) => fs.readFileSync(path.join(root, `client/public/runtime/heroquest-runtime-${part}.js.txt`), "utf8")).join("\n");
+}
+
+test("client runtime chunks compile after concatenation", () => {
+  const runtimeSource = readClientRuntimeSource();
 
   assert.doesNotThrow(() => {
     new Function(
@@ -205,6 +209,19 @@ test("client runtime animates Mend Ally healing acknowledgements", () => {
   assert.match(runtimeSource, /effect\.type === "mend_ally"/);
 });
 
+test("client runtime keeps v1.2.3 chest declarations split after duplicate scan", () => {
+  const runtimeSource = readClientRuntimeSource();
+  const watchedDeclarationPattern = new RegExp(`\\b(?:const|let)\\s+(${RECENT_INTERACTION_DECLARATIONS.join("|")})\\b`, "g");
+  const watchedDeclarations = [...runtimeSource.matchAll(watchedDeclarationPattern)].map((match) => match[1]);
+  const addChestSource = runtimeSource.match(/function addChest\([\s\S]*?\n}\r?\n/)?.[0] || "";
+
+  assert.ok(watchedDeclarations.includes("chest"), "duplicate declaration scan should cover chest declarations");
+  assert.ok(addChestSource, "addChest runtime source should exist");
+  assert.doesNotMatch(addChestSource, /\b(?:const|let)\s+chest\s*=/, "addChest must not reuse `chest` for both mesh and state");
+  assert.match(addChestSource, /\bconst\s+chestMesh\s*=/);
+  assert.match(addChestSource, /\bconst\s+chestState\s*=/);
+});
+
 test("Frostforged Paths title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
@@ -212,6 +229,8 @@ test("Frostforged Paths title presentation and patch notes are registered", () =
   assert.equal(GAME_VERSION, "2.1.0");
   assert.equal(PATCH_NOTES.versions[0].version, "2.1.0");
   assert.equal(PATCH_NOTES.versions[0].title, "Frostforged Paths");
+  assert.ok(PATCH_NOTES.versions.some((version) => version.version === "1.2.3" && version.title === "Black Screen Hotfix"));
+  assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.0.0" && version.title === "ICEZERO"));
   assert.match(menuSource, /Version \$\{GAME_VERSION\}/);
   assert.match(menuSource, /HeroQuest MMO/);
   assert.match(menuSource, /Continue Game/);
