@@ -31,7 +31,7 @@ import { NET } from "../../shared/netMessages.js";
 import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot, slotForItem } from "../../shared/equipment.js";
 import { EQUIPMENT_SETS, calculateSetProgress } from "../../shared/equipmentSets.js";
 import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory, removeInventoryItems } from "../../shared/inventory.js";
-import { STORMREACH_MIGRATION_ID, migrateStormreachSave } from "../../shared/saveMigration.js";
+import { RELIC_ARSENAL_MIGRATION_ID, migrateRelicArsenalSave } from "../../shared/saveMigration.js";
 import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout, SKILL_NODES, SKILL_TREES } from "../../shared/skillTrees.js";
@@ -170,8 +170,8 @@ const bootRuntime = new Function(
   "createCameraRelativeMove",
   "smoothAngleToward",
   "visualYawForMoveDirection",
-  "STORMREACH_MIGRATION_ID",
-  "migrateStormreachSave",
+  "RELIC_ARSENAL_MIGRATION_ID",
+  "migrateRelicArsenalSave",
   "applyProgressionStats",
   "regenerateMana",
   "spendAttributePoint",
@@ -277,8 +277,8 @@ bootRuntime(
   createCameraRelativeMove,
   smoothAngleToward,
   visualYawForMoveDirection,
-  STORMREACH_MIGRATION_ID,
-  migrateStormreachSave,
+  RELIC_ARSENAL_MIGRATION_ID,
+  migrateRelicArsenalSave,
   applyProgressionStats,
   regenerateMana,
   spendAttributePoint,

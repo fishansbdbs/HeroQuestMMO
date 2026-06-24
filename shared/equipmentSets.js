@@ -1,6 +1,7 @@
 import { getItem } from "./items.js";
 import { V22_EQUIPMENT_SETS } from "./expansionV22.js";
 import { V23_EQUIPMENT_SETS } from "./expansionV23.js";
+import { V24_EQUIPMENT_SETS } from "./expansionV24.js";
 
 export const EQUIPMENT_SETS = {
   iceguard: {
@@ -34,7 +35,8 @@ export const EQUIPMENT_SETS = {
     }
   },
   ...V22_EQUIPMENT_SETS,
-  ...V23_EQUIPMENT_SETS
+  ...V23_EQUIPMENT_SETS,
+  ...V24_EQUIPMENT_SETS
 };
 
 export function calculateSetProgress(equipment = {}) {
@@ -57,7 +59,7 @@ export function calculateSetProgress(equipment = {}) {
 
 export function calculateSetBonuses(equipment = {}) {
   const progress = calculateSetProgress(equipment);
-  const stats = { attack: 0, defense: 0, magicPower: 0, healingPower: 0, health: 0, maxMana: 0, fireResistance: 0, waterResistance: 0, lightningResistance: 0 };
+  const stats = { attack: 0, defense: 0, magicPower: 0, healingPower: 0, health: 0, maxMana: 0, fireResistance: 0, waterResistance: 0, lightningResistance: 0, movementSpeed: 0 };
   const effects = {};
   const activeSetBonuses = [];
 
@@ -97,6 +99,8 @@ export function applySetBonuses(stats, setBonuses) {
     fireResistance: (stats.fireResistance || 0) + (bonuses.stats.fireResistance || 0),
     waterResistance: (stats.waterResistance || 0) + (bonuses.stats.waterResistance || 0),
     lightningResistance: (stats.lightningResistance || 0) + (bonuses.stats.lightningResistance || 0),
+    movementSpeed: (stats.movementSpeed || 0) + (bonuses.stats.movementSpeed || 0),
+    speed: stats.speed * (1 + ((bonuses.stats.movementSpeed || 0) / 100)),
     setProgress: bonuses.progress,
     activeSetBonuses: bonuses.activeSetBonuses,
     setBonusEffects: bonuses.effects

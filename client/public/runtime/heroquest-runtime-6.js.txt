@@ -389,51 +389,69 @@ function renderInventoryPanel() {
   const query = (game.inventorySearch || "").toLowerCase();
   const filter = game.inventoryFilter || "all";
   const slots = Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => inventory[index] || null);
+  const selectedItem = getItem(game.inventorySelectedItemId) || getItem(inventory.find((entry) => itemMatchesInventoryFilter(getItem(entry.itemId), query, filter))?.itemId);
+  if (selectedItem && game.inventorySelectedItemId !== selectedItem.id) game.inventorySelectedItemId = selectedItem.id;
+  const filterTabs = [
+    ["all", "All"],
+    ["weapon", "Weapons"],
+    ["armor", "Armor"],
+    ["staff", "Staffs"],
+    ["offhand", "Shields"],
+    ["accessory", "Accessories"],
+    ["consumable", "Consumables"],
+    ["material", "Materials"],
+    ["quest", "Quest"],
+    ["relic", "Relics"]
+  ];
   ui.panelContent.innerHTML = `
-    <div class="inventory-tools">
+    <div class="inventory-tools arsenal-tools">
       <input id="inventory-search" maxlength="24" placeholder="Search items" value="${escapeHtml(game.inventorySearch || "")}" />
-      <select id="inventory-filter">
-        <option value="all" ${filter === "all" ? "selected" : ""}>All</option>
-        <option value="equipment" ${filter === "equipment" ? "selected" : ""}>Equipment</option>
-        <option value="consumable" ${filter === "consumable" ? "selected" : ""}>Consumables</option>
-        <option value="material" ${filter === "material" ? "selected" : ""}>Materials</option>
-      </select>
+      <button class="mini-button" id="sort-inventory">Sort</button>
     </div>
-    <div class="stat-line"><span>Slots</span><strong>${inventory.length} / ${INVENTORY_SLOT_COUNT}</strong></div>
-    <div class="equipment-grid">
-      ${EQUIPMENT_SLOTS.map((slot) => {
-        const item = getItem(equipment[slot]);
-        return `<div class="equipment-slot">
-          <span>${equipmentSlotLabel(slot)}</span>
-          <strong>${item?.name || "Empty"}</strong>
-          <small>${item?.rarity || ""}</small>
-        </div>`;
-      }).join("")}
-    </div>
-    ${renderSetBonusPanel(equipment)}
-    <div class="inventory-grid">
-      ${slots.map((entry, index) => {
-        if (!entry) return `<div class="inventory-slot empty"><span>${index + 1}</span><small>Empty</small></div>`;
-      const item = getItem(entry.itemId);
-        if (!itemMatchesInventoryFilter(item, query, filter)) return `<div class="inventory-slot filtered"><span>${index + 1}</span><small>Hidden</small></div>`;
-      const canEquip = Boolean(slotForItem(item));
-      const canUse = item?.type === "consumable" || entry.itemId === "rest_stone";
-        return `<div class="inventory-slot filled">
-          <span>${index + 1}</span>
-          <strong>${item?.name || entry.itemId}</strong>
-          <small>x${entry.quantity} ${item?.rarity || ""}</small>
-          <div class="slot-actions">${canEquip ? `<button data-equip="${entry.itemId}">Equip</button>` : ""}${canUse ? `<button data-use="${entry.itemId}">Use</button>` : ""}</div>
-      </div>`;
-      }).join("")}
+    <div class="filter-tabs">${filterTabs.map(([id, label]) => `<button class="${filter === id ? "active" : ""}" data-inventory-filter="${id}">${label}</button>`).join("")}</div>
+    <div class="arsenal-layout">
+      <div>
+        <div class="stat-line"><span>Slots</span><strong>${inventory.length} / ${INVENTORY_SLOT_COUNT}</strong></div>
+        <div class="inventory-grid arsenal-grid">
+          ${slots.map((entry, index) => {
+            if (!entry) return `<div class="inventory-slot empty"><span>${index + 1}</span><small>Empty</small></div>`;
+            const item = getItem(entry.itemId);
+            if (!itemMatchesInventoryFilter(item, query, filter)) return `<div class="inventory-slot filtered"><span>${index + 1}</span><small>Hidden</small></div>`;
+            const equipped = Object.values(equipment).includes(entry.itemId);
+            const rank = getFrostforgeRank(game.save, entry.itemId);
+            return `<button class="inventory-slot filled rarity-${rarityClass(item?.rarity)} ${game.inventorySelectedItemId === entry.itemId ? "selected" : ""}" data-select-item="${entry.itemId}" title="${escapeHtml(itemTooltipText(item, equipment))}">
+              <span>${itemIcon(item)}</span>
+              <strong>${item?.name || entry.itemId}</strong>
+              <small>${item?.rarity || ""}${rank ? ` +${rank}` : ""}</small>
+              ${entry.quantity > 1 ? `<em>x${entry.quantity}</em>` : ""}
+              ${equipped ? `<b>Equipped</b>` : ""}
+            </button>`;
+          }).join("")}
+        </div>
+      </div>
+      <aside class="item-detail-panel">${selectedItem ? renderItemDetail(selectedItem, equipment) : `<strong>No item selected</strong><small>Select an item to inspect stats and actions.</small>`}</aside>
     </div>
   `;
   ui.panelContent.querySelector("#inventory-search")?.addEventListener("input", (event) => {
     game.inventorySearch = event.target.value;
     renderInventoryPanel();
   });
-  ui.panelContent.querySelector("#inventory-filter")?.addEventListener("change", (event) => {
-    game.inventoryFilter = event.target.value;
+  ui.panelContent.querySelectorAll("[data-inventory-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      game.inventoryFilter = button.dataset.inventoryFilter;
+      renderInventoryPanel();
+    });
+  });
+  ui.panelContent.querySelector("#sort-inventory")?.addEventListener("click", () => {
+    game.save.inventory = [...inventory].sort((a, b) => (getItem(a.itemId)?.name || a.itemId).localeCompare(getItem(b.itemId)?.name || b.itemId));
+    saveGame();
     renderInventoryPanel();
+  });
+  ui.panelContent.querySelectorAll("[data-select-item]").forEach((button) => {
+    button.addEventListener("click", () => {
+      game.inventorySelectedItemId = button.dataset.selectItem;
+      renderInventoryPanel();
+    });
   });
   ui.panelContent.querySelectorAll("[data-equip]").forEach((button) => {
     button.addEventListener("click", () => equipItem(button.dataset.equip));
@@ -445,6 +463,95 @@ function renderInventoryPanel() {
       renderInventoryPanel();
     });
   });
+  ui.panelContent.querySelectorAll("[data-sell-item]").forEach((button) => {
+    button.addEventListener("click", () => {
+      sellShopItem(button.dataset.sellItem, 1);
+      renderInventoryPanel();
+    });
+  });
+  attachSetCardHandlers(renderInventoryPanel);
+}
+
+function renderItemDetail(item, equipment) {
+  const canEquip = Boolean(slotForItem(item));
+  const canUse = item?.type === "consumable" || item?.id === "rest_stone";
+  return `
+    <div class="item-tooltip-card rarity-${rarityClass(item.rarity)}">
+      <div class="tooltip-title"><span>${itemIcon(item)}</span><strong>${escapeHtml(item.name)}</strong><em>${item.rarity || ""}</em></div>
+      <small>${item.type || ""}${item.level ? ` - Level ${item.level}` : ""}${item.slot ? ` - ${equipmentSlotLabel(item.slot)}` : ""}</small>
+      <div class="tooltip-stats">${itemStatRows(item, equipment).join("")}</div>
+      ${item.setId ? `<small>Set: ${EQUIPMENT_SETS[item.setId]?.name || item.setId}</small>` : ""}
+      ${item.effectText || item.passiveEffect ? `<small class="passive-line">Passive: ${escapeHtml(item.effectText || item.description || "")}</small>` : ""}
+      ${item.source ? `<small>Source: ${escapeHtml(item.source)}</small>` : ""}
+      <small>Sell value: ${itemSellUnitValue(item.id)} coins</small>
+      <small>${escapeHtml(item.description || "")}</small>
+      <div class="shop-actions">${canEquip ? `<button data-equip="${item.id}">Equip</button>` : ""}${canUse ? `<button data-use="${item.id}">Use</button>` : ""}${isItemSellable(item.id) ? `<button data-sell-item="${item.id}">Sell</button>` : ""}</div>
+    </div>
+  `;
+}
+
+function itemStatRows(item, equipment = {}) {
+  const stats = ["health", "attack", "defense", "magicPower", "healingPower", "maxMana", "speed", "movementSpeed", "fireResistance", "waterResistance", "lightningResistance", "cooldownReduction", "coinGain", "potionPower", "questXpGain"];
+  const equipped = getItem(equipment[item.slot]);
+  return stats
+    .map((stat) => {
+      const value = Number(item?.[stat]) || 0;
+      if (!value && stat !== "speed") return "";
+      if (stat === "speed" && (!item.speed || item.speed === 1)) return "";
+      const current = Number(equipped?.[stat]) || (stat === "speed" ? 1 : 0);
+      const delta = stat === "speed" ? value - current : value - current;
+      const cls = Math.abs(delta) < 0.001 ? "same" : delta > 0 ? "better" : "worse";
+      return `<div class="tooltip-stat"><span>${itemStatLabel(stat)}</span><strong class="${cls}">${formatStatValue(stat, value)}${equipped ? ` vs ${formatStatValue(stat, current)}` : ""}</strong></div>`;
+    })
+    .filter(Boolean);
+}
+
+function itemTooltipText(item, equipment = {}) {
+  if (!item) return "";
+  return `${item.name} - ${item.rarity || ""} ${item.type || ""}. ${itemStatRows(item, equipment).map((row) => row.replace(/<[^>]+>/g, " ")).join(" ")} ${item.effectText || item.description || ""}`;
+}
+
+function itemIcon(item) {
+  if (!item) return "?";
+  if (item.icon) return item.icon;
+  if (item.type === "relic") return "R";
+  if (item.type === "weapon") return "W";
+  if (item.type === "staff") return "S";
+  if (item.slot === "offhand") return "O";
+  if (item.type === "armor") return "A";
+  if (item.type === "material") return "M";
+  if (item.type === "consumable") return "+";
+  return "*";
+}
+
+function rarityClass(rarity = "Common") {
+  return String(rarity).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+}
+
+function itemStatLabel(stat) {
+  const labels = {
+    attack: "Physical Power",
+    magicPower: "Magic",
+    healingPower: "Healing",
+    maxMana: "Mana",
+    speed: "Attack Speed",
+    movementSpeed: "Movement",
+    fireResistance: "Fire Resist",
+    waterResistance: "Water Resist",
+    lightningResistance: "Lightning Resist",
+    cooldownReduction: "Cooldown",
+    coinGain: "Coin Gain",
+    potionPower: "Potion Power",
+    questXpGain: "Quest XP"
+  };
+  return labels[stat] || stat[0].toUpperCase() + stat.slice(1);
+}
+
+function formatStatValue(stat, value) {
+  if (["coinGain", "cooldownReduction", "potionPower", "questXpGain"].includes(stat)) return `${Math.round(value * 100)}%`;
+  if (stat === "speed") return `${Math.round(value * 100)}%`;
+  if (stat === "movementSpeed") return `${value}%`;
+  return `${value > 0 ? "+" : ""}${value}`;
 }
 
 function equipItem(itemId) {
@@ -479,15 +586,39 @@ function equipmentSlotLabel(slot) {
 
 function renderSetBonusPanel(equipment) {
   const progress = game.save.setProgress || calculateSetProgress(equipment || {});
-  return `<div class="item-row set-bonus-panel">
-    <div>
-      <strong>Set Bonuses</strong>
-      ${Object.values(EQUIPMENT_SETS).map((set) => {
-        const state = progress[set.id] || { count: 0, total: set.pieces.length, activeBonuses: [] };
-        return `<small>${set.name} ${state.count}/${state.total}: ${Object.values(set.bonuses).map((bonus) => `${state.activeBonuses.includes(bonus.id) ? "Active" : "Locked"} ${bonus.label}`).join(" ")}</small>`;
-      }).join("")}
-    </div>
+  const owned = new Set(normalizeInventory(game.save.inventory || []).map((entry) => entry.itemId));
+  const equipped = new Set(Object.values(equipment || {}).filter(Boolean));
+  return `<div class="set-card-list">
+    <div class="section-title">Set Bonuses</div>
+    ${Object.values(EQUIPMENT_SETS).map((set) => {
+      const state = progress[set.id] || { count: 0, total: set.pieces.length, activeBonuses: [] };
+      const expanded = game.expandedSetId === set.id;
+      return `<button class="set-card ${expanded ? "expanded" : ""} ${state.count >= 2 ? "active" : ""}" data-set-card="${set.id}">
+        <span><strong>${set.name}</strong><small>${set.role || "Gear Set"}</small></span>
+        <em>${state.count}/${state.total}</em>
+        <div class="set-pips">${set.pieces.map((itemId) => `<i class="${equipped.has(itemId) ? "equipped" : owned.has(itemId) ? "owned" : ""}">${itemIcon(getItem(itemId))}</i>`).join("")}</div>
+        ${expanded ? `<div class="set-card-detail">
+          ${set.pieces.map((itemId) => {
+            const item = getItem(itemId);
+            return `<small>${equipped.has(itemId) ? "Equipped" : owned.has(itemId) ? "Owned" : "Missing"}: ${item?.name || itemId}</small>`;
+          }).join("")}
+          ${[2, 4].map((threshold) => {
+            const bonus = set.bonuses[threshold];
+            return `<small class="${state.activeBonuses.includes(bonus.id) ? "better" : "same"}">${state.activeBonuses.includes(bonus.id) ? "Active" : "Inactive"} ${bonus.label}</small>`;
+          }).join("")}
+        </div>` : ""}
+      </button>`;
+    }).join("")}
   </div>`;
+}
+
+function attachSetCardHandlers(renderAgain) {
+  ui.panelContent.querySelectorAll("[data-set-card]").forEach((button) => {
+    button.addEventListener("click", () => {
+      game.expandedSetId = game.expandedSetId === button.dataset.setCard ? null : button.dataset.setCard;
+      renderAgain();
+    });
+  });
 }
 
 function itemMatchesInventoryFilter(item, query, filter) {
@@ -495,6 +626,12 @@ function itemMatchesInventoryFilter(item, query, filter) {
   const searchable = `${item.name || ""} ${item.id || ""} ${item.description || ""}`.toLowerCase();
   if (query && !searchable.includes(query)) return false;
   if (filter === "equipment") return Boolean(slotForItem(item));
+  if (filter === "weapon") return item.type === "weapon";
+  if (filter === "armor") return item.type === "armor";
+  if (filter === "staff") return item.type === "staff";
+  if (filter === "offhand") return item.slot === "offhand";
+  if (filter === "accessory" || filter === "relic") return item.slot === "accessory" || item.type === "relic";
+  if (filter === "quest") return item.type === "quest" || item.questItem;
   if (filter === "consumable") return item.type === "consumable" || item.id === "rest_stone";
   if (filter === "material") return item.type === "material";
   return true;
@@ -1060,26 +1197,26 @@ function trainerBuyReason(reason) {
 function renderSpellbookPanel() {
   ui.panelTitle.textContent = "Spellbook";
   const activeSlots = [3, 7, 8];
-  const abilities = ["hero_pulse", "ground_pound", "fireball", "dark_punch", "water_blast", "healing_orb", "mend_ally"]
-    .map((abilityId) => ABILITIES[abilityId])
-    .filter(Boolean);
-  ui.panelContent.innerHTML = abilities.map((ability) => {
+  const abilities = Object.values(ABILITIES).filter((ability) => ability.trainerId);
+  ui.panelContent.innerHTML = `<div class="spellbook-grid">${abilities.map((ability) => {
     const learned = knowsAbility(ability.id);
     const slottedSlots = activeSlots.filter((slot) => (game.save.hotbar || [])[slot - 1] === ability.id);
     const slotted = slottedSlots.length > 0;
-    return `<div class="item-row" ${learned ? `draggable="true" data-drag-ability="${ability.id}"` : ""}>
-      <div>
+    return `<div class="spell-card ${learned ? "learned" : "locked"}" ${learned ? `draggable="true" data-drag-ability="${ability.id}"` : ""}>
+      <div class="spell-icon">${abilityIcon(ability)}</div>
+      <div class="spell-body">
         <strong>${ability.name}</strong>
-        <small>${learned ? "Learned" : "Locked"} from ${ability.trainerId === "healer" ? "Sister Elara" : "Arcanist Mira"}. ${ability.description}</small>
-        <small>Mana ${ability.manaCost || 0}. ${abilityRequirementText(ability)}</small>
+        <small>${learned ? "Learned" : lockedAbilityReason(ability)} - ${ability.trainerId === "healer" ? "Sister Elara" : "Arcanist Mira"}</small>
+        <p>${escapeHtml(ability.description || "")}</p>
+        <div class="spell-meta"><span>Mana ${ability.manaCost || 0}</span><span>${Math.round((ability.cooldownMs || 0) / 1000)}s cooldown</span><span>${abilityRequirementText(ability)}</span></div>
       </div>
-      <div class="shop-actions">
+      <div class="shop-actions spell-actions">
         <span>${slotted ? `Slot ${slottedSlots.join(", ")}` : learned ? "Ready" : lockedAbilityReason(ability)}</span>
         ${activeSlots.map((slot) => `<button data-slot-ability="${ability.id}" data-slot="${slot}" ${learned ? "" : "disabled"}>${(game.save.hotbar || [])[slot - 1] === ability.id ? `Slot ${slot}` : `Assign ${slot}`}</button>`).join("")}
         ${slottedSlots.map((slot) => `<button data-clear-slot="${slot}">Remove ${slot}</button>`).join("")}
       </div>
     </div>`;
-  }).join("");
+  }).join("")}</div>`;
   ui.panelContent.querySelectorAll("[data-drag-ability]").forEach((row) => {
     row.addEventListener("dragstart", (event) => {
       event.dataTransfer?.setData("text/plain", row.dataset.dragAbility);
@@ -1379,6 +1516,8 @@ function renderCharacterPanel() {
     <div class="stat-line"><span>Defense</span><strong>${stats.defense}</strong></div>
     <div class="stat-line"><span>Damage Reduction</span><strong>${Math.round((stats.damageReduction || 0) * 100)}%</strong></div>
     <div class="stat-line"><span>Speed</span><strong>${stats.speed.toFixed(1)}</strong></div>
+    <div class="stat-line"><span>Resistances</span><strong>Fire ${stats.fireResistance || 0} / Water ${stats.waterResistance || 0} / Lightning ${stats.lightningResistance || 0}</strong></div>
+    <div class="stat-line"><span>Relic</span><strong>${getItem(equipment.accessory)?.name || "Empty"}</strong></div>
     <div class="stat-line"><span>Coins</span><strong>${stats.coins}</strong></div>
     <div class="stat-line"><span>Attribute Points</span><strong>${stats.availableAttributePoints}</strong></div>
     <div class="stat-line"><span>Skill Points</span><strong>${stats.availableSkillPoints}</strong></div>
@@ -1391,6 +1530,10 @@ function renderCharacterPanel() {
       }).join("")}
     </div>
     ${renderSetBonusPanel(equipment)}
+    <div class="passive-panel">
+      <div class="section-title">Passive Effects</div>
+      ${(stats.passiveEffects || []).length ? stats.passiveEffects.map((effect) => `<small>${escapeHtml(effect.label || effect.id)}</small>`).join("") : `<small>No relic passive equipped.</small>`}
+    </div>
     ${attributeRows.map((attribute) => `
       <div class="item-row">
         <div><strong>${attribute.label}</strong><small>${stats.spentAttributes?.[attribute.id] || 0} spent. Next point: ${attribute.benefit}.</small></div>
@@ -1403,6 +1546,15 @@ function renderCharacterPanel() {
     button.addEventListener("click", () => allocateAttributePoint(button.dataset.attribute));
   });
   ui.panelContent.querySelector("#reset-stats")?.addEventListener("click", useRestStoneItem);
+  attachSetCardHandlers(renderCharacterPanel);
+}
+
+function abilityIcon(ability) {
+  if (ability.trainerId === "healer") return "+";
+  if (ability.id.includes("storm") || ability.id.includes("thunder")) return "Z";
+  if (ability.id.includes("fire") || ability.id.includes("flame") || ability.id.includes("magma")) return "F";
+  if (ability.id.includes("water") || ability.id.includes("frost")) return "W";
+  return "*";
 }
 
 function renderPartyPanel() {

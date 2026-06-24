@@ -864,6 +864,176 @@ h1 {
   margin-top: 7px;
 }
 
+.arsenal-tools {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.filter-tabs button,
+.mini-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-color: rgba(255, 218, 136, 0.22);
+  background: rgba(255, 218, 136, 0.06);
+  color: #f0d9a2;
+}
+
+.filter-tabs button.active {
+  background: rgba(255, 218, 136, 0.18);
+  border-color: rgba(255, 218, 136, 0.56);
+}
+
+.arsenal-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(240px, 0.75fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.arsenal-grid {
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+}
+
+.inventory-slot.filled {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 12, 18, 0.68);
+}
+
+.inventory-slot.filled.selected {
+  outline: 2px solid rgba(255, 218, 136, 0.72);
+}
+
+.inventory-slot b {
+  color: #8effb0;
+  font-size: 10px;
+}
+
+.rarity-common { border-color: rgba(210, 220, 220, 0.28); }
+.rarity-uncommon { border-color: rgba(96, 214, 122, 0.58); }
+.rarity-rare { border-color: rgba(100, 180, 255, 0.66); }
+.rarity-epic { border-color: rgba(190, 132, 255, 0.72); }
+
+.item-detail-panel,
+.item-tooltip-card,
+.passive-panel,
+.set-card-list {
+  border: 1px solid rgba(255, 218, 136, 0.16);
+  background: rgba(5, 8, 13, 0.72);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.tooltip-title,
+.section-title {
+  color: #f0d9a2;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.tooltip-stats,
+.spell-meta {
+  display: grid;
+  gap: 5px;
+}
+
+.tooltip-stat,
+.spell-meta {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+
+.tooltip-stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.better { color: #8effb0; }
+.worse { color: #ff9b8f; }
+.same { color: #b8c0c8; }
+.passive-line { color: #f0d9a2; }
+
+.set-card {
+  text-align: left;
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4ead0;
+}
+
+.set-card.active {
+  border-color: rgba(142, 255, 176, 0.48);
+}
+
+.set-pips {
+  display: flex;
+  gap: 5px;
+}
+
+.set-pips i {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #657080;
+  font-style: normal;
+}
+
+.set-pips i.owned { color: #f0d9a2; }
+.set-pips i.equipped { color: #8effb0; border-color: rgba(142,255,176,0.45); }
+
+.set-card-detail,
+.spellbook-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.spell-card {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(255, 218, 136, 0.14);
+  background: rgba(8, 12, 18, 0.66);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.spell-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(255, 218, 136, 0.13);
+  color: #f0d9a2;
+  font-weight: 800;
+}
+
+.spell-body p {
+  margin: 5px 0;
+  color: #d8ccb1;
+  line-height: 1.35;
+}
+
+.spell-actions {
+  min-width: 190px;
+}
+
 .offline {
   color: #ffcf87;
 }
@@ -917,6 +1087,11 @@ h1 {
   .equipment-grid.compact,
   .inventory-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .arsenal-layout,
+  .spell-card {
+    grid-template-columns: 1fr;
   }
 
   .combat-log {

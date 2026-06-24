@@ -397,7 +397,7 @@ export class RoomManager {
     if (!consumed.consumed) return { ok: false, reason: "missing" };
 
     const healCap = maxHealth - currentHealth;
-    const configuredHeal = Math.max(1, Math.round((ABILITIES.potion.heal || 30) + (Number(player.potionBonus) || 0)));
+    const configuredHeal = Math.max(1, Math.round(((ABILITIES.potion.heal || 30) + (Number(player.potionBonus) || 0)) * (1 + Math.max(0, Number(player.potionPower) || 0))));
     const amount = Math.min(healCap, configuredHeal);
     player.inventory = consumed.inventory;
     player.health = currentHealth + amount;
@@ -995,7 +995,7 @@ export class RoomManager {
   grantQuestCompletionRewards(player, completedQuests = []) {
     for (const quest of completedQuests) {
       if (!quest?.reward) continue;
-      Object.assign(player, addProgressRewards(player, quest.reward));
+      Object.assign(player, addProgressRewards(player, { ...quest.reward, quest: true }));
       if (quest.reward.itemId) {
         const item = addInventoryStack(player.inventory || [], quest.reward.itemId, 1);
         if (item.ok) player.inventory = item.inventory;

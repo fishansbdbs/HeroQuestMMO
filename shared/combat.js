@@ -48,11 +48,19 @@ export function applyEquipment(basePlayer) {
   const itemHealingPower = equippedItems.reduce((total, item) => total + (item.healingPower || 0), 0);
   const itemFireResistance = equippedItems.reduce((total, item) => total + (item.fireResistance || 0), 0);
   const itemWaterResistance = equippedItems.reduce((total, item) => total + (item.waterResistance || 0), 0);
+  const itemLightningResistance = equippedItems.reduce((total, item) => total + (item.lightningResistance || 0), 0);
+  const itemMaxMana = equippedItems.reduce((total, item) => total + (item.maxMana || 0), 0);
+  const itemMovementSpeed = equippedItems.reduce((total, item) => total + (item.movementSpeed || 0), 0);
+  const itemCooldownReduction = equippedItems.reduce((total, item) => total + (item.cooldownReduction || 0), 0);
+  const itemCoinGain = equippedItems.reduce((total, item) => total + (item.coinGain || item.passiveEffect?.coinGain || 0), 0);
+  const itemPotionPower = equippedItems.reduce((total, item) => total + (item.potionPower || 0), 0);
+  const itemQuestXpGain = equippedItems.reduce((total, item) => total + (item.questXpGain || item.passiveEffect?.questXpGain || 0), 0);
+  const itemPassiveEffects = equippedItems.filter((item) => item.passiveEffect).map((item) => ({ ...item.passiveEffect, itemId: item.id, label: item.effectText || item.description }));
   const itemSpeedMultiplier = equippedItems.reduce((total, item) => total * (item.speed || 1), 1);
   const maxHealth = STARTING_PLAYER.maxHealth + (level - 1) * 14 + itemHealth;
   const attack = STARTING_PLAYER.attack + (level - 1) * 2 + itemAttack;
   const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + itemDefense;
-  const speed = STARTING_PLAYER.speed * itemSpeedMultiplier;
+  const speed = STARTING_PLAYER.speed * itemSpeedMultiplier * (1 + itemMovementSpeed / 100);
   const setBonuses = calculateSetBonuses(equipment);
   return applySetBonuses(applyProgressionStats({
     ...player,
@@ -65,8 +73,16 @@ export function applyEquipment(basePlayer) {
     baseDefense: defense,
     itemMagicPower,
     itemHealingPower,
+    itemMaxMana,
+    itemPassiveEffects,
     fireResistance: itemFireResistance,
     waterResistance: itemWaterResistance,
+    lightningResistance: itemLightningResistance,
+    movementSpeed: itemMovementSpeed,
+    cooldownReduction: itemCooldownReduction,
+    coinGain: itemCoinGain,
+    potionPower: itemPotionPower,
+    questXpGain: itemQuestXpGain,
     maxHealth,
     health: Math.min(player.health ?? maxHealth, maxHealth),
     attack,
@@ -96,8 +112,10 @@ export function calculateIncomingDamage(rawDamage, player) {
 
 export function addProgressRewards(player, reward) {
   const before = applyEquipment(player);
-  const xp = normalizeXp(normalizeXp(before.xp) + normalizeXp(reward.xp));
-  const coins = Math.max(0, Math.floor((Number(before.coins) || 0) + (Number(reward.coins) || 0)));
+  const xpMultiplier = reward.quest ? 1 + Math.max(0, Number(before.questXpGain) || 0) : 1;
+  const coinMultiplier = 1 + Math.max(0, Math.min(0.5, Number(before.coinGain) || 0));
+  const xp = normalizeXp(normalizeXp(before.xp) + normalizeXp(Math.round((reward.xp || 0) * xpMultiplier)));
+  const coins = Math.max(0, Math.floor((Number(before.coins) || 0) + Math.round((Number(reward.coins) || 0) * coinMultiplier)));
   const afterLevel = computeLevelFromXp(xp);
   const leveledUp = afterLevel > before.level;
   const after = applyEquipment({

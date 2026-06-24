@@ -1,4 +1,4 @@
-export const GAME_VERSION = "2.3.0";
+export const GAME_VERSION = "2.4.0";
 
 export const ZONES = {
   HUB: "hub",
@@ -70,6 +70,30 @@ export const SNAPSHOT_MS = 120;
 export const PATCH_NOTES = {
   title: "HeroQuest MMO Patch Notes",
   versions: [
+    {
+      version: "2.4.0",
+      title: "Relic Arsenal",
+      date: "2026-06-23",
+      summary: "Improves RPG item identity, inventory readability, equipment panels, spellbook layout, set cards, relic accessories, passive effects, loot feedback, and combat polish.",
+      sections: [
+        {
+          title: "UI Polish",
+          items: [
+            "Improved inventory, equipment, Spellbook, hotbar readability, item tooltips, item comparison, and patch notes layout.",
+            "Added clickable collapsed gear-set cards with active bonus state, owned pieces, equipped pieces, and drop sources.",
+            "Added clearer stat, relic, passive effect, and combat feedback displays."
+          ]
+        },
+        {
+          title: "Relic Arsenal",
+          items: [
+            "Added the Relic accessory category and eight relic items with passive effect metadata.",
+            "Added twelve weapons and sixteen armor pieces with meaningful stat identities.",
+            "Added unique visual profile validation for new named equippables and improved loot toast/readability hooks."
+          ]
+        }
+      ]
+    },
     {
       version: "2.3.0",
       title: "Stormreach Isles",

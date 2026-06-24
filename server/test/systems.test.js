@@ -39,10 +39,12 @@ import {
 import { assignHotbarAbility, purchaseTrainerAbility, validateAbilityTarget } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout } from "../../shared/skillTrees.js";
 import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot } from "../../shared/equipment.js";
+import { ITEMS } from "../../shared/items.js";
+import { V24_ARMOR_IDS, V24_RELIC_IDS, V24_WEAPON_IDS } from "../../shared/expansionV24.js";
 import { INVENTORY_SLOT_COUNT, addInventoryStack } from "../../shared/inventory.js";
 import { NET } from "../../shared/netMessages.js";
 import { applyQuestEvent, applyQuestKill, createQuestProgress } from "../../shared/quests.js";
-import { migrateFlameburgAquaSave, migrateFrostforgedSave, migrateStormreachSave } from "../../shared/saveMigration.js";
+import { migrateFlameburgAquaSave, migrateFrostforgedSave, migrateRelicArsenalSave, migrateStormreachSave } from "../../shared/saveMigration.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
 import { PartySystem } from "../src/PartySystem.js";
@@ -145,8 +147,8 @@ test("client runtime chunks compile after concatenation", () => {
       "createCameraRelativeMove",
       "smoothAngleToward",
       "visualYawForMoveDirection",
-      "STORMREACH_MIGRATION_ID",
-      "migrateStormreachSave",
+      "RELIC_ARSENAL_MIGRATION_ID",
+      "migrateRelicArsenalSave",
       "applyProgressionStats",
       "regenerateMana",
       "spendAttributePoint",
@@ -278,13 +280,14 @@ test("client runtime keeps v1.2.3 chest declarations split after duplicate scan"
   assert.match(addChestSource, /\bconst\s+chestState\s*=/);
 });
 
-test("Stormreach Isles title presentation and patch notes are registered", () => {
+test("Relic Arsenal title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
 
-  assert.equal(GAME_VERSION, "2.3.0");
-  assert.equal(PATCH_NOTES.versions[0].version, "2.3.0");
-  assert.equal(PATCH_NOTES.versions[0].title, "Stormreach Isles");
+  assert.equal(GAME_VERSION, "2.4.0");
+  assert.equal(PATCH_NOTES.versions[0].version, "2.4.0");
+  assert.equal(PATCH_NOTES.versions[0].title, "Relic Arsenal");
+  assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.3.0" && version.title === "Stormreach Isles"));
   assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.2.0" && version.title === "Flameburg & Aqua Palace"));
   assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.1.0" && version.title === "Frostforged Paths"));
   assert.ok(PATCH_NOTES.versions.some((version) => version.version === "1.2.3" && version.title === "Black Screen Hotfix"));
@@ -676,21 +679,22 @@ test("Frostbound Vault spawns elite rooms and records Runebound Colossus clears"
   }
 });
 
-test("client and server boot through the Stormreach v2.3 save migration", async () => {
+test("client and server boot through the Relic Arsenal v2.4 save migration", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const mainSource = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
   const runtimeSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
   const {
+    RELIC_ARSENAL_MIGRATION_ID,
+    RELIC_ARSENAL_SAVE_SCHEMA_VERSION,
     STORMREACH_MIGRATION_ID,
-    STORMREACH_SAVE_SCHEMA_VERSION,
     FLAMEBURG_AQUA_MIGRATION_ID,
     FROSTFORGED_MIGRATION_ID
   } = await import("../../shared/saveMigration.js");
 
-  assert.match(mainSource, /STORMREACH_MIGRATION_ID/);
-  assert.match(mainSource, /migrateStormreachSave/);
-  assert.match(runtimeSource, /STORMREACH_MIGRATION_ID/);
-  assert.match(runtimeSource, /migrateStormreachSave/);
+  assert.match(mainSource, /RELIC_ARSENAL_MIGRATION_ID/);
+  assert.match(mainSource, /migrateRelicArsenalSave/);
+  assert.match(runtimeSource, /RELIC_ARSENAL_MIGRATION_ID/);
+  assert.match(runtimeSource, /migrateRelicArsenalSave/);
 
   const player = createPlayerState("p1", {
     name: "Frost Runner",
@@ -701,10 +705,12 @@ test("client and server boot through the Stormreach v2.3 save migration", async 
     spentAttributes: { health: 1, strength: 1, magic: 1, defense: 1 }
   });
 
-  assert.equal(player.saveSchemaVersion, STORMREACH_SAVE_SCHEMA_VERSION);
+  assert.equal(player.saveSchemaVersion, RELIC_ARSENAL_SAVE_SCHEMA_VERSION);
+  assert.ok(player.migrations.includes(RELIC_ARSENAL_MIGRATION_ID));
   assert.ok(player.migrations.includes(STORMREACH_MIGRATION_ID));
   assert.ok(player.migrations.includes(FLAMEBURG_AQUA_MIGRATION_ID));
   assert.ok(player.migrations.includes(FROSTFORGED_MIGRATION_ID));
+  assert.equal(Object.hasOwn(player.equipment, "accessory"), true);
   assert.deepEqual(player.dungeonProgress.frostbound_vault, {
     clears: 0,
     firstClear: false,
@@ -832,6 +838,59 @@ test("Stormreach v2.3 save migration is idempotent and preserves v2.2 progress",
 
   const remigrated = migrateStormreachSave(migrated).save;
   assert.equal(remigrated.migrations.filter((id) => id === "v2.3.0-stormreach-isles").length, 1);
+});
+
+test("Relic Arsenal adds weapons, armor, relics, and unique visual profiles", () => {
+  assert.equal(V24_WEAPON_IDS.length, 12);
+  assert.equal(V24_ARMOR_IDS.length, 16);
+  assert.equal(V24_RELIC_IDS.length, 8);
+  for (const itemId of [...V24_WEAPON_IDS, ...V24_ARMOR_IDS, ...V24_RELIC_IDS]) {
+    const item = ITEMS[itemId];
+    assert.ok(item, `${itemId} should exist`);
+    assert.ok(item.visualProfile, `${itemId} should have a visual profile`);
+    assert.ok(item.sellValue > 0, `${itemId} should have sell value`);
+    assert.ok(item.source, `${itemId} should have source text`);
+  }
+  const profiles = [...V24_WEAPON_IDS, ...V24_ARMOR_IDS, ...V24_RELIC_IDS].map((itemId) => ITEMS[itemId].visualProfile);
+  assert.equal(new Set(profiles).size, profiles.length);
+});
+
+test("Relic Arsenal relics equip to accessory and expose server-validated passive stats", () => {
+  const inventory = [{ itemId: "goblin_lucky_coin", quantity: 1 }];
+  const equipped = equipItemToSlot({ ...STARTING_PLAYER, level: 4, xp: XP_TABLE[3], inventory }, "accessory", "goblin_lucky_coin");
+  assert.equal(equipped.ok, true);
+  const stats = applyEquipment(equipped.player);
+  assert.equal(stats.equipment.accessory, "goblin_lucky_coin");
+  assert.equal(stats.coinGain, 0.05);
+  assert.ok(stats.passiveEffects.some((effect) => effect.id === "lucky_coin"));
+  const rewarded = addProgressRewards(stats, { xp: 0, coins: 100 });
+  assert.equal(rewarded.coins, stats.coins + 105);
+});
+
+test("Relic Arsenal v2.4 save migration is idempotent and preserves Stormreach progress", () => {
+  const migrated = migrateRelicArsenalSave({
+    name: "Relic Runner",
+    migrations: ["v2.3.0-stormreach-isles"],
+    equipment: { weapon: "stormblade", chest: "stormrunner_vest" },
+    dungeonProgress: {
+      skybreaker_ruins: {
+        clears: 1,
+        firstClear: true,
+        bestEncounterLevel: 36,
+        personalChestClaims: ["voltruk"]
+      }
+    }
+  }).save;
+
+  assert.equal(migrated.saveSchemaVersion, 6);
+  assert.ok(migrated.migrations.includes("v2.4.0-relic-arsenal"));
+  assert.equal(migrated.equipment.weapon, "stormblade");
+  assert.equal(migrated.equipment.accessory, null);
+  assert.equal(migrated.dungeonProgress.skybreaker_ruins.firstClear, true);
+  assert.equal(migrated.itemTooltipVersion, 2);
+
+  const remigrated = migrateRelicArsenalSave(migrated).save;
+  assert.equal(remigrated.migrations.filter((id) => id === "v2.4.0-relic-arsenal").length, 1);
 });
 
 test("Flameburg and Aqua v2.2 save migration is idempotent and preserves older content", () => {

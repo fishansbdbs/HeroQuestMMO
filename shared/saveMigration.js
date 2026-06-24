@@ -12,6 +12,8 @@ export const FLAMEBURG_AQUA_SAVE_SCHEMA_VERSION = 4;
 export const FLAMEBURG_AQUA_MIGRATION_ID = "v2.2.0-flameburg-aqua-palace";
 export const STORMREACH_SAVE_SCHEMA_VERSION = 5;
 export const STORMREACH_MIGRATION_ID = "v2.3.0-stormreach-isles";
+export const RELIC_ARSENAL_SAVE_SCHEMA_VERSION = 6;
+export const RELIC_ARSENAL_MIGRATION_ID = "v2.4.0-relic-arsenal";
 export const HERO_PULSE_REFUND_MESSAGE =
   "Combat training has changed. Visit the Mage Trainer in Dawnrest to relearn Hero Pulse.";
 
@@ -350,6 +352,34 @@ export function migrateStormreachSave(input) {
     ...flameburgAquaResult,
     save,
     migrated: flameburgAquaResult.migrated || !alreadyMigrated
+  };
+}
+
+export function migrateRelicArsenalSave(input) {
+  const stormreachResult = migrateStormreachSave(input);
+  const source = stormreachResult.save;
+  const existingMigrations = uniqueStrings(source.migrations);
+  const alreadyMigrated = existingMigrations.includes(RELIC_ARSENAL_MIGRATION_ID);
+  const migrations = alreadyMigrated ? existingMigrations : [...existingMigrations, RELIC_ARSENAL_MIGRATION_ID];
+  const equipment = createEquipmentState(source.equipment || {});
+
+  const save = {
+    ...source,
+    migrations,
+    saveSchemaVersion: RELIC_ARSENAL_SAVE_SCHEMA_VERSION,
+    equipment: {
+      ...equipment,
+      accessory: equipment.accessory || null
+    },
+    passiveEffects: uniqueObjects(source.passiveEffects),
+    itemTooltipVersion: Math.max(2, nonNegativeInt(source.itemTooltipVersion, 2)),
+    setPanelVersion: Math.max(2, nonNegativeInt(source.setPanelVersion, 2))
+  };
+
+  return {
+    ...stormreachResult,
+    save,
+    migrated: stormreachResult.migrated || !alreadyMigrated
   };
 }
 

@@ -1,5 +1,6 @@
 import { V22_ITEMS } from "./expansionV22.js";
 import { V23_ITEMS } from "./expansionV23.js";
+import { V24_ITEMS } from "./expansionV24.js";
 
 export const RARITIES = {
   COMMON: "Common",
@@ -591,7 +592,8 @@ export const ITEMS = {
     description: "A cold rune engine used for advanced Frostforge upgrades."
   },
   ...V22_ITEMS,
-  ...V23_ITEMS
+  ...V23_ITEMS,
+  ...V24_ITEMS
 };
 
 export const STARTER_INVENTORY = [

@@ -19,7 +19,12 @@ export const SHOP_STOCK = [
   { itemId: "stormblade", price: 1180 },
   { itemId: "stormcaller_staff", price: 1260 },
   { itemId: "stormwall_shield", price: 980 },
-  { itemId: "stormrunner_vest", price: 1040 }
+  { itemId: "stormrunner_vest", price: 1040 },
+  { itemId: "iron_longsword", price: 120 },
+  { itemId: "bandit_cutlass", price: 180 },
+  { itemId: "dawnmender_staff", price: 380 },
+  { itemId: "goblin_lucky_coin", price: 260 },
+  { itemId: "adventurers_badge", price: 320 }
 ];
 
 export const SELL_VALUE_RATE = 0.4;

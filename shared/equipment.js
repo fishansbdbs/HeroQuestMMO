@@ -65,6 +65,12 @@ export function computeEquipmentBonuses(equipment, upgradeRanks = {}) {
   let lightningResistance = 0;
   let maxMana = 0;
   let health = 0;
+  let movementSpeed = 0;
+  let cooldownReduction = 0;
+  let coinGain = 0;
+  let potionPower = 0;
+  let questXpGain = 0;
+  const passiveEffects = [];
   let speedMultiplier = 1;
 
   for (const itemId of Object.values(equipment)) {
@@ -78,11 +84,17 @@ export function computeEquipmentBonuses(equipment, upgradeRanks = {}) {
     waterResistance += item.waterResistance || 0;
     lightningResistance += item.lightningResistance || 0;
     maxMana += item.maxMana || 0;
+    movementSpeed += item.movementSpeed || 0;
+    cooldownReduction += item.cooldownReduction || 0;
+    coinGain += item.coinGain || item.passiveEffect?.coinGain || 0;
+    potionPower += item.potionPower || 0;
+    questXpGain += item.questXpGain || item.passiveEffect?.questXpGain || 0;
+    if (item.passiveEffect) passiveEffects.push({ ...item.passiveEffect, itemId: item.id, label: item.effectText || item.description });
     health += item.health || 0;
     speedMultiplier *= item.speed || 1;
   }
 
-  return { attack, defense, magicPower, healingPower, fireResistance, waterResistance, lightningResistance, maxMana, health, speedMultiplier };
+  return { attack, defense, magicPower, healingPower, fireResistance, waterResistance, lightningResistance, maxMana, health, movementSpeed, cooldownReduction, coinGain, potionPower, questXpGain, passiveEffects, speedMultiplier };
 }
 
 function computeLevelFromXp(xp) {
@@ -107,7 +119,7 @@ export function applyEquipmentSlots(player) {
   const maxHealth = STARTING_PLAYER.maxHealth + (level - 1) * 14 + bonuses.health;
   const attack = STARTING_PLAYER.attack + (level - 1) * 2 + bonuses.attack;
   const defense = STARTING_PLAYER.defense + Math.floor((level - 1) / 2) + bonuses.defense;
-  const speed = STARTING_PLAYER.speed * bonuses.speedMultiplier;
+  const speed = STARTING_PLAYER.speed * bonuses.speedMultiplier * (1 + (bonuses.movementSpeed || 0) / 100);
 
   const setBonuses = calculateSetBonuses(equipment);
   return applySetBonuses(applyProgressionStats({
@@ -122,9 +134,15 @@ export function applyEquipmentSlots(player) {
     itemMagicPower: bonuses.magicPower,
     itemHealingPower: bonuses.healingPower,
     itemMaxMana: bonuses.maxMana,
+    itemPassiveEffects: bonuses.passiveEffects,
     fireResistance: bonuses.fireResistance,
     waterResistance: bonuses.waterResistance,
     lightningResistance: bonuses.lightningResistance,
+    movementSpeed: bonuses.movementSpeed,
+    cooldownReduction: bonuses.cooldownReduction,
+    coinGain: bonuses.coinGain,
+    potionPower: bonuses.potionPower,
+    questXpGain: bonuses.questXpGain,
     maxHealth,
     health: Math.min(player.health ?? maxHealth, maxHealth),
     attack,

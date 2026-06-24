@@ -1,6 +1,6 @@
 ﻿const SERVER_URL = env.VITE_SERVER_URL || "http://localhost:3000";
 const STORAGE_KEY = "heroquest-mmo-v1-save";
-const SAVE_BACKUP_KEY = `${STORAGE_KEY}-backup-${STORMREACH_MIGRATION_ID}`;
+const SAVE_BACKUP_KEY = `${STORAGE_KEY}-backup-${RELIC_ARSENAL_MIGRATION_ID}`;
 const COLORS = [0x4da7ff, 0x55d07a, 0xf2c867, 0xe86e58, 0xb38cff, 0x70e4d2];
 const HOTBAR_DEFS = [
   { slot: 1, action: "auto", name: "Auto Attack", key: "1", icon: "A", cooldownMs: ABILITIES.auto_attack.cooldownMs, tooltip: "Toggle auto attacks against your selected target." },
@@ -185,7 +185,9 @@ const game = {
   combatLog: [],
   inventorySearch: "",
   inventoryFilter: "all",
+  inventorySelectedItemId: null,
   shopTab: "buy",
+  expandedSetId: null,
   lastPingMs: null,
   questCollapsed: false,
   hotbarPressed: null,
@@ -343,7 +345,20 @@ function bootstrap() {
     const flameburgSmoke = params.get("phase22") === "flameburg" || [ZONES.FLAMEBURG, ZONES.ASHEN_EXPANSE, ZONES.EMBERDEEP_MINES, ZONES.CROWNFORGE_CITADEL].includes(zone);
     const aquaSmoke = params.get("phase22") === "aqua" || [ZONES.AQUA_PALACE, ZONES.TIDERUIN_GARDENS, ZONES.SUNKEN_SANCTUM, ZONES.TIDE_EMPRESS_ARENA].includes(zone);
     const phase22Smoke = flameburgSmoke || aquaSmoke;
-    const smokeInventory = phase22Smoke
+    const relicArsenalSmoke = params.get("phase24") === "relic_arsenal" || smoke === "v24";
+    const smokeInventory = relicArsenalSmoke
+      ? [
+          { itemId: "small_health_potion", quantity: 8 },
+          { itemId: "iron_longsword", quantity: 1 },
+          { itemId: "dawnmender_staff", quantity: 1 },
+          { itemId: "adventurer_cap", quantity: 1 },
+          { itemId: "adventurer_vest", quantity: 1 },
+          { itemId: "adventurer_gloves", quantity: 1 },
+          { itemId: "adventurer_boots", quantity: 1 },
+          { itemId: "goblin_lucky_coin", quantity: 1 },
+          { itemId: "adventurers_badge", quantity: 1 }
+        ]
+      : phase22Smoke
       ? [
           { itemId: "greater_health_potion", quantity: 8 },
           { itemId: "burn_salve", quantity: 4 },
@@ -378,19 +393,19 @@ function bootstrap() {
       ...game.save,
       name: "SmokeTester",
       color: COLORS[1],
-      xp: aquaSmoke ? XP_TABLE[24] : flameburgSmoke ? XP_TABLE[18] : frostforgedSmoke ? XP_TABLE[14] : phase7Smoke ? 1300 : phase6Smoke ? 420 : phase2Smoke || phase5Smoke ? 260 : game.save.xp,
-      coins: phase22Smoke ? 1800 : frostforgedSmoke ? 700 : phase7Smoke ? 450 : phase2Smoke || phase5Smoke || phase6Smoke ? 150 : game.save.coins,
+      xp: relicArsenalSmoke || aquaSmoke ? XP_TABLE[24] : flameburgSmoke ? XP_TABLE[18] : frostforgedSmoke ? XP_TABLE[14] : phase7Smoke ? 1300 : phase6Smoke ? 420 : phase2Smoke || phase5Smoke ? 260 : game.save.xp,
+      coins: relicArsenalSmoke ? 2200 : phase22Smoke ? 1800 : frostforgedSmoke ? 700 : phase7Smoke ? 450 : phase2Smoke || phase5Smoke || phase6Smoke ? 150 : game.save.coins,
       inventory: phase2Smoke ? addInventoryItem(game.save.inventory || [], "rest_stone", 1) : smokeInventory,
-      equipment: phase5Smoke ? createEquipmentState() : game.save.equipment,
-      learnedAbilities: phase22Smoke ? ["hero_pulse", "fireball", "water_blast", "ground_pound", "magma_breaker", "flame_wave", "healing_orb", "mend_ally", "radiant_ward", "hearth_ward"] : frostforgedSmoke ? ["hero_pulse", "whirlwind_cleave", "chain_frost", "radiant_ward"] : phase7Smoke || phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
-      hotbar: phase22Smoke ? ["auto", "slash", flameburgSmoke ? "magma_breaker" : "water_blast", "guard", "potion", "dash", flameburgSmoke ? "flame_wave" : "healing_orb", flameburgSmoke ? "hearth_ward" : "hearth_ward"] : frostforgedSmoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", "chain_frost", "radiant_ward"] : phase7Smoke || phase4Smoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null] : phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
+      equipment: phase5Smoke || relicArsenalSmoke ? createEquipmentState() : game.save.equipment,
+      learnedAbilities: relicArsenalSmoke || phase22Smoke ? ["hero_pulse", "fireball", "water_blast", "ground_pound", "magma_breaker", "flame_wave", "healing_orb", "mend_ally", "radiant_ward", "hearth_ward"] : frostforgedSmoke ? ["hero_pulse", "whirlwind_cleave", "chain_frost", "radiant_ward"] : phase7Smoke || phase4Smoke ? ["hero_pulse"] : phase2Smoke ? [] : game.save.learnedAbilities,
+      hotbar: relicArsenalSmoke || phase22Smoke ? ["auto", "slash", flameburgSmoke ? "magma_breaker" : "water_blast", "guard", "potion", "dash", flameburgSmoke ? "flame_wave" : "healing_orb", "hearth_ward"] : frostforgedSmoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", "chain_frost", "radiant_ward"] : phase7Smoke || phase4Smoke ? ["auto", "slash", "hero_pulse", "guard", "potion", "dash", null, null] : phase2Smoke ? ["auto", "slash", null, "guard", "potion", "dash", null, null] : game.save.hotbar,
       skillTreeNodes: phase4Smoke ? {} : game.save.skillTreeNodes,
       savedBuilds: phase4Smoke ? {} : game.save.savedBuilds,
       activeLoadout: phase4Smoke ? null : game.save.activeLoadout,
       bestiaryProgress: phase8Smoke ? {} : game.save.bestiaryProgress,
       zoneCompletion: phase8Smoke ? {} : game.save.zoneCompletion,
       achievements: phase8Smoke ? [] : game.save.achievements,
-      waypoints: phase22Smoke ? ["dawnrest", "frostveil_camp", "flameburg_waypoint", "aqua_palace_waypoint"] : phase8Smoke ? ["dawnrest", "frostveil_camp"] : game.save.waypoints,
+      waypoints: relicArsenalSmoke || phase22Smoke ? ["dawnrest", "frostveil_camp", "flameburg_waypoint", "aqua_palace_waypoint", "stormreach_waypoint"] : phase8Smoke ? ["dawnrest", "frostveil_camp"] : game.save.waypoints,
       openedChests: phase8Smoke ? ["frostveil_snow_cache"] : game.save.openedChests,
       zone,
       settings: { ...game.save.settings, showFps: true }
@@ -450,7 +465,7 @@ function loadSave() {
     title: ""
   };
   const finalizeSave = (incoming) => {
-    const result = migrateStormreachSave(incoming);
+    const result = migrateRelicArsenalSave(incoming);
     if (result.migrated) {
       try {
         localStorage.setItem(SAVE_BACKUP_KEY, JSON.stringify(result.backup));
@@ -550,7 +565,7 @@ function renderMainMenu() {
           <div>
             <div class="kicker">Version ${GAME_VERSION}</div>
             <h1 class="ice-title">HeroQuest MMO</h1>
-            <div class="ice-subtitle">ICEZERO</div>
+            <div class="ice-subtitle">${latestNotes.title}</div>
           </div>
           <div class="status-pill">Major Expansion</div>
         </div>
@@ -560,7 +575,7 @@ function renderMainMenu() {
         </div>
         <div class="news-card">
           <strong>Expansion News</strong>
-          <small>Frostveil Reach is open. Train new abilities, build with attributes and skill trees, push into the Palace of Zero, and challenge Zero, the Ice Mage.</small>
+          <small>${latestNotes.summary}</small>
         </div>
         <details class="menu-patch" open>
           <summary>v${latestNotes.version} Patch Notes - ${latestNotes.title}</summary>
