@@ -1,6 +1,6 @@
 ﻿const SERVER_URL = env.VITE_SERVER_URL || "http://localhost:3000";
 const STORAGE_KEY = "heroquest-mmo-v1-save";
-const SAVE_BACKUP_KEY = `${STORAGE_KEY}-backup-${FLAMEBURG_AQUA_MIGRATION_ID}`;
+const SAVE_BACKUP_KEY = `${STORAGE_KEY}-backup-${STORMREACH_MIGRATION_ID}`;
 const COLORS = [0x4da7ff, 0x55d07a, 0xf2c867, 0xe86e58, 0xb38cff, 0x70e4d2];
 const HOTBAR_DEFS = [
   { slot: 1, action: "auto", name: "Auto Attack", key: "1", icon: "A", cooldownMs: ABILITIES.auto_attack.cooldownMs, tooltip: "Toggle auto attacks against your selected target." },
@@ -103,6 +103,27 @@ const NPC_DIALOGUES = {
     lines: [
       "Heat surges beneath the cracked stone.",
       "Use the public event prompt nearby to seal the eruption."
+    ]
+  },
+  stormwatch_captain: {
+    name: "Captain Rhea",
+    lines: [
+      "Stormwatch Landing holds the line while the isles tear themselves apart.",
+      "Charge the rods, clear Skybreaker Ruins, then open Tempest Gate."
+    ]
+  },
+  stormsmith: {
+    name: "Stormsmith Jaro",
+    lines: [
+      "Charged scales and storm cores make gear that can stand near Aurelion.",
+      "Stormguard plate hums loudest when a hero casts storm abilities."
+    ]
+  },
+  tempest_sage: {
+    name: "Tempest Sage Iona",
+    lines: [
+      "Aurelion bends the whole sky toward the gate.",
+      "Watch the bright warning marks. Lightning always announces itself first."
     ]
   }
 };
@@ -429,7 +450,7 @@ function loadSave() {
     title: ""
   };
   const finalizeSave = (incoming) => {
-    const result = migrateFlameburgAquaSave(incoming);
+    const result = migrateStormreachSave(incoming);
     if (result.migrated) {
       try {
         localStorage.setItem(SAVE_BACKUP_KEY, JSON.stringify(result.backup));
@@ -1027,6 +1048,10 @@ function loadZone(zoneId, moveToSpawn = false) {
   if (zoneId === ZONES.TIDERUIN_GARDENS) buildTideruinGardens();
   if (zoneId === ZONES.SUNKEN_SANCTUM) buildSunkenSanctum();
   if (zoneId === ZONES.TIDE_EMPRESS_ARENA) buildTideEmpressArena();
+  if (zoneId === ZONES.STORMWATCH_LANDING) buildStormwatchLanding();
+  if (zoneId === ZONES.STORMREACH_ISLES) buildStormreachIsles();
+  if (zoneId === ZONES.SKYBREAKER_RUINS) buildSkybreakerRuins();
+  if (zoneId === ZONES.TEMPEST_GATE) buildTempestGate();
 
   const zone = getZone(zoneId);
   if (moveToSpawn) {
@@ -1036,6 +1061,8 @@ function loadZone(zoneId, moveToSpawn = false) {
   if (zoneId === ZONES.PALACE) applyZoneEntryProgress("enter_palace");
   if (zoneId === ZONES.FLAMEBURG) applyZoneEntryProgress("enter_flameburg", "flameburg_waypoint");
   if (zoneId === ZONES.AQUA_PALACE) applyZoneEntryProgress("enter_aqua_palace", "aqua_palace_waypoint");
+  if (zoneId === ZONES.STORMWATCH_LANDING) applyZoneEntryProgress("enter_stormwatch", "stormwatch_waypoint");
+  if (zoneId === ZONES.TEMPEST_GATE) applyZoneEntryProgress("enter_tempest_gate");
   if (zoneHasLocalSpawns(zoneId) && !game.online) spawnLocalEnemies();
   if (zoneId === ZONES.BOSS) startLocalBoss();
   if (zoneId === ZONES.PALACE) startLocalIceMage();

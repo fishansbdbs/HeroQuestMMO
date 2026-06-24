@@ -1,4 +1,4 @@
-export const GAME_VERSION = "2.2.0";
+export const GAME_VERSION = "2.3.0";
 
 export const ZONES = {
   HUB: "hub",
@@ -14,6 +14,10 @@ export const ZONES = {
   TIDERUIN_GARDENS: "tideruin_gardens",
   SUNKEN_SANCTUM: "sunken_sanctum",
   TIDE_EMPRESS_ARENA: "tide_empress_arena",
+  STORMWATCH_LANDING: "stormwatch_landing",
+  STORMREACH_ISLES: "stormreach_isles",
+  SKYBREAKER_RUINS: "skybreaker_ruins",
+  TEMPEST_GATE: "tempest_gate",
   BOSS: "boss"
 };
 
@@ -66,6 +70,30 @@ export const SNAPSHOT_MS = 120;
 export const PATCH_NOTES = {
   title: "HeroQuest MMO Patch Notes",
   versions: [
+    {
+      version: "2.3.0",
+      title: "Stormreach Isles",
+      date: "2026-06-23",
+      summary: "Adds the Level 30-40 Stormreach Isles progression path with Stormwatch Landing, storm enemies, Skybreaker Ruins, Tempest Gate, Aurelion the Storm Titan, storm gear, bounties, achievements, and save migration support.",
+      sections: [
+        {
+          title: "World",
+          items: [
+            "Added Stormwatch Landing, Stormreach Isles, Skybreaker Ruins, and Tempest Gate.",
+            "Added the Stormgate from Aqua Palace for Level 30 heroes.",
+            "Added storm NPCs, treasure caches, waypoints, and weather-themed encounter spaces."
+          ]
+        },
+        {
+          title: "Progression",
+          items: [
+            "Added storm enemies, Voltruk Skybreaker, and Aurelion the Storm Titan.",
+            "Added Stormblade, Thunder Pike, Stormcaller Staff, storm armor, materials, bounties, achievements, and titles.",
+            "Added Thunder Leap, Storm Bolt, and Static Renewal with shared save migration support."
+          ]
+        }
+      ]
+    },
     {
       version: "2.2.0",
       title: "Flameburg & Aqua Palace",

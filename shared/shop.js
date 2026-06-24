@@ -15,7 +15,11 @@ export const SHOP_STOCK = [
   { itemId: "emberstaff", price: 560 },
   { itemId: "coral_blade", price: 680 },
   { itemId: "pearl_wand", price: 700 },
-  { itemId: "reefguard_shield", price: 620 }
+  { itemId: "reefguard_shield", price: 620 },
+  { itemId: "stormblade", price: 1180 },
+  { itemId: "stormcaller_staff", price: 1260 },
+  { itemId: "stormwall_shield", price: 980 },
+  { itemId: "stormrunner_vest", price: 1040 }
 ];
 
 export const SELL_VALUE_RATE = 0.4;

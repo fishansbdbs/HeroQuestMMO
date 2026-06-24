@@ -15,12 +15,15 @@ function updateQuestTracker() {
   const palaceQuestIds = new Set(["palace_of_zero", "icezero"]);
   const flameburgQuestIds = new Set(["steam_through_the_ice", "welcome_to_flameburg", "stones_that_walk", "hounds_of_ash_road", "ashes_in_the_sky", "seal_the_eruption", "into_emberdeep", "crownforge_approach", "the_flame_king"]);
   const aquaQuestIds = new Set(["tidegate_opens", "welcome_to_the_palace", "bubble_trouble", "raiders_of_the_reef", "pearl_recovery", "into_the_sunken_sanctum", "deep_current", "tide_empress"]);
+  const stormQuestIds = new Set(["through_the_stormgate", "welcome_to_stormwatch", "sparks_in_the_grass", "wings_over_the_shoals", "raiders_of_the_wreck", "charge_the_rods", "into_skybreaker_ruins", "heart_of_thunder", "the_tempest_gate", "storm_titan"]);
   const quests = game.zone === ZONES.PALACE
     ? getQuestList().filter((quest) => palaceQuestIds.has(quest.id))
     : [ZONES.FLAMEBURG, ZONES.ASHEN_EXPANSE, ZONES.EMBERDEEP_MINES, ZONES.CROWNFORGE_CITADEL].includes(game.zone)
       ? getQuestList().filter((quest) => flameburgQuestIds.has(quest.id))
     : [ZONES.AQUA_PALACE, ZONES.TIDERUIN_GARDENS, ZONES.SUNKEN_SANCTUM, ZONES.TIDE_EMPRESS_ARENA].includes(game.zone)
       ? getQuestList().filter((quest) => aquaQuestIds.has(quest.id))
+    : [ZONES.STORMWATCH_LANDING, ZONES.STORMREACH_ISLES, ZONES.SKYBREAKER_RUINS, ZONES.TEMPEST_GATE].includes(game.zone)
+      ? getQuestList().filter((quest) => stormQuestIds.has(quest.id))
     : game.zone === ZONES.FROSTVEIL
       ? getQuestList().filter((quest) => frostQuestIds.has(quest.id))
     : getQuestList().slice(0, 5);
@@ -233,6 +236,24 @@ function findNearestFrostWard(player, range = 5) {
   return nearest;
 }
 
+function findNearestLightningRod(player, range = 5) {
+  const rods = [
+    { id: "north_rod", label: "North Lightning Rod", x: -18, z: -18 },
+    { id: "east_rod", label: "East Lightning Rod", x: 20, z: -8 },
+    { id: "cliff_rod", label: "Cliff Lightning Rod", x: 30, z: -38 }
+  ];
+  let nearest = null;
+  let best = Infinity;
+  for (const rod of rods) {
+    const dist = distance2d(player, rod);
+    if (dist <= range && dist < best) {
+      nearest = rod;
+      best = dist;
+    }
+  }
+  return nearest;
+}
+
 function confirmFrostWardActivation(ward) {
   const accepted = window.confirm(`Begin the defense?\n\n${ward.label} will awaken in 5 seconds.`);
   if (!accepted) {
@@ -316,6 +337,13 @@ function updatePrompt() {
     ui.prompt.classList.remove("hidden");
     return;
   }
+  const nearestRod = game.zone === ZONES.STORMREACH_ISLES ? findNearestLightningRod(player, 5) : null;
+  if (nearestRod) {
+    game.promptAction = () => activatePublicEvent("activate_lightning_rod");
+    ui.prompt.textContent = `E: Charge ${nearestRod.label}`;
+    ui.prompt.classList.remove("hidden");
+    return;
+  }
   if (game.zone === ZONES.HUB && distance2d(player, { x: 16, z: -12 }) < 4) {
     game.promptAction = () => {
       selectTarget("training_dummy");
@@ -379,6 +407,18 @@ function currentBreadcrumb() {
   }
   if (game.zone === ZONES.TIDERUIN_GARDENS && !game.save.questProgress?.tide_empress?.complete) {
     return "Marker: Queen Nereida's arena churns southeast.";
+  }
+  if (game.zone === ZONES.AQUA_PALACE && game.save.level >= 30 && !game.save.questProgress?.through_the_stormgate?.complete) {
+    return "Marker: The Stormgate crackles on the western pier.";
+  }
+  if (game.zone === ZONES.STORMWATCH_LANDING && !game.save.questProgress?.welcome_to_stormwatch?.complete) {
+    return "Marker: Captain Rhea watches the storm road.";
+  }
+  if (game.zone === ZONES.STORMREACH_ISLES && !game.save.questProgress?.charge_the_rods?.complete) {
+    return "Marker: Lightning rods wait across the isles.";
+  }
+  if (game.zone === ZONES.TEMPEST_GATE && !game.save.questProgress?.storm_titan?.complete) {
+    return "Marker: Aurelion waits at the center of Tempest Gate.";
   }
   return "";
 }

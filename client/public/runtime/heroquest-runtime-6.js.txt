@@ -878,7 +878,7 @@ function openChest(chestId) {
 
 function activatePublicEvent(eventId, wardId = null) {
   if (isLocallyDead()) return toast("You cannot activate events while defeated.");
-  if (!["defend_frost_ward", "seal_the_eruption"].includes(eventId)) return;
+  if (!["defend_frost_ward", "seal_the_eruption", "activate_lightning_rod"].includes(eventId)) return;
   if (!game.online) {
     if (eventId === "seal_the_eruption" && game.zone === ZONES.ASHEN_EXPANSE) {
       const questUpdate = applyQuestEvent(game.save.questProgress, "seal_the_eruption");
@@ -890,6 +890,19 @@ function activatePublicEvent(eventId, wardId = null) {
       refreshLocalMetaProgress();
       saveGame();
       toast("Eruption sealed.");
+      playUiSound("boss");
+      return;
+    }
+    if (eventId === "activate_lightning_rod" && game.zone === ZONES.STORMREACH_ISLES) {
+      const questUpdate = applyQuestEvent(game.save.questProgress, "activate_lightning_rod");
+      game.save.questProgress = questUpdate.progress;
+      game.save = addProgressRewards(game.save, { xp: 320, coins: 140 });
+      const scale = addInventoryStack(game.save.inventory || [], "charged_scale", 1);
+      if (scale.ok) game.save.inventory = scale.inventory;
+      for (const quest of questUpdate.completed) toast(`Quest complete: ${quest.name}`);
+      refreshLocalMetaProgress();
+      saveGame();
+      toast("Lightning rod charged.");
       playUiSound("boss");
       return;
     }
@@ -907,7 +920,7 @@ function publicEventActivationReason(reason) {
   if (reason === "active") return "The Frost Ward is already active.";
   if (reason === "cooldown") return "The Frost Ward is recharging.";
   if (reason === "range") return "Move closer to the Frost Ward.";
-  if (reason === "zone") return "The Frost Ward can only be activated in Frostveil.";
+  if (reason === "zone") return "That event cannot be activated in this zone.";
   if (reason === "ward") return "That Frost Ward cannot be activated.";
   if (reason === "dead") return "You cannot activate events while defeated.";
   return "The Frost Ward cannot be activated right now.";
@@ -919,6 +932,11 @@ function localChestReward(chestId) {
   if (chestId === "ashen_ember_cache") return { coins: 170, items: [{ itemId: "magma_core", quantity: 1 }, { itemId: "burn_salve", quantity: 2 }] };
   if (chestId === "aqua_pearl_cache") return { coins: 180, items: [{ itemId: "pearl_shard", quantity: 3 }, { itemId: "greater_health_potion", quantity: 1 }] };
   if (chestId === "tideruin_coral_cache") return { coins: 220, items: [{ itemId: "coral_chunk", quantity: 3 }, { itemId: "tide_essence", quantity: 1 }] };
+  if (chestId === "stormwatch_supply_cache") return { coins: 220, items: [{ itemId: "storm_gel", quantity: 2 }] };
+  if (chestId === "stormreach_wreck_cache") return { coins: 260, items: [{ itemId: "shock_shell", quantity: 3 }] };
+  if (chestId === "stormreach_cliff_cache") return { coins: 320, items: [{ itemId: "charged_scale", quantity: 1 }] };
+  if (chestId === "skybreaker_relic_cache") return { coins: 420, items: [{ itemId: "storm_core", quantity: 1 }] };
+  if (chestId === "tempest_titan_cache") return { coins: 520, items: [{ itemId: "charged_scale", quantity: 2 }] };
   if (chestId === "field_south_cache") return { coins: 36, items: [{ itemId: "rusty_blade", quantity: 1 }] };
   if (chestId === "field_north_cache") return { coins: 28, items: [{ itemId: "small_health_potion", quantity: 1 }] };
   return { coins: 18, items: [{ itemId: "small_health_potion", quantity: 1 }] };

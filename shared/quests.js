@@ -1,4 +1,5 @@
 import { V22_QUESTS } from "./expansionV22.js";
+import { V23_QUESTS } from "./expansionV23.js";
 
 export const QUESTS = {
   slime_trouble: {
@@ -100,7 +101,8 @@ export const QUESTS = {
     required: 1,
     reward: { coins: 420, xp: 520, title: "Icebreaker" }
   },
-  ...V22_QUESTS
+  ...V22_QUESTS,
+  ...V23_QUESTS
 };
 
 export function getQuestList() {

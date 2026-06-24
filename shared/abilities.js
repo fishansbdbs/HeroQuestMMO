@@ -1,4 +1,5 @@
 import { V22_ABILITIES } from "./expansionV22.js";
+import { V23_ABILITIES } from "./expansionV23.js";
 
 export const ABILITIES = {
   auto_attack: {
@@ -197,5 +198,6 @@ export const ABILITIES = {
     distance: 7,
     description: "Burst forward with a short movement trail."
   },
-  ...V22_ABILITIES
+  ...V22_ABILITIES,
+  ...V23_ABILITIES
 };

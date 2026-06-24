@@ -231,6 +231,7 @@ function buildAquaPalace() {
   addPortal(-32, 28, "Ashen Expanse", ZONES.ASHEN_EXPANSE, 0xff8a3d);
   addPortal(0, -34, "Tideruin Gardens", ZONES.TIDERUIN_GARDENS, 0x67dfff, 20);
   addPortal(28, -18, "Sunken Sanctum", ZONES.SUNKEN_SANCTUM, 0x35c7ff, 24, "Sunken Sanctum requires Level 24.");
+  addPortal(-34, -28, "Stormgate", ZONES.STORMWATCH_LANDING, 0xf7e66a, 30, "The Stormgate refuses passage. Reach Level 30 to enter Stormreach Isles.");
   addWorldLabel("Aqua Palace", 0, 5.2, 4);
 }
 
@@ -278,6 +279,76 @@ function buildTideEmpressArena() {
   addWaterChannel(-18, 0, 36, 4);
   addPortal(0, 26, "Tideruin Gardens", ZONES.TIDERUIN_GARDENS, 0x9ae8ff);
   addWorldLabel("Tide Empress Arena", 0, 5.2, -18);
+}
+
+function buildStormwatchLanding() {
+  game.scene.background = new THREE.Color(0x10263a);
+  game.scene.fog = new THREE.Fog(0x6fbce8, 34, 104);
+  addGround(96, 0x27556a, 0x203b52);
+  addPath([{ x: -32, z: 28 }, { x: -8, z: 12 }, { x: 0, z: -34 }], 5, 0xc1b56a);
+  addPath([{ x: -4, z: 6 }, { x: 24, z: -8 }, { x: 34, z: 20 }], 4, 0x83a1a8);
+  addWaterChannel(-22, 4, 28, 3);
+  for (let i = 0; i < 16; i += 1) addRock(randomRange(-42, 42), randomRange(-38, 38), 0.7 + Math.random() * 1.1, 0x385667);
+  for (let i = 0; i < 8; i += 1) addCrystal(randomRange(-34, 34), randomRange(-30, 26), 0xf7e66a);
+  addHouse(-12, 16, 9, 7, 0x3d5363);
+  addNpc(-12, 22, "Captain Rhea", "stormwatch_captain", 0xf7e66a);
+  addNpc(8, 2, "Stormsmith Jaro", "stormsmith", 0x6bdfff);
+  addChest(-14, 12, "stormwatch_supply_cache");
+  addPortal(-32, 28, "Aqua Palace", ZONES.AQUA_PALACE, 0x67dfff);
+  addPortal(0, -34, "Stormreach Isles", ZONES.STORMREACH_ISLES, 0xf7e66a, 30);
+  addPortal(30, -18, "Skybreaker Ruins", ZONES.SKYBREAKER_RUINS, 0xb8fbff, 34, "Skybreaker Ruins requires Level 34.");
+  addPortal(34, 20, "Tempest Gate", ZONES.TEMPEST_GATE, 0xfff38a, 36, "Tempest Gate requires Level 36.");
+  addWorldLabel("Stormwatch Landing", 0, 5.1, 4);
+}
+
+function buildStormreachIsles() {
+  game.scene.background = new THREE.Color(0x0e2435);
+  game.scene.fog = new THREE.Fog(0x5da8d8, 42, 128);
+  addGround(124, 0x2d6b69, 0x1e4f60);
+  addPath([{ x: 0, z: 38 }, { x: -6, z: 8 }, { x: -36, z: -34 }], 4.5, 0xb8ad72);
+  addPath([{ x: 8, z: 10 }, { x: 28, z: -8 }, { x: 38, z: -36 }], 3.6, 0x7ea3a7);
+  addWaterChannel(-28, -8, 42, 4);
+  for (let i = 0; i < 30; i += 1) addRock(randomRange(-58, 58), randomRange(-56, 56), 0.6 + Math.random() * 1.2, 0x2e4d5a);
+  for (let i = 0; i < 14; i += 1) addCrystal(randomRange(-52, 52), randomRange(-50, 44), i % 2 ? 0xf7e66a : 0x6bdfff);
+  addChest(-32, -34, "stormreach_wreck_cache");
+  addChest(30, -38, "stormreach_cliff_cache");
+  addPortal(0, 38, "Stormwatch Landing", ZONES.STORMWATCH_LANDING, 0x9ae8ff);
+  addPortal(38, -36, "Skybreaker Ruins", ZONES.SKYBREAKER_RUINS, 0xb8fbff, 34, "Skybreaker Ruins requires Level 34.");
+  addPortal(-38, -36, "Tempest Gate", ZONES.TEMPEST_GATE, 0xfff38a, 36, "Tempest Gate requires Level 36.");
+  addWorldLabel("Stormreach Isles", 0, 4.6, 8);
+}
+
+function buildSkybreakerRuins() {
+  game.scene.background = new THREE.Color(0x07131e);
+  game.scene.fog = new THREE.Fog(0x6bdfff, 18, 76);
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(70, 0.7, 70), mat(0x20364a, 0.98));
+  floor.position.y = -0.35;
+  floor.receiveShadow = true;
+  game.world.add(floor);
+  addPath([{ x: 0, z: 26 }, { x: -8, z: 8 }, { x: 0, z: -18 }], 4.2, 0x738c9c);
+  for (let i = 0; i < 14; i += 1) addRock(randomRange(-30, 30), randomRange(-28, 20), 1 + Math.random() * 1.3, 0x2b4054);
+  for (let i = 0; i < 12; i += 1) addCrystal(randomRange(-28, 28), randomRange(-26, 12), 0xf7e66a);
+  addChest(12, -16, "skybreaker_relic_cache");
+  addPortal(0, 26, "Stormwatch Landing", ZONES.STORMWATCH_LANDING, 0x9ae8ff);
+  addWorldLabel("Skybreaker Ruins", 0, 4.8, -18);
+}
+
+function buildTempestGate() {
+  game.scene.background = new THREE.Color(0x060c18);
+  game.scene.fog = new THREE.Fog(0xf7e66a, 18, 78);
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(32, 32, 1, 64), mat(0x172843, 0.97));
+  floor.position.y = -0.5;
+  floor.receiveShadow = true;
+  game.world.add(floor);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(24, 0.22, 8, 96), mat(0xfff38a, 0.78, true));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.08;
+  game.world.add(ring);
+  for (let i = 0; i < 16; i += 1) addCrystal(randomRange(-26, 26), randomRange(-24, 20), i % 2 ? 0xf7e66a : 0x6bdfff);
+  addNpc(-8, 14, "Tempest Sage", "tempest_sage", 0xfff38a);
+  addChest(-10, -20, "tempest_titan_cache");
+  addPortal(0, 28, "Stormwatch Landing", ZONES.STORMWATCH_LANDING, 0x9ae8ff);
+  addWorldLabel("Tempest Gate", 0, 5.4, -18);
 }
 
 function addGround(size, color, altColor) {
@@ -746,7 +817,7 @@ function populateKnightMesh(group, def) {
 function createEnemyMesh(enemy) {
   const def = getEnemy(enemy.enemyId);
   const group = new THREE.Group();
-  if (def.family === "slime") {
+  if (def.family === "slime" || def.family === "electric_slime") {
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.9, 16, 10), mat(def.color, 0.95));
     body.scale.y = 0.7;
     body.position.y = 0.7;
@@ -773,7 +844,7 @@ function createEnemyMesh(enemy) {
       }
     }
     group.add(body, head, tail);
-  } else if (def.family === "wisp") {
+  } else if (def.family === "wisp" || def.family === "cloud_wisp") {
     const orb = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12), mat(def.color, 0.72, true));
     orb.position.y = 1.4;
     const light = new THREE.PointLight(def.color, 2, 7);
@@ -786,7 +857,7 @@ function createEnemyMesh(enemy) {
     const glow = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), mat(def.color, 0.88, true));
     glow.position.set(0, 0.92, -0.62);
     group.add(core, glow);
-  } else if (def.family === "fire_golem" || def.family === "golem") {
+  } else if (def.family === "fire_golem" || def.family === "golem" || def.family === "thunder_golem") {
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.55, 1.7, 1.15), mat(def.color || 0x77736b));
     body.position.y = 1.45;
     const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.62, 0), mat(def.family === "fire_golem" ? 0x2d1c17 : 0x5f908b));
@@ -822,7 +893,7 @@ function createEnemyMesh(enemy) {
     const light = new THREE.PointLight(def.color, 2.4, 8);
     light.position.y = 1.5;
     group.add(flame, light);
-  } else if (def.family === "raider" || def.family === "imp") {
+  } else if (def.family === "raider" || def.family === "imp" || def.family === "shipwreck_raider") {
     populateGoblinMesh(group, def);
     const spear = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.8, 0.08), mat(def.family === "imp" ? 0x8ceaff : 0xffb25a, 0.72, true));
     spear.position.set(0.82, 1.25, -0.2);
@@ -835,7 +906,7 @@ function createEnemyMesh(enemy) {
     const aura = new THREE.PointLight(0xff3d20, 2.5, 9);
     aura.position.y = 2.4;
     group.add(crown, aura);
-  } else if (def.family === "crab") {
+  } else if (def.family === "crab" || def.family === "storm_crab") {
     const shell = new THREE.Mesh(new THREE.SphereGeometry(0.85, 16, 10), mat(def.color));
     shell.scale.set(1.25, 0.55, 0.9);
     shell.position.y = 0.58;
@@ -854,7 +925,7 @@ function createEnemyMesh(enemy) {
     const light = new THREE.PointLight(def.color, 2, 9);
     light.position.y = 1.7;
     group.add(body, head, light);
-  } else if (def.family === "tide_empress") {
+  } else if (def.family === "tide_empress" || def.family === "storm_titan") {
     populateKnightMesh(group, def);
     const crown = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.78, 7), mat(0xf4fbff, 0.88, true));
     crown.position.y = 3.42;
@@ -871,7 +942,7 @@ function createEnemyMesh(enemy) {
     const target = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.46, 24), mat(0xe35c55, 0.9));
     target.position.set(0, 1.52, -0.66);
     group.add(body, head, arm, target);
-  } else if (def.family === "knight") {
+  } else if (def.family === "knight" || def.family === "storm_knight") {
     populateKnightMesh(group, def);
   } else {
     const core = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 1), mat(0x77736b));

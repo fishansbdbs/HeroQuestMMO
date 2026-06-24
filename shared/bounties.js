@@ -1,4 +1,5 @@
 import { V22_BOUNTIES } from "./expansionV22.js";
+import { V23_BOUNTIES } from "./expansionV23.js";
 
 export const BOUNTY_ROTATION_DAYS = 3;
 
@@ -39,7 +40,8 @@ export const BOUNTIES = [
     zone: "Frostveil Reach",
     reward: { xp: 260, coins: 120, items: [{ itemId: "runic_core", quantity: 1 }] }
   },
-  ...V22_BOUNTIES
+  ...V22_BOUNTIES,
+  ...V23_BOUNTIES
 ];
 
 export function activeBountyDefinitions(now = Date.now()) {

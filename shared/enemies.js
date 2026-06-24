@@ -12,6 +12,14 @@ import {
   TIDE_EMPRESS_ARENA_SPAWNS,
   V22_ENEMIES
 } from "./expansionV22.js";
+import {
+  AURELION_BOSS,
+  SKYBREAKER_RUINS_SPAWNS,
+  STORMREACH_ISLES_SPAWNS,
+  TEMPEST_GATE_SPAWNS,
+  V23_ENEMIES,
+  VOLTRUK_BOSS
+} from "./expansionV23.js";
 
 export const ENEMIES = {
   green_slime: {
@@ -380,7 +388,8 @@ export const ENEMIES = {
     color: 0xc19458,
     loot: []
   },
-  ...V22_ENEMIES
+  ...V22_ENEMIES,
+  ...V23_ENEMIES
 };
 
 export const BOSS = {
@@ -423,7 +432,7 @@ export const ICE_MAGE_BOSS = {
   ]
 };
 
-export { IGNIVAR_BOSS, MARROWFIN_BOSS, MOLTAR_BOSS, NEREIDA_BOSS };
+export { AURELION_BOSS, IGNIVAR_BOSS, MARROWFIN_BOSS, MOLTAR_BOSS, NEREIDA_BOSS, VOLTRUK_BOSS };
 
 export const FIELD_SPAWNS = [
   { enemyId: "green_slime", count: 6, center: [-16, 0, -8], radius: 10 },
@@ -456,6 +465,9 @@ export {
   CROWNFORGE_CITADEL_SPAWNS,
   EMBERDEEP_MINES_SPAWNS,
   SUNKEN_SANCTUM_SPAWNS,
+  SKYBREAKER_RUINS_SPAWNS,
+  STORMREACH_ISLES_SPAWNS,
+  TEMPEST_GATE_SPAWNS,
   TIDERUIN_GARDENS_SPAWNS,
   TIDE_EMPRESS_ARENA_SPAWNS
 };

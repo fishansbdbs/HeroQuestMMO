@@ -15,7 +15,12 @@ import {
   MARROWFIN_BOSS,
   MOLTAR_BOSS,
   NEREIDA_BOSS,
+  AURELION_BOSS,
+  VOLTRUK_BOSS,
+  SKYBREAKER_RUINS_SPAWNS,
+  STORMREACH_ISLES_SPAWNS,
   SUNKEN_SANCTUM_SPAWNS,
+  TEMPEST_GATE_SPAWNS,
   TIDERUIN_GARDENS_SPAWNS,
   TIDE_EMPRESS_ARENA_SPAWNS,
   getEnemy
@@ -26,7 +31,7 @@ import { NET } from "../../shared/netMessages.js";
 import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot, slotForItem } from "../../shared/equipment.js";
 import { EQUIPMENT_SETS, calculateSetProgress } from "../../shared/equipmentSets.js";
 import { INVENTORY_SLOT_COUNT, addInventoryStack, normalizeInventory, removeInventoryItems } from "../../shared/inventory.js";
-import { FLAMEBURG_AQUA_MIGRATION_ID, migrateFlameburgAquaSave } from "../../shared/saveMigration.js";
+import { STORMREACH_MIGRATION_ID, migrateStormreachSave } from "../../shared/saveMigration.js";
 import { applyProgressionStats, regenerateMana, spendAttributePoint, spendMana, useRestStone } from "../../shared/progression.js";
 import { assignHotbarAbility, getTrainerAbilities, purchaseTrainerAbility } from "../../shared/trainers.js";
 import { activateLoadout, purchaseSkillNode, saveLoadout, SKILL_NODES, SKILL_TREES } from "../../shared/skillTrees.js";
@@ -101,6 +106,8 @@ const bootRuntime = new Function(
   "MOLTAR_BOSS",
   "MARROWFIN_BOSS",
   "NEREIDA_BOSS",
+  "AURELION_BOSS",
+  "VOLTRUK_BOSS",
   "ENEMIES",
   "FIELD_SPAWNS",
   "FROSTVEIL_SPAWNS",
@@ -110,6 +117,9 @@ const bootRuntime = new Function(
   "TIDERUIN_GARDENS_SPAWNS",
   "SUNKEN_SANCTUM_SPAWNS",
   "TIDE_EMPRESS_ARENA_SPAWNS",
+  "STORMREACH_ISLES_SPAWNS",
+  "SKYBREAKER_RUINS_SPAWNS",
+  "TEMPEST_GATE_SPAWNS",
   "getEnemy",
   "GAME_VERSION",
   "PATCH_NOTES",
@@ -160,8 +170,8 @@ const bootRuntime = new Function(
   "createCameraRelativeMove",
   "smoothAngleToward",
   "visualYawForMoveDirection",
-  "FLAMEBURG_AQUA_MIGRATION_ID",
-  "migrateFlameburgAquaSave",
+  "STORMREACH_MIGRATION_ID",
+  "migrateStormreachSave",
   "applyProgressionStats",
   "regenerateMana",
   "spendAttributePoint",
@@ -203,6 +213,8 @@ bootRuntime(
   MOLTAR_BOSS,
   MARROWFIN_BOSS,
   NEREIDA_BOSS,
+  AURELION_BOSS,
+  VOLTRUK_BOSS,
   ENEMIES,
   FIELD_SPAWNS,
   FROSTVEIL_SPAWNS,
@@ -212,6 +224,9 @@ bootRuntime(
   TIDERUIN_GARDENS_SPAWNS,
   SUNKEN_SANCTUM_SPAWNS,
   TIDE_EMPRESS_ARENA_SPAWNS,
+  STORMREACH_ISLES_SPAWNS,
+  SKYBREAKER_RUINS_SPAWNS,
+  TEMPEST_GATE_SPAWNS,
   getEnemy,
   GAME_VERSION,
   PATCH_NOTES,
@@ -262,8 +277,8 @@ bootRuntime(
   createCameraRelativeMove,
   smoothAngleToward,
   visualYawForMoveDirection,
-  FLAMEBURG_AQUA_MIGRATION_ID,
-  migrateFlameburgAquaSave,
+  STORMREACH_MIGRATION_ID,
+  migrateStormreachSave,
   applyProgressionStats,
   regenerateMana,
   spendAttributePoint,

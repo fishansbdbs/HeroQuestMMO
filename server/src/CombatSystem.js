@@ -95,6 +95,32 @@ export class CombatSystem {
         healingEffect: createHealingEffectPayload(ability.id, player, target.player, healResult.heals[0]?.amount || 0)
       };
     }
+    if (ability.id === "static_renewal") {
+      const manaSpend = spendMana(player, ability.manaCost || 0);
+      if (!manaSpend.ok) return { ok: false, reason: "mana" };
+      Object.assign(player, manaSpend.player);
+      player.lastAbilityAt = now;
+      applyStormguardSurge(player, ability, now);
+      const heals = [];
+      const affected = [];
+      for (const target of players.values()) {
+        if (!target || isPlayerDead(target) || target.zone !== player.zone) continue;
+        if (distance2d(player.position, target.position) > (ability.radius || 6)) continue;
+        const amount = Math.max(8, Math.round((ability.heal || 36) + (player.healingPower || player.spellPower || 0) * 0.45));
+        heals.push(applyHealingToTarget(player, target, amount, ability.id));
+        target.staticRenewalUntil = now + (ability.durationMs || 5200);
+        target.staticRenewalSpeedBonus = ability.moveSpeedBonus || 0.08;
+        affected.push(target.id);
+      }
+      return {
+        ok: true,
+        abilityId: ability.id,
+        affected,
+        heals,
+        areaEffect: createAreaEffectPayload(ability.id, player.position, ability),
+        healingEffect: createHealingEffectPayload(ability.id, player, player, heals.reduce((total, heal) => total + (heal.amount || 0), 0))
+      };
+    }
     if (ability.id === "fireball") {
       const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.abilityRange);
       if (!target.ok) return target;
@@ -166,13 +192,14 @@ export class CombatSystem {
         meleeEffect: createMeleeEffectPayload(ability.id, player.position, target.enemy.position, target.enemy.id)
       };
     }
-    if (["ground_pound", "magma_breaker", "flame_wave"].includes(ability.id)) {
+    if (["ground_pound", "magma_breaker", "flame_wave", "thunder_leap"].includes(ability.id)) {
       const manaSpend = spendMana(player, ability.manaCost || 0);
       if (!manaSpend.ok) return { ok: false, reason: "mana" };
       Object.assign(player, manaSpend.player);
       player.lastAbilityAt = now;
       applyIceguardGuard(player, now);
       applyAshenCrownAura(player, ability, now);
+      applyStormguardSurge(player, ability, now);
       const damage = calculateAbilityDamage(player, ability, this.rng);
       const hits = [];
       const hitIds = new Set();
@@ -224,13 +251,14 @@ export class CombatSystem {
         areaEffect: createAreaEffectPayload(ability.id, player.position, ability)
       };
     }
-    if (ability.id === "chain_frost") {
+    if (ability.id === "chain_frost" || ability.id === "storm_bolt") {
       const target = resolveHostileEnemy(this.enemySystem, player, payload?.targetId, ability.range || PLAYER_LIMITS.abilityRange);
       if (!target.ok) return target;
       const manaSpend = spendMana(player, ability.manaCost || 0);
       if (!manaSpend.ok) return { ok: false, reason: "mana" };
       Object.assign(player, manaSpend.player);
       player.lastAbilityAt = now;
+      applyStormguardSurge(player, ability, now);
       const damage = calculateAbilityDamage(player, ability, this.rng);
       const targets = collectChainTargets(this.enemySystem, player.zone, target.enemy, ability);
       const hits = targets.map((enemy) => this.enemySystem.damageEnemy({
@@ -254,7 +282,7 @@ export class CombatSystem {
           from: { x: player.position?.x || 0, y: (player.position?.y || 0) + 1.2, z: player.position?.z || 0 },
           to: { x: target.enemy.position?.x || 0, y: (target.enemy.position?.y || 0) + 1, z: target.enemy.position?.z || 0 },
           travelMs: 300,
-          impactEffect: "frost_jump"
+          impactEffect: ability.id === "storm_bolt" ? "storm_jump" : "frost_jump"
         }
       });
     }
@@ -389,13 +417,14 @@ function calculateAbilityDamage(player, ability, rng = Math.random) {
 
 function createProjectilePayload(type, from, to, targetId, options = {}) {
   const isWaterBlast = type === "water_blast";
+  const isStormBolt = type === "storm_bolt";
   const payload = {
     type,
     targetId,
     from: { x: from?.x || 0, y: (from?.y || 0) + 1.2, z: from?.z || 0 },
     to: { x: to?.x || 0, y: (to?.y || 0) + 1, z: to?.z || 0 },
-    travelMs: isWaterBlast ? 360 : 420,
-    impactEffect: type === "fireball" ? "burn" : isWaterBlast ? "splash" : "impact"
+    travelMs: isStormBolt ? 260 : isWaterBlast ? 360 : 420,
+    impactEffect: type === "fireball" ? "burn" : isWaterBlast ? "splash" : isStormBolt ? "storm_jump" : "impact"
   };
   if (options.knockback) payload.knockback = options.knockback;
   return payload;
@@ -546,9 +575,17 @@ function applyTideguardShield(player, ability, now = Date.now()) {
   player.radiantWardReduction = effects.tideShieldReduction || 0.16;
 }
 
+function applyStormguardSurge(player, ability, now = Date.now()) {
+  const effects = player?.setBonusEffects || {};
+  if (!effects.stormSurgeMs || !["thunder_leap", "storm_bolt", "static_renewal"].includes(ability.id)) return;
+  player.stormSurgeUntil = now + effects.stormSurgeMs;
+  player.stormSurgeSpeed = effects.stormSurgeSpeed || 0.08;
+  player.lightningResistance = Math.max(Number(player.lightningResistance) || 0, effects.stormSurgeResistance || 12);
+}
+
 function applyZeroBornRefund(player, ability, result) {
   const effects = player?.setBonusEffects || {};
-  if (!effects.spellCooldownRefundChance || !["fireball", "water_blast", "chain_frost"].includes(ability.id)) return result;
+  if (!effects.spellCooldownRefundChance || !["fireball", "water_blast", "chain_frost", "storm_bolt"].includes(ability.id)) return result;
   if (Math.random() > effects.spellCooldownRefundChance) return result;
   const refundMs = Math.max(0, Number(effects.spellCooldownRefundMs) || 0);
   player.lastAbilityAt = Math.max(0, (player.lastAbilityAt || 0) - refundMs);

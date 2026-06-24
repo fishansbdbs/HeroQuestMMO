@@ -10,6 +10,8 @@ export const FROSTFORGED_SAVE_SCHEMA_VERSION = 3;
 export const FROSTFORGED_MIGRATION_ID = "v2.1.0-frostforged-paths";
 export const FLAMEBURG_AQUA_SAVE_SCHEMA_VERSION = 4;
 export const FLAMEBURG_AQUA_MIGRATION_ID = "v2.2.0-flameburg-aqua-palace";
+export const STORMREACH_SAVE_SCHEMA_VERSION = 5;
+export const STORMREACH_MIGRATION_ID = "v2.3.0-stormreach-isles";
 export const HERO_PULSE_REFUND_MESSAGE =
   "Combat training has changed. Visit the Mage Trainer in Dawnrest to relearn Hero Pulse.";
 
@@ -310,6 +312,44 @@ export function migrateFlameburgAquaSave(input) {
     ...frostforgedResult,
     save,
     migrated: frostforgedResult.migrated || !alreadyMigrated
+  };
+}
+
+export function migrateStormreachSave(input) {
+  const flameburgAquaResult = migrateFlameburgAquaSave(input);
+  const source = flameburgAquaResult.save;
+  const existingMigrations = uniqueStrings(source.migrations);
+  const alreadyMigrated = existingMigrations.includes(STORMREACH_MIGRATION_ID);
+  const migrations = alreadyMigrated ? existingMigrations : [...existingMigrations, STORMREACH_MIGRATION_ID];
+  const dungeonProgress = asObject(source.dungeonProgress);
+
+  const save = {
+    ...source,
+    migrations,
+    saveSchemaVersion: STORMREACH_SAVE_SCHEMA_VERSION,
+    questProgress: { ...createQuestProgress(), ...asObject(source.questProgress) },
+    waypoints: uniqueStrings(source.waypoints).length ? uniqueStrings(source.waypoints) : ["dawnrest"],
+    achievements: uniqueStrings(source.achievements),
+    firstClearRewards: asObject(source.firstClearRewards),
+    bestiaryProgress: asObject(source.bestiaryProgress),
+    zoneCompletion: asObject(source.zoneCompletion),
+    bounties: {
+      active: uniqueObjects(asObject(source.bounties).active),
+      progress: asObject(asObject(source.bounties).progress),
+      completed: uniqueStrings(asObject(source.bounties).completed),
+      claimed: uniqueStrings(asObject(source.bounties).claimed)
+    },
+    dungeonProgress: {
+      ...dungeonProgress,
+      skybreaker_ruins: normalizeDungeonProgress(dungeonProgress.skybreaker_ruins),
+      tempest_gate: normalizeDungeonProgress(dungeonProgress.tempest_gate)
+    }
+  };
+
+  return {
+    ...flameburgAquaResult,
+    save,
+    migrated: flameburgAquaResult.migrated || !alreadyMigrated
   };
 }
 

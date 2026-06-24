@@ -153,7 +153,7 @@ function projectileEffect(projectile) {
       }
     };
     animate();
-  } else if (projectile.type === "chain_frost") {
+  } else if (projectile.type === "chain_frost" || projectile.type === "storm_bolt") {
     const points = [
       new THREE.Vector3(projectile.from?.x || 0, projectile.from?.y || 1.2, projectile.from?.z || 0),
       ...(projectile.chainTargets || []).map((target) => new THREE.Vector3(target.position?.x || 0, target.position?.y || 1, target.position?.z || 0))
@@ -165,7 +165,8 @@ function projectileEffect(projectile) {
       const direction = to.clone().sub(from);
       const length = Math.max(0.2, direction.length());
       if (direction.lengthSq() > 0.001) direction.normalize();
-      const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.055, length, 8), mat(0xb8fbff, 0.68, true));
+      const boltColor = projectile.type === "storm_bolt" ? 0xfff38a : 0xb8fbff;
+      const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.055, length, 8), mat(boltColor, 0.68, true));
       bolt.position.copy(from).lerp(to, 0.5);
       bolt.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
       bolts.push(bolt);
@@ -369,10 +370,10 @@ function darkPunchImpactEffect(position) {
 
 function areaEffect(effect) {
   if (!effect || !game.scene) return;
-  if (["ground_pound", "whirlwind_cleave", "radiant_ward", "magma_breaker", "flame_wave", "hearth_ward"].includes(effect.type)) {
+  if (["ground_pound", "whirlwind_cleave", "radiant_ward", "magma_breaker", "flame_wave", "hearth_ward", "thunder_leap", "static_renewal"].includes(effect.type)) {
     const origin = new THREE.Vector3(effect.origin?.x || 0, effect.origin?.y || 0, effect.origin?.z || 0);
     const radius = Math.max(1, effect.radius || 4.8);
-    const color = effect.type === "radiant_ward" ? 0xffe38b : effect.type === "hearth_ward" ? 0xffb25a : effect.type === "flame_wave" ? 0xff6a24 : effect.type === "magma_breaker" ? 0xff3d20 : effect.type === "whirlwind_cleave" ? 0xd8efff : 0xd0b27a;
+    const color = effect.type === "radiant_ward" ? 0xffe38b : effect.type === "hearth_ward" ? 0xffb25a : effect.type === "static_renewal" ? 0x6bdfff : effect.type === "thunder_leap" ? 0xfff38a : effect.type === "flame_wave" ? 0xff6a24 : effect.type === "magma_breaker" ? 0xff3d20 : effect.type === "whirlwind_cleave" ? 0xd8efff : 0xd0b27a;
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.52, 40), mat(color, 0.62, true));
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(origin.x, Math.max(0.09, origin.y + 0.09), origin.z);

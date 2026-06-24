@@ -1,6 +1,7 @@
 import { ZONES } from "./constants.js";
-import { BOSS, ENEMIES, ICE_MAGE_BOSS } from "./enemies.js";
+import { AURELION_BOSS, BOSS, ENEMIES, ICE_MAGE_BOSS, VOLTRUK_BOSS } from "./enemies.js";
 import { V22_ZONE_COMPLETION_REQUIREMENTS } from "./expansionV22.js";
+import { V23_ZONE_COMPLETION_REQUIREMENTS } from "./expansionV23.js";
 
 export const ACHIEVEMENTS = {
   first_spell: {
@@ -74,6 +75,30 @@ export const ACHIEVEMENTS = {
     name: "Tidebreaker",
     description: "Defeat Queen Nereida.",
     title: "Tidebreaker"
+  },
+  stormgate_opened: {
+    id: "stormgate_opened",
+    name: "Stormgate Opened",
+    description: "Enter Stormwatch Landing.",
+    title: "Stormwalker"
+  },
+  skybreaker: {
+    id: "skybreaker",
+    name: "Skybreaker",
+    description: "Clear Skybreaker Ruins.",
+    title: "Skybreaker"
+  },
+  thunderstruck: {
+    id: "thunderstruck",
+    name: "Thunderstruck",
+    description: "Learn a storm ability.",
+    title: "Thunderstruck"
+  },
+  stormbound: {
+    id: "stormbound",
+    name: "Stormbound",
+    description: "Defeat Aurelion, the Storm Titan.",
+    title: "Stormbound"
   }
 };
 
@@ -105,7 +130,8 @@ export const ZONE_COMPLETION_REQUIREMENTS = {
     quests: ["shadow_at_the_peak"],
     boss: BOSS.id
   },
-  ...V22_ZONE_COMPLETION_REQUIREMENTS
+  ...V22_ZONE_COMPLETION_REQUIREMENTS,
+  ...V23_ZONE_COMPLETION_REQUIREMENTS
 };
 
 export function recordBestiaryKill(player, enemyDef, options = {}) {
@@ -147,6 +173,10 @@ export function evaluateAchievements(player) {
   unlockWhen(waypoints.includes("aqua_palace_waypoint") || questComplete(player, "tidegate_opens"), "tidegate_opened", achievements, unlocked);
   unlockWhen(Boolean(firstClearRewards.marrowfin_leviathan) || questComplete(player, "into_the_sunken_sanctum"), "sanctum_diver", achievements, unlocked);
   unlockWhen(Boolean(firstClearRewards.queen_nereida) || questComplete(player, "tide_empress"), "tidebreaker", achievements, unlocked);
+  unlockWhen(waypoints.includes("stormwatch_waypoint") || questComplete(player, "welcome_to_stormwatch"), "stormgate_opened", achievements, unlocked);
+  unlockWhen(Boolean(firstClearRewards[VOLTRUK_BOSS.id]) || questComplete(player, "heart_of_thunder"), "skybreaker", achievements, unlocked);
+  unlockWhen(learnedAbilities.some((abilityId) => ["thunder_leap", "storm_bolt", "static_renewal"].includes(abilityId)), "thunderstruck", achievements, unlocked);
+  unlockWhen(Boolean(firstClearRewards[AURELION_BOSS.id]) || questComplete(player, "storm_titan"), "stormbound", achievements, unlocked);
 
   return { player: { ...player, achievements: [...achievements] }, unlocked };
 }

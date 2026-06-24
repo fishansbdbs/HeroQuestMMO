@@ -19,7 +19,12 @@ import {
   MARROWFIN_BOSS,
   MOLTAR_BOSS,
   NEREIDA_BOSS,
+  AURELION_BOSS,
+  VOLTRUK_BOSS,
+  SKYBREAKER_RUINS_SPAWNS,
+  STORMREACH_ISLES_SPAWNS,
   SUNKEN_SANCTUM_SPAWNS,
+  TEMPEST_GATE_SPAWNS,
   TIDERUIN_GARDENS_SPAWNS,
   TIDE_EMPRESS_ARENA_SPAWNS
 } from "../../shared/enemies.js";
@@ -37,7 +42,7 @@ import { EQUIPMENT_SLOTS, createEquipmentState, equipItemToSlot } from "../../sh
 import { INVENTORY_SLOT_COUNT, addInventoryStack } from "../../shared/inventory.js";
 import { NET } from "../../shared/netMessages.js";
 import { applyQuestEvent, applyQuestKill, createQuestProgress } from "../../shared/quests.js";
-import { migrateFlameburgAquaSave, migrateFrostforgedSave } from "../../shared/saveMigration.js";
+import { migrateFlameburgAquaSave, migrateFrostforgedSave, migrateStormreachSave } from "../../shared/saveMigration.js";
 import { EnemySystem } from "../src/EnemySystem.js";
 import { LootSystem } from "../src/LootSystem.js";
 import { PartySystem } from "../src/PartySystem.js";
@@ -76,6 +81,8 @@ test("client runtime chunks compile after concatenation", () => {
       "MOLTAR_BOSS",
       "MARROWFIN_BOSS",
       "NEREIDA_BOSS",
+      "AURELION_BOSS",
+      "VOLTRUK_BOSS",
       "ENEMIES",
       "FIELD_SPAWNS",
       "FROSTVEIL_SPAWNS",
@@ -85,6 +92,9 @@ test("client runtime chunks compile after concatenation", () => {
       "TIDERUIN_GARDENS_SPAWNS",
       "SUNKEN_SANCTUM_SPAWNS",
       "TIDE_EMPRESS_ARENA_SPAWNS",
+      "STORMREACH_ISLES_SPAWNS",
+      "SKYBREAKER_RUINS_SPAWNS",
+      "TEMPEST_GATE_SPAWNS",
       "getEnemy",
       "GAME_VERSION",
       "PATCH_NOTES",
@@ -135,8 +145,8 @@ test("client runtime chunks compile after concatenation", () => {
       "createCameraRelativeMove",
       "smoothAngleToward",
       "visualYawForMoveDirection",
-      "FLAMEBURG_AQUA_MIGRATION_ID",
-      "migrateFlameburgAquaSave",
+      "STORMREACH_MIGRATION_ID",
+      "migrateStormreachSave",
       "applyProgressionStats",
       "regenerateMana",
       "spendAttributePoint",
@@ -268,13 +278,14 @@ test("client runtime keeps v1.2.3 chest declarations split after duplicate scan"
   assert.match(addChestSource, /\bconst\s+chestState\s*=/);
 });
 
-test("Flameburg and Aqua Palace title presentation and patch notes are registered", () => {
+test("Stormreach Isles title presentation and patch notes are registered", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const menuSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
 
-  assert.equal(GAME_VERSION, "2.2.0");
-  assert.equal(PATCH_NOTES.versions[0].version, "2.2.0");
-  assert.equal(PATCH_NOTES.versions[0].title, "Flameburg & Aqua Palace");
+  assert.equal(GAME_VERSION, "2.3.0");
+  assert.equal(PATCH_NOTES.versions[0].version, "2.3.0");
+  assert.equal(PATCH_NOTES.versions[0].title, "Stormreach Isles");
+  assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.2.0" && version.title === "Flameburg & Aqua Palace"));
   assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.1.0" && version.title === "Frostforged Paths"));
   assert.ok(PATCH_NOTES.versions.some((version) => version.version === "1.2.3" && version.title === "Black Screen Hotfix"));
   assert.ok(PATCH_NOTES.versions.some((version) => version.version === "2.0.0" && version.title === "ICEZERO"));
@@ -665,20 +676,21 @@ test("Frostbound Vault spawns elite rooms and records Runebound Colossus clears"
   }
 });
 
-test("client and server boot through the Flameburg and Aqua v2.2 save migration", async () => {
+test("client and server boot through the Stormreach v2.3 save migration", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const mainSource = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
   const runtimeSource = fs.readFileSync(path.join(root, "client/public/runtime/heroquest-runtime-1.js.txt"), "utf8");
   const {
+    STORMREACH_MIGRATION_ID,
+    STORMREACH_SAVE_SCHEMA_VERSION,
     FLAMEBURG_AQUA_MIGRATION_ID,
-    FLAMEBURG_AQUA_SAVE_SCHEMA_VERSION,
     FROSTFORGED_MIGRATION_ID
   } = await import("../../shared/saveMigration.js");
 
-  assert.match(mainSource, /FLAMEBURG_AQUA_MIGRATION_ID/);
-  assert.match(mainSource, /migrateFlameburgAquaSave/);
-  assert.match(runtimeSource, /FLAMEBURG_AQUA_MIGRATION_ID/);
-  assert.match(runtimeSource, /migrateFlameburgAquaSave/);
+  assert.match(mainSource, /STORMREACH_MIGRATION_ID/);
+  assert.match(mainSource, /migrateStormreachSave/);
+  assert.match(runtimeSource, /STORMREACH_MIGRATION_ID/);
+  assert.match(runtimeSource, /migrateStormreachSave/);
 
   const player = createPlayerState("p1", {
     name: "Frost Runner",
@@ -689,7 +701,8 @@ test("client and server boot through the Flameburg and Aqua v2.2 save migration"
     spentAttributes: { health: 1, strength: 1, magic: 1, defense: 1 }
   });
 
-  assert.equal(player.saveSchemaVersion, FLAMEBURG_AQUA_SAVE_SCHEMA_VERSION);
+  assert.equal(player.saveSchemaVersion, STORMREACH_SAVE_SCHEMA_VERSION);
+  assert.ok(player.migrations.includes(STORMREACH_MIGRATION_ID));
   assert.ok(player.migrations.includes(FLAMEBURG_AQUA_MIGRATION_ID));
   assert.ok(player.migrations.includes(FROSTFORGED_MIGRATION_ID));
   assert.deepEqual(player.dungeonProgress.frostbound_vault, {
@@ -705,6 +718,18 @@ test("client and server boot through the Flameburg and Aqua v2.2 save migration"
     personalChestClaims: []
   });
   assert.deepEqual(player.dungeonProgress.sunken_sanctum, {
+    clears: 0,
+    firstClear: false,
+    bestEncounterLevel: 0,
+    personalChestClaims: []
+  });
+  assert.deepEqual(player.dungeonProgress.skybreaker_ruins, {
+    clears: 0,
+    firstClear: false,
+    bestEncounterLevel: 0,
+    personalChestClaims: []
+  });
+  assert.deepEqual(player.dungeonProgress.tempest_gate, {
     clears: 0,
     firstClear: false,
     bestEncounterLevel: 0,
@@ -750,6 +775,63 @@ test("Flameburg and Aqua enemies, bosses, and spawn tables are registered", () =
   assert.ok(TIDERUIN_GARDENS_SPAWNS.some((spawn) => spawn.enemyId === "abyss_knight"));
   assert.ok(SUNKEN_SANCTUM_SPAWNS.some((spawn) => spawn.enemyId === MARROWFIN_BOSS.id));
   assert.ok(TIDE_EMPRESS_ARENA_SPAWNS.some((spawn) => spawn.enemyId === NEREIDA_BOSS.id));
+});
+
+test("Stormreach Isles constants, gates, and local runtime hooks are registered", () => {
+  const runtimeSource = readClientRuntimeSource();
+  const aqua = getZone(ZONES.AQUA_PALACE);
+  const stormwatch = getZone(ZONES.STORMWATCH_LANDING);
+  const stormreach = getZone(ZONES.STORMREACH_ISLES);
+
+  assert.equal(ZONES.STORMWATCH_LANDING, "stormwatch_landing");
+  assert.equal(ZONES.STORMREACH_ISLES, "stormreach_isles");
+  assert.equal(stormwatch.minLevel, 30);
+  assert.equal(stormreach.minLevel, 30);
+  assert.ok(aqua.portals.some((portal) => portal.targetZone === ZONES.STORMWATCH_LANDING));
+  assert.ok(stormwatch.portals.some((portal) => portal.targetZone === ZONES.SKYBREAKER_RUINS));
+  assert.ok(stormwatch.portals.some((portal) => portal.targetZone === ZONES.TEMPEST_GATE));
+  assert.equal(canEnterZone({ level: 29 }, ZONES.STORMWATCH_LANDING).message, "The Stormgate refuses passage. Reach Level 30 to enter Stormreach Isles.");
+  assert.equal(canEnterZone({ level: 30 }, ZONES.STORMWATCH_LANDING).ok, true);
+  assert.match(runtimeSource, /function buildStormwatchLanding\(\)/);
+  assert.match(runtimeSource, /function buildStormreachIsles\(\)/);
+  assert.match(runtimeSource, /activate_lightning_rod/);
+});
+
+test("Stormreach enemies, bosses, abilities, and spawn tables are registered", () => {
+  assert.equal(ENEMIES.spark_slime.zone, ZONES.STORMREACH_ISLES);
+  assert.equal(ENEMIES.thunder_golem.zone, ZONES.STORMREACH_ISLES);
+  assert.equal(VOLTRUK_BOSS.id, "voltruk_skybreaker");
+  assert.equal(AURELION_BOSS.id, "aurelion_storm_titan");
+  assert.ok(STORMREACH_ISLES_SPAWNS.some((spawn) => spawn.enemyId === "stormbound_knight"));
+  assert.ok(SKYBREAKER_RUINS_SPAWNS.some((spawn) => spawn.enemyId === VOLTRUK_BOSS.id));
+  assert.ok(TEMPEST_GATE_SPAWNS.some((spawn) => spawn.enemyId === AURELION_BOSS.id));
+  assert.ok(purchaseTrainerAbility({ ...STARTING_PLAYER, level: 30, coins: 1000, spentAttributes: { strength: 22, magic: 22 } }, "storm_bolt").ok);
+  assert.equal(ABILITIES.static_renewal.targetType, "friendly_area");
+});
+
+test("Stormreach v2.3 save migration is idempotent and preserves v2.2 progress", () => {
+  const migrated = migrateStormreachSave({
+    name: "Storm Runner",
+    migrations: [],
+    dungeonProgress: {
+      emberdeep_mines: {
+        clears: 1,
+        firstClear: true,
+        bestEncounterLevel: 18,
+        personalChestClaims: ["moltar"]
+      }
+    }
+  }).save;
+
+  assert.equal(migrated.saveSchemaVersion, 5);
+  assert.ok(migrated.migrations.includes("v2.3.0-stormreach-isles"));
+  assert.ok(migrated.migrations.includes("v2.2.0-flameburg-aqua-palace"));
+  assert.equal(migrated.dungeonProgress.emberdeep_mines.firstClear, true);
+  assert.equal(migrated.dungeonProgress.skybreaker_ruins.firstClear, false);
+  assert.equal(migrated.dungeonProgress.tempest_gate.firstClear, false);
+
+  const remigrated = migrateStormreachSave(migrated).save;
+  assert.equal(remigrated.migrations.filter((id) => id === "v2.3.0-stormreach-isles").length, 1);
 });
 
 test("Flameburg and Aqua v2.2 save migration is idempotent and preserves older content", () => {

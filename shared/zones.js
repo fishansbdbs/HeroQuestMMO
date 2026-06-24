@@ -169,7 +169,8 @@ export const ZONE_DEFS = {
     portals: [
       { id: "to_ashen", label: "Ashen Expanse", targetZone: ZONES.ASHEN_EXPANSE, x: -32, z: 28, radius: 3 },
       { id: "to_tideruin", label: "Tideruin Gardens", targetZone: ZONES.TIDERUIN_GARDENS, x: 0, z: -34, radius: 3, minLevel: 20 },
-      { id: "to_sanctum", label: "Sunken Sanctum", targetZone: ZONES.SUNKEN_SANCTUM, x: 28, z: -18, radius: 3, minLevel: 24, lockMessage: "Sunken Sanctum requires Level 24." }
+      { id: "to_sanctum", label: "Sunken Sanctum", targetZone: ZONES.SUNKEN_SANCTUM, x: 28, z: -18, radius: 3, minLevel: 24, lockMessage: "Sunken Sanctum requires Level 24." },
+      { id: "to_stormwatch", label: "Stormgate", targetZone: ZONES.STORMWATCH_LANDING, x: -34, z: -28, radius: 3.2, minLevel: 30, lockMessage: "The Stormgate refuses passage. Reach Level 30 to enter Stormreach Isles." }
     ]
   },
   [ZONES.TIDERUIN_GARDENS]: {
@@ -206,6 +207,56 @@ export const ZONE_DEFS = {
       { id: "to_tideruin", label: "Tideruin Gardens", targetZone: ZONES.TIDERUIN_GARDENS, x: 0, z: 26, radius: 3 }
     ]
   },
+  [ZONES.STORMWATCH_LANDING]: {
+    id: ZONES.STORMWATCH_LANDING,
+    name: "Stormwatch Landing",
+    subtitle: "Level 30 Storm Harbor",
+    spawn: { x: 0, y: 0, z: 24 },
+    bounds: 48,
+    minLevel: 30,
+    waypointId: "stormwatch_waypoint",
+    portals: [
+      { id: "to_aqua", label: "Aqua Palace", targetZone: ZONES.AQUA_PALACE, x: -32, z: 28, radius: 3 },
+      { id: "to_stormreach", label: "Stormreach Isles", targetZone: ZONES.STORMREACH_ISLES, x: 0, z: -34, radius: 3, minLevel: 30 },
+      { id: "to_skybreaker", label: "Skybreaker Ruins", targetZone: ZONES.SKYBREAKER_RUINS, x: 30, z: -18, radius: 3, minLevel: 34, lockMessage: "Skybreaker Ruins requires Level 34." },
+      { id: "to_tempest", label: "Tempest Gate", targetZone: ZONES.TEMPEST_GATE, x: 34, z: 20, radius: 3, minLevel: 36, lockMessage: "Tempest Gate requires Level 36." }
+    ]
+  },
+  [ZONES.STORMREACH_ISLES]: {
+    id: ZONES.STORMREACH_ISLES,
+    name: "Stormreach Isles",
+    subtitle: "Level 30-40 Storm Frontier",
+    spawn: { x: 0, y: 0, z: 32 },
+    bounds: 62,
+    minLevel: 30,
+    portals: [
+      { id: "to_stormwatch", label: "Stormwatch Landing", targetZone: ZONES.STORMWATCH_LANDING, x: 0, z: 38, radius: 3 },
+      { id: "to_skybreaker", label: "Skybreaker Ruins", targetZone: ZONES.SKYBREAKER_RUINS, x: 38, z: -36, radius: 3, minLevel: 34, lockMessage: "Skybreaker Ruins requires Level 34." },
+      { id: "to_tempest", label: "Tempest Gate", targetZone: ZONES.TEMPEST_GATE, x: -38, z: -36, radius: 3, minLevel: 36, lockMessage: "Tempest Gate requires Level 36." }
+    ]
+  },
+  [ZONES.SKYBREAKER_RUINS]: {
+    id: ZONES.SKYBREAKER_RUINS,
+    name: "Skybreaker Ruins",
+    subtitle: "Level 34 Dungeon",
+    spawn: { x: 0, y: 0, z: 22 },
+    bounds: 38,
+    minLevel: 34,
+    portals: [
+      { id: "to_stormwatch", label: "Stormwatch Landing", targetZone: ZONES.STORMWATCH_LANDING, x: 0, z: 26, radius: 3 }
+    ]
+  },
+  [ZONES.TEMPEST_GATE]: {
+    id: ZONES.TEMPEST_GATE,
+    name: "Tempest Gate",
+    subtitle: "Aurelion Boss Arena",
+    spawn: { x: 0, y: 0, z: 24 },
+    bounds: 36,
+    minLevel: 36,
+    portals: [
+      { id: "to_stormwatch", label: "Stormwatch Landing", targetZone: ZONES.STORMWATCH_LANDING, x: 0, z: 28, radius: 3 }
+    ]
+  },
   [ZONES.BOSS]: {
     id: ZONES.BOSS,
     name: "Shadow Peak",
@@ -223,7 +274,8 @@ export const WAYPOINTS = {
   greenvale_camp: { id: "greenvale_camp", zone: ZONES.FIELD, label: "Greenvale Camp" },
   frostveil_camp: { id: "frostveil_camp", zone: ZONES.FROSTVEIL, label: "Frostveil Camp" },
   flameburg_waypoint: { id: "flameburg_waypoint", zone: ZONES.FLAMEBURG, label: "Flameburg" },
-  aqua_palace_waypoint: { id: "aqua_palace_waypoint", zone: ZONES.AQUA_PALACE, label: "Aqua Palace" }
+  aqua_palace_waypoint: { id: "aqua_palace_waypoint", zone: ZONES.AQUA_PALACE, label: "Aqua Palace" },
+  stormwatch_waypoint: { id: "stormwatch_waypoint", zone: ZONES.STORMWATCH_LANDING, label: "Stormwatch Landing" }
 };
 
 export function getZone(zoneId) {
@@ -248,6 +300,8 @@ export function canEnterZone(player, zoneId) {
           ? "The Molten Gate rejects you. Reach Level 15 to enter Flameburg."
         : zoneId === ZONES.AQUA_PALACE
           ? "The Tidegate remains sealed. Reach Level 20 to enter Aqua Palace."
+        : zoneId === ZONES.STORMWATCH_LANDING || zoneId === ZONES.STORMREACH_ISLES
+          ? "The Stormgate refuses passage. Reach Level 30 to enter Stormreach Isles."
         : `Reach Level ${minLevel} to enter ${zone.name}.`
     };
   }

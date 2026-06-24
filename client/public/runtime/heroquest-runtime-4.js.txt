@@ -266,13 +266,13 @@ function useAssignedAbilityLocal(abilityId, ability, now = performance.now()) {
   game.cooldowns[abilityId] = now;
   markCombat();
 
-  if (["healing_orb", "mend_ally", "radiant_ward", "hearth_ward"].includes(abilityId)) {
+  if (["healing_orb", "mend_ally", "radiant_ward", "hearth_ward", "static_renewal"].includes(abilityId)) {
     useSupportAbilityLocal(abilityId, ability, playerPos);
     saveGame();
     return;
   }
 
-  if (["ground_pound", "whirlwind_cleave", "magma_breaker", "flame_wave"].includes(abilityId)) {
+  if (["ground_pound", "whirlwind_cleave", "magma_breaker", "flame_wave", "thunder_leap"].includes(abilityId)) {
     const radius = ability.radius || 5;
     areaEffect({ type: abilityId, origin: playerPos, radius });
     const damage = Math.max(1, Math.round(calculatePlayerDamage(game.save) * (ability.damageScale || 1)));
@@ -305,7 +305,7 @@ function useAssignedAbilityLocal(abilityId, ability, now = performance.now()) {
 
   const damage = Math.max(1, Math.round(calculatePlayerDamage(game.save) * (ability.damageScale || 1)));
   if (abilityId === "dark_punch") meleeEffect({ type: abilityId, from: playerPos, to: target.position });
-  else if (abilityId === "chain_frost") projectileEffect({ type: abilityId, from: playerPos, chainTargets: [{ position: target.position }] });
+  else if (abilityId === "chain_frost" || abilityId === "storm_bolt") projectileEffect({ type: abilityId, from: playerPos, chainTargets: [{ position: target.position }] });
   else projectileEffect({ type: abilityId, from: playerPos, to: target.position });
   if (target.id === "shadow_wyrm") hitBoss(damage, abilityId);
   else if (target.id === ICE_MAGE_BOSS.id) hitIceMage(damage, abilityId);
@@ -330,7 +330,11 @@ function useSupportAbilityLocal(abilityId, ability, playerPos) {
     toast("Healing Orb created.");
     return;
   }
-  const healAmount = ["mend_ally"].includes(abilityId) ? Math.round(50 + (game.save.healingPower || 0) * 1.8) : 0;
+  const healAmount = ["mend_ally"].includes(abilityId)
+    ? Math.round(50 + (game.save.healingPower || 0) * 1.8)
+    : abilityId === "static_renewal"
+      ? Math.round((ability.heal || 36) + (game.save.healingPower || 0) * 0.9)
+      : 0;
   if (healAmount > 0) {
     const before = game.save.health || 0;
     game.save.health = Math.min(game.save.maxHealth || before, before + healAmount);
